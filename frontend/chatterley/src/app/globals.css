@@ -198,6 +198,15 @@ body {
   opacity: 0.8;
 }
 
+.drag-region {
+  -webkit-app-region: drag;
+  cursor: move;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
 .prose table {
   color: var(--foreground);
 }

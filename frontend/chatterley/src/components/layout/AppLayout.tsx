@@ -434,211 +434,213 @@ export default function AppLayout() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
-      {/* Header */}
-      <div className="absolute top-0 left-0 right-0 z-10 bg-card border-b border-border shadow-sm">
-        <div className="flex items-center justify-between px-4 py-3">
-          {/* Left section */}
-          <div className="flex items-center gap-3">
-            <img 
-              src="./images/chatterley-logo.png" 
-              alt="Chatterley Logo"
-              className="w-8 h-8"
-              onError={(e) => {
-                // Hide if logo not found
-                e.currentTarget.style.display = 'none';
-              }}
-            />
-            <h1 className="text-xl font-semibold text-foreground">
-              Chatterley: Powered by Oumi
-            </h1>
-            <div className="text-sm text-muted-foreground">
-              Branch: {currentBranchId}
+    <div className="flex h-screen w-screen bg-muted/30 p-3">
+      <div className="relative flex flex-1 overflow-hidden rounded-3xl border border-border bg-background shadow-[0_20px_45px_rgba(0,0,0,0.45)]">
+        {/* Header */}
+        <div className="drag-region select-none absolute top-0 left-0 right-0 z-10 rounded-t-3xl border-b border-border bg-card/95 shadow-sm backdrop-blur-sm">
+          <div className="flex items-center justify-between px-4 py-3">
+            {/* Left section */}
+            <div className="flex items-center gap-3">
+              <img 
+                src="./images/chatterley-logo.png" 
+                alt="Chatterley Logo"
+                className="no-drag w-8 h-8"
+                onError={(e) => {
+                  // Hide if logo not found
+                  e.currentTarget.style.display = 'none';
+                }}
+              />
+              <h1 className="text-xl font-semibold text-foreground">
+                Chatterley: Powered by Oumi
+              </h1>
+              <div className="text-sm text-muted-foreground">
+                Branch: {currentBranchId}
+              </div>
             </div>
-          </div>
 
-          {/* Right section */}
-          <div className="flex items-center gap-2">
-            {/* Search & History */}
-            <button
-              onClick={() => setShowSearchHistory(true)}
-              className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground"
-              title="Search & History (Ctrl+F)"
-            >
-              <Search size={18} />
-            </button>
+            {/* Right section */}
+            <div className="no-drag flex items-center gap-2">
+              {/* Search & History */}
+              <button
+                onClick={() => setShowSearchHistory(true)}
+                className="no-drag p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground"
+                title="Search & History (Ctrl+F)"
+              >
+                <Search size={18} />
+              </button>
 
-            {/* Settings */}
-            <button
-              onClick={() => setShowSettings(true)}
-              className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground"
-              title="Settings"
-            >
-              <Settings size={18} />
-            </button>
+              {/* Settings */}
+              <button
+                onClick={() => setShowSettings(true)}
+                className="no-drag p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground"
+                title="Settings"
+              >
+                <Settings size={18} />
+              </button>
 
-            {/* Clear conversation */}
-            <button
-              onClick={handleClearConversation}
-              className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground disabled:opacity-50"
-              title="Clear conversation"
-              disabled={isExecuting}
-            >
-              <RotateCcw size={18} className={isExecuting ? 'animate-spin' : ''} />
-            </button>
+              {/* Clear conversation */}
+              <button
+                onClick={handleClearConversation}
+                className="no-drag p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground disabled:opacity-50"
+                title="Clear conversation"
+                disabled={isExecuting}
+              >
+                <RotateCcw size={18} className={isExecuting ? 'animate-spin' : ''} />
+              </button>
 
-            {/* Control panel toggle */}
-            <button
-              onClick={() => setIsControlPanelExpanded(!isControlPanelExpanded)}
-              className={`p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground ${
-                isControlPanelExpanded ? 'bg-accent' : ''
-              }`}
-              title={isControlPanelExpanded ? 'Hide control panel' : 'Show control panel'}
-            >
-              {isControlPanelExpanded ? <PanelLeftClose size={18} /> : <PanelLeft size={18} />}
-            </button>
+              {/* Control panel toggle */}
+              <button
+                onClick={() => setIsControlPanelExpanded(!isControlPanelExpanded)}
+                className={`no-drag p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground ${
+                  isControlPanelExpanded ? 'bg-accent' : ''
+                }`}
+                title={isControlPanelExpanded ? 'Hide control panel' : 'Show control panel'}
+              >
+                {isControlPanelExpanded ? <PanelLeftClose size={18} /> : <PanelLeft size={18} />}
+              </button>
 
-            {/* Branch tree toggle */}
+              {/* Branch tree toggle */}
               <button
                 onClick={() => setIsBranchTreeExpanded(!isBranchTreeExpanded)}
-                className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground"
+                className="no-drag p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground"
                 title={isBranchTreeExpanded ? 'Collapse branches' : 'Expand branches'}
               >
                 {isBranchTreeExpanded ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
               </button>
               <button
                 onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-                className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground"
+                className="no-drag p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground"
                 title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
               >
                 {isSidebarCollapsed ? <PanelLeft size={18} /> : <PanelLeftClose size={18} />}
               </button>
+            </div>
           </div>
         </div>
 
-      </div>
+        {/* Main content */}
+        <div className="flex flex-1 min-h-0 gap-4 pt-20 pb-4 pl-4 pr-4">
+          {/* Control panel sidebar */}
+          <div className={`transition-all duration-200 ${
+            isControlPanelExpanded ? 'w-80' : 'w-16'
+          }`}>
+            <ControlPanel 
+              className="h-full" 
+              isCollapsed={!isControlPanelExpanded}
+              onToggleCollapse={() => setIsControlPanelExpanded(!isControlPanelExpanded)}
+            />
+          </div>
 
-      {/* Main content */}
-      <div className="flex flex-1 min-h-0 pt-16">
-        {/* Control panel sidebar */}
-        <div className={`transition-all duration-200 ${
-          isControlPanelExpanded ? 'w-80' : 'w-16'
-        }`}>
-          <ControlPanel 
-            className="h-full" 
-            isCollapsed={!isControlPanelExpanded}
-            onToggleCollapse={() => setIsControlPanelExpanded(!isControlPanelExpanded)}
-          />
+          {/* Chat interface */}
+          <div className="flex-1 min-h-0 transition-all duration-200">
+            <ChatInterface 
+              className="h-full" 
+              onRef={(ref) => { chatInterfaceRef.current = ref; }}
+            />
+          </div>
+
+          {/* Right sidebar with Branch tree and Chat history */}
+          <div className={`transition-all duration-200 w-80 ${
+            (isBranchTreeExpanded || showChatHistory) && !isSidebarCollapsed ? '' : 'hidden'
+          }`}>
+            <div className="flex flex-col h-full overflow-hidden">
+              {/* Right sidebar header with toggle button */}
+              <div className="bg-card border-b p-3 flex items-center justify-between sticky top-0 z-10">
+                <h3 className="font-medium text-foreground text-sm">Sidebar</h3>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setShowChatHistory(!showChatHistory)}
+                    className={`p-1 hover:bg-muted rounded transition-colors ${
+                      showChatHistory 
+                        ? 'text-orange-600 bg-orange-100 dark:bg-orange-900/30' 
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                    title={showChatHistory ? 'Hide chat history' : 'Show chat history'}
+                  >
+                    <History size={16} />
+                  </button>
+                  <button
+                    onClick={() => setIsSidebarCollapsed(true)}
+                    className="p-1 hover:bg-muted rounded transition-colors text-muted-foreground hover:text-foreground"
+                    title="Collapse sidebar"
+                  >
+                    <PanelLeftClose size={16} />
+                  </button>
+                </div>
+              </div>
+              {/* Branch Tree - shows when branch tree is expanded */}
+              {isBranchTreeExpanded && (
+                <div className={`${showChatHistory ? 'flex-1' : 'h-full'} min-h-0 overflow-y-auto overscroll-contain`}>
+                  <BranchTree className="h-full" />
+                </div>
+              )}
+              
+              {/* Chat History - shows when chat history is enabled */}
+              {showChatHistory && (
+                <div className={`${isBranchTreeExpanded ? 'flex-1' : 'h-full'} min-h-0 overflow-y-auto overscroll-contain ${isBranchTreeExpanded ? 'border-t' : ''}`}>
+                  <ChatHistorySidebar className="h-full" />
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
-        {/* Chat interface */}
-        <div className="flex-1 min-h-0 transition-all duration-200">
-          <ChatInterface 
-            className="h-full" 
-            onRef={(ref) => { chatInterfaceRef.current = ref; }}
-          />
-        </div>
+        {/* Search & History Window */}
+        <SearchHistoryWindow
+          isOpen={showSearchHistory}
+          onClose={() => setShowSearchHistory(false)}
+          onNavigateToMessage={(conversationId, messageId, branchId) => {
+            // TODO: Implement navigation to specific message
+            console.log('Navigate to message:', { conversationId, messageId, branchId });
+          }}
+        />
 
-        {/* Right sidebar with Branch tree and Chat history */}
-        <div className={`transition-all duration-200 w-80 ${
-          (isBranchTreeExpanded || showChatHistory) && !isSidebarCollapsed ? '' : 'hidden'
-        }`}>
-          <div className="flex flex-col h-full overflow-hidden">
-            {/* Right sidebar header with toggle button */}
-            <div className="bg-card border-b p-3 flex items-center justify-between sticky top-0 z-10">
-              <h3 className="font-medium text-foreground text-sm">Sidebar</h3>
-              <div className="flex items-center gap-1">
+        {/* Settings Modal */}
+        {showSettings && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+            <div className="w-full h-full max-w-7xl max-h-[90vh] bg-background border border-border rounded-lg shadow-2xl overflow-hidden">
+              <div className="flex items-center justify-between p-4 border-b border-border">
+                <h2 className="text-lg font-semibold">Settings</h2>
                 <button
-                  onClick={() => setShowChatHistory(!showChatHistory)}
-                  className={`p-1 hover:bg-muted rounded transition-colors ${
-                    showChatHistory 
-                      ? 'text-orange-600 bg-orange-100 dark:bg-orange-900/30' 
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                  title={showChatHistory ? 'Hide chat history' : 'Show chat history'}
+                  onClick={() => setShowSettings(false)}
+                  className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground"
+                  title="Close settings"
                 >
-                  <History size={16} />
+                  <X size={18} />
                 </button>
-                <button
-                  onClick={() => setIsSidebarCollapsed(true)}
-                  className="p-1 hover:bg-muted rounded transition-colors text-muted-foreground hover:text-foreground"
-                  title="Collapse sidebar"
-                >
-                  <PanelLeftClose size={16} />
-                </button>
+              </div>
+              <div className="h-full overflow-hidden">
+                <SettingsScreen />
               </div>
             </div>
-            {/* Branch Tree - shows when branch tree is expanded */}
-            {isBranchTreeExpanded && (
-              <div className={`${showChatHistory ? 'flex-1' : 'h-full'} min-h-0 overflow-y-auto overscroll-contain`}>
-                <BranchTree className="h-full" />
-              </div>
-            )}
-            
-            {/* Chat History - shows when chat history is enabled */}
-            {showChatHistory && (
-              <div className={`${isBranchTreeExpanded ? 'flex-1' : 'h-full'} min-h-0 overflow-y-auto overscroll-contain ${isBranchTreeExpanded ? 'border-t' : ''}`}>
-                <ChatHistorySidebar className="h-full" />
-              </div>
-            )}
           </div>
-        </div>
+        )}
+
+        {/* System change warning */}
+        <SystemChangeWarning />
+
+        {/* Reset Chat History Confirmation Dialog */}
+        <ConfirmationDialog
+          isOpen={showResetConfirmation}
+          title="Reset Chat History"
+          message="Are you sure you want to reset all chat history?"
+          detail="This will permanently delete all threads, conversations, messages, attachments, and vector indexes. This action cannot be undone."
+          confirmationText="RESET"
+          confirmLabel="Reset"
+          alternateLabel={resetWithBackup ? "Backup and Reset" : undefined}
+          dangerous={true}
+          onConfirm={handleResetConfirm}
+          onAlternate={resetWithBackup ? handleBackupAndResetConfirm : undefined}
+          onCancel={() => setShowResetConfirmation(false)}
+          isLoading={isResetting}
+          progressDetails={resetProgress}
+          successMessage={resetSuccess}
+        />
+
+        {/* Global toasts */}
+        <ToastContainer />
       </div>
-
-      {/* Search & History Window */}
-      <SearchHistoryWindow
-        isOpen={showSearchHistory}
-        onClose={() => setShowSearchHistory(false)}
-        onNavigateToMessage={(conversationId, messageId, branchId) => {
-          // TODO: Implement navigation to specific message
-          console.log('Navigate to message:', { conversationId, messageId, branchId });
-        }}
-      />
-
-      {/* Settings Modal */}
-      {showSettings && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="w-full h-full max-w-7xl max-h-[90vh] bg-background border border-border rounded-lg shadow-2xl overflow-hidden">
-            <div className="flex items-center justify-between p-4 border-b border-border">
-              <h2 className="text-lg font-semibold">Settings</h2>
-              <button
-                onClick={() => setShowSettings(false)}
-                className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground"
-                title="Close settings"
-              >
-                <X size={18} />
-              </button>
-            </div>
-            <div className="h-full overflow-hidden">
-              <SettingsScreen />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* System change warning */}
-      <SystemChangeWarning />
-
-      {/* Reset Chat History Confirmation Dialog */}
-      <ConfirmationDialog
-        isOpen={showResetConfirmation}
-        title="Reset Chat History"
-        message="Are you sure you want to reset all chat history?"
-        detail="This will permanently delete all threads, conversations, messages, attachments, and vector indexes. This action cannot be undone."
-        confirmationText="RESET"
-        confirmLabel="Reset"
-        alternateLabel={resetWithBackup ? "Backup and Reset" : undefined}
-        dangerous={true}
-        onConfirm={handleResetConfirm}
-        onAlternate={resetWithBackup ? handleBackupAndResetConfirm : undefined}
-        onCancel={() => setShowResetConfirmation(false)}
-        isLoading={isResetting}
-        progressDetails={resetProgress}
-        successMessage={resetSuccess}
-      />
-
-      {/* Global toasts */}
-      <ToastContainer />
     </div>
-  );
+  </div>
+);
 }

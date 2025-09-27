@@ -675,10 +675,11 @@ export class PythonServerManager {
     // Ensure Python resolves to the working tree's oumi package in dev
     try {
       const oumiRoot = this.getOumiRootPath();
-      const srcPath = require('path').join(oumiRoot, 'src');
+      const srcPath = path.join(oumiRoot, 'src');
       const existing = process.env.PYTHONPATH || '';
+      const delimiter = path.delimiter;
       // Prepend our src so it wins resolution order
-      cleanEnv.PYTHONPATH = srcPath + (existing ? `:${existing}` : '');
+      cleanEnv.PYTHONPATH = srcPath + (existing ? `${delimiter}${existing}` : '');
       log.info(`[getCleanEnvironment] PYTHONPATH set to: ${cleanEnv.PYTHONPATH}`);
     } catch (e) {
       log.warn('[getCleanEnvironment] Failed to set PYTHONPATH for dev override:', e);
