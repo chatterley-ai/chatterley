@@ -469,6 +469,8 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
       if (apiClient.isElectron && apiClient.isElectron()) {
         await apiClient.restartServer();
         await waitForHealthy(60000);
+        await apiClient.getServerStatus();
+        await ensureModelLoaded();
       } else {
         // Web fallback: clear model and try to reload lazily
         try { await apiClient.clearModel(); } catch {}

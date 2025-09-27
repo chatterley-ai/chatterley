@@ -341,19 +341,25 @@ export class PythonServerManager {
       // Log server output
       if (this.serverProcess.stdout) {
         this.serverProcess.stdout.on('data', (data) => {
-          const output = data.toString().trim();
-          if (output) {
-            log.info(`[Python Server STDOUT] ${output}`);
-            
+          const output = data.toString();
+          const trimmed = output.trim();
+          if (trimmed) {
+            log.info(`[Python Server STDOUT] ${trimmed}`);
+
+            // Update runtime port if backend selects a new one
+            for (const line of output.split(/\r?\n/)) {
+              this.detectAndApplyDynamicPort(line.trim());
+            }
+
             // Handle download progress if present (both during startup and after)
-            this.handleDownloadProgress(output);
-            
+            this.handleDownloadProgress(trimmed);
+
             // Check for startup success indicators
             if (!hasResolved && (
-              output.includes('Uvicorn running on') || 
-              output.includes('Server started') ||
-              output.includes('Application startup complete') ||
-              output.includes('Webchat server is running')
+              trimmed.includes('Uvicorn running on') || 
+              trimmed.includes('Server started') ||
+              trimmed.includes('Application startup complete') ||
+              trimmed.includes('Webchat server is running')
             )) {
               log.info('[startServerProcess] SUCCESS: Found server startup indicator in output');
               hasResolved = true;
@@ -367,13 +373,18 @@ export class PythonServerManager {
 
       if (this.serverProcess.stderr) {
         this.serverProcess.stderr.on('data', (data) => {
-          const error = data.toString().trim();
+          const raw = data.toString();
+          const error = raw.trim();
           if (error) {
             log.error(`[Python Server STDERR] ${error}`);
-            
+
+            for (const line of raw.split(/\r?\n/)) {
+              this.detectAndApplyDynamicPort(line.trim());
+            }
+
             // Handle download progress/errors that might appear in stderr (both during startup and after)
             this.handleDownloadProgress(error);
-            
+
             // Check for critical startup errors
             if (!hasResolved && (
               error.includes('FileNotFoundError') ||
@@ -796,6 +807,30 @@ export class PythonServerManager {
    */
   private sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Detect dynamic port reassignment messages from backend output and update config
+   */
+  private detectAndApplyDynamicPort(line: string): void {
+    if (!line) return;
+
+    let detectedPort: number | null = null;
+
+    const explicitMatch = line.match(/Found available port:\s*(\d+)/i);
+    if (explicitMatch) {
+      detectedPort = parseInt(explicitMatch[1], 10);
+    } else {
+      const urlMatch = line.match(/http:\/\/[^:]+:(\d+)/i);
+      if (urlMatch) {
+        detectedPort = parseInt(urlMatch[1], 10);
+      }
+    }
+
+    if (detectedPort && !Number.isNaN(detectedPort) && detectedPort !== this.config.port) {
+      log.info(`[PythonServerManager] Detected backend port change ${this.config.port} -> ${detectedPort}`);
+      this.config.port = detectedPort;
+    }
   }
 
   /**

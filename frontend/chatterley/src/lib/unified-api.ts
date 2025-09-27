@@ -26,6 +26,23 @@ class UnifiedApiClient {
   private webClient = apiClient;
   private electronClient = electronAPI;
 
+  private updateBaseUrlFromServer(url?: string, port?: number) {
+    try {
+      if (url) {
+        const parsed = new URL(url);
+        this.webClient.updateBaseUrl(`${parsed.protocol}//${parsed.host}`);
+        return;
+      }
+    } catch (err) {
+      console.warn('[UnifiedApi] Failed to parse server URL for base update:', err);
+    }
+
+    if (typeof port === 'number' && port > 0) {
+      const host = 'localhost';
+      this.webClient.updateBaseUrl(`http://${host}:${port}`);
+    }
+  }
+
   /**
    * Determine if we're running in Electron
    */
@@ -50,7 +67,12 @@ class UnifiedApiClient {
   // Server control (Electron only)
   async startServer(configPath?: string, systemPrompt?: string): Promise<ApiResponse> {
     if (this.isElectron()) {
-      return this.electronClient.startServer(configPath, systemPrompt);
+      const resp = await this.electronClient.startServer(configPath, systemPrompt);
+      if (resp?.success) {
+        const data: any = resp;
+        this.updateBaseUrlFromServer(data.url, data.port);
+      }
+      return resp;
     } else {
       return { success: true, message: 'Server control not available in web version' };
     }
@@ -66,7 +88,12 @@ class UnifiedApiClient {
 
   async restartServer(): Promise<ApiResponse> {
     if (this.isElectron()) {
-      return this.electronClient.restartServer();
+      const resp = await this.electronClient.restartServer();
+      if (resp?.success) {
+        const data: any = resp;
+        this.updateBaseUrlFromServer(data.url, data.port);
+      }
+      return resp;
     } else {
       return { success: true, message: 'Server control not available in web version' };
     }
@@ -90,7 +117,12 @@ class UnifiedApiClient {
 
   async getServerStatus(): Promise<ApiResponse> {
     if (this.isElectron()) {
-      return this.electronClient.getServerStatus();
+      const status = await this.electronClient.getServerStatus();
+      if (status?.success) {
+        const data: any = status.data || status;
+        this.updateBaseUrlFromServer(data?.url, data?.port);
+      }
+      return status;
     } else {
       return { success: true, data: { running: true, url: 'N/A', port: 'N/A' } };
     }

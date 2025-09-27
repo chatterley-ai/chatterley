@@ -295,7 +295,7 @@ function setupChatHandlers(pythonManager: PythonServerManager): void {
       }
       
       const serverUrl = await pythonManager.start();
-      return { success: true, url: serverUrl };
+      return { success: true, url: serverUrl, port: pythonManager.getPort() };
     } catch (error) {
       log.error('Failed to start server:', error);
       return { 
@@ -321,8 +321,8 @@ function setupChatHandlers(pythonManager: PythonServerManager): void {
   ipcMain.handle('server:restart', async () => {
     try {
       const serverUrl = await pythonManager.restart();
-      return { success: true, url: serverUrl };
-    } catch (error) {
+      return { success: true, url: serverUrl, port: pythonManager.getPort() };
+  } catch (error) {
       log.error('Failed to restart server:', error);
       return { 
         success: false, 

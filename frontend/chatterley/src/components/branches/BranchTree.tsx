@@ -114,6 +114,7 @@ export default function BranchTree({ className = '' }: BranchTreeProps) {
         });
         // Branches are now derived on demand, no need to set them manually
         setCurrentBranch(response.data?.current_branch || 'main');
+        debugLog('🌿 BranchTree: fetched branches from backend', formattedBranches.length);
       }
     } catch (error) {
       console.warn('Backend connection failed:', error);
@@ -172,25 +173,11 @@ export default function BranchTree({ className = '' }: BranchTreeProps) {
     if (branchId === currentBranchId) return;
 
     try {
-      // Clear model from memory before switching branches to ensure clean state
-      debugLog('🧹 Clearing model before branch switch...');
-      const clearResult = await apiClient.clearModel();
-      if (clearResult.success) {
-        debugLog('✅ Model cleared successfully before branch switch');
-      } else {
-        console.warn('⚠️ Model clear failed, continuing with branch switch:', clearResult.message);
-      }
-      
       const sessionId = useChatStore.getState().getCurrentSessionId();
       const response = await apiClient.switchBranch(sessionId, branchId);
-      
+
       if (response.success) {
         setCurrentBranch(branchId);
-        
-        // The command response doesn't include conversation data, 
-        // so we clear messages and reload branches to get updated state
-        // The setMessages function now requires 3 parameters
-        setMessages(currentConversationId || '', branchId, []);
         await loadBranches();
       } else {
         console.error('Failed to switch branch:', response.message);
@@ -199,8 +186,6 @@ export default function BranchTree({ className = '' }: BranchTreeProps) {
       console.error('Failed to switch branch:', error);
       // Still update UI even if conversation loading fails
       setCurrentBranch(branchId);
-      // The setMessages function now requires 3 parameters
-      setMessages(currentConversationId || '', branchId, []);
     }
   };
 

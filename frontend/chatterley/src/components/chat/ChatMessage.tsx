@@ -46,7 +46,10 @@ export default function ChatMessage({ message, isLatest = false, messageIndex }:
       return messageIndex > 0 && msgs[messageIndex - 1]?.role === 'user';
     }
     if (message.role === 'user') {
-      return messageIndex + 1 < msgs.length && msgs[messageIndex + 1]?.role === 'assistant';
+      const hasAssistantReply = messageIndex + 1 < msgs.length && msgs[messageIndex + 1]?.role === 'assistant';
+      if (hasAssistantReply) return true;
+      const isLastMessage = messageIndex === msgs.length - 1;
+      return isLastMessage;
     }
     return false;
   };

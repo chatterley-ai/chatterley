@@ -421,7 +421,10 @@ export default function LaunchManager({}: LaunchManagerProps) {
       }
     };
 
-    setupMenuHandlers();
+    const cleanup = setupMenuHandlers();
+    return () => {
+      cleanup?.();
+    };
   }, []);
 
   // Check if user has opted into welcome screen caching (default: always show welcome)
