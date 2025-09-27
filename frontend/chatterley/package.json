@@ -30,7 +30,7 @@
     "electron:dist": "npm run prepare-python && npm run build:electron && npm run electron:compile && electron-builder --publish=never",
     "electron:publish": "npm run prepare-python && npm run build:electron && npm run electron:compile && electron-builder --publish=always",
     "electron:build:mac": "npm run prepare-python && npm run build:electron && npm run electron:compile && node scripts/cleanup-dmg.js && electron-builder --mac",
-    "electron:build:win": "npm run prepare-python && npm run build:electron && npm run electron:compile && electron-builder --win",
+    "electron:build:win": "npm run prepare-python -- --platform win32-x64 && npm run build:electron && npm run electron:compile && electron-builder --win",
     "electron:build:linux": "npm run prepare-python && npm run build:electron && npm run electron:compile && electron-builder --linux",
     "electron:build:all": "npm run prepare-python && npm run build:electron && npm run electron:compile && electron-builder --mac --win --linux",
     "dist:mac": "npm run electron:build:mac",
@@ -120,7 +120,7 @@
     ],
     "extraResources": [
       {
-        "from": "../backend/oumi",
+        "from": "../../backend/oumi",
         "to": "python/",
         "filter": [
           "pyproject.toml",

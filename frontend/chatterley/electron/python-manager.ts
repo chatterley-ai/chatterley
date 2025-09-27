@@ -247,7 +247,7 @@ export class PythonServerManager {
     }
 
     // Build the oumi webchat serve command (backend-only mode)
-    const oumiArgs = [
+    const oumiArgs: string[] = [
       'webchat',
       'serve',  // Use the new serve subcommand for backend-only
       '--host', this.config.host,
@@ -259,7 +259,7 @@ export class PythonServerManager {
       log.info(`[startServerProcess] Raw config path from frontend: ${this.config.config_path}`);
       const resolvedConfigPath = this.resolveConfigPath(this.config.config_path);
       log.info(`[startServerProcess] Resolved config path: ${resolvedConfigPath}`);
-      oumiArgs.push('-c', `"${resolvedConfigPath}"`);
+      oumiArgs.push('-c', resolvedConfigPath);
     } else {
       log.warn('[startServerProcess] No config path provided');
     }
@@ -267,14 +267,15 @@ export class PythonServerManager {
     // Add system prompt if specified
     if (this.config.system_prompt) {
       log.info(`[startServerProcess] Adding system prompt: ${this.config.system_prompt.substring(0, 100)}...`);
-      oumiArgs.push('--system-prompt', `"${this.config.system_prompt}"`);
+      oumiArgs.push('--system-prompt', this.config.system_prompt);
     }
 
     // Build the full command with appropriate Python environment
     log.info('[startServerProcess] Building Python command...');
-    const fullCommand = await this.buildPythonCommand(oumiArgs);
+    const commandSpec = await this.buildPythonCommand(oumiArgs);
+    const prettyCommand = `${commandSpec.command} ${commandSpec.args.map(arg => arg.includes(' ') ? `"${arg}"` : arg).join(' ')}`;
     
-    log.info(`[startServerProcess] Full command: ${fullCommand}`);
+    log.info(`[startServerProcess] Full command: ${prettyCommand}`);
     log.info(`[startServerProcess] Starting Python server on port ${this.config.port}`);
 
     return new Promise(async (resolve, reject) => {
@@ -286,21 +287,12 @@ export class PythonServerManager {
       log.info(`[startServerProcess] Environment contains API key vars: ${apiKeyEnvVars.join(', ')}`);
 
       // Use shell execution to handle environment activation
-      if (process.platform === 'win32' && !this.isDevelopment) {
-        // Windows production: direct execution with clean environment
-        this.serverProcess = spawn('cmd', ['/c', fullCommand], {
-          stdio: ['pipe', 'pipe', 'pipe'],
-          env: cleanEnvironment,
-          cwd: this.getOumiRootPath()  // Set working directory to oumi root
-        });
-      } else {
-        // Unix-like or development: bash execution with clean environment
-        this.serverProcess = spawn('bash', ['-c', fullCommand], {
-          stdio: ['pipe', 'pipe', 'pipe'],
-          env: cleanEnvironment,
-          cwd: this.getOumiRootPath()  // Set working directory to oumi root
-        });
-      }
+      this.serverProcess = spawn(commandSpec.command, commandSpec.args, {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: cleanEnvironment,
+        cwd: this.getOumiRootPath(),
+        shell: false
+      });
 
       // Handle process events
       this.serverProcess.on('error', (error) => {
@@ -540,47 +532,8 @@ export class PythonServerManager {
   /**
    * Build appropriate Python command using the standalone environment
    */
-  private async buildPythonCommand(oumiArgs: string[]): Promise<string> {
-    // Always use standalone environment (bundled Python + venv)
-    const baseCommand = this.buildStandaloneCommand(oumiArgs);
-    
-    // Add API key environment variables directly to the command
-    const envVarsCommand = await this.buildEnvironmentExportsFromCleanEnv();
-    
-    if (envVarsCommand) {
-      return `${envVarsCommand} && ${baseCommand}`;
-    }
-    
-    return baseCommand;
-  }
-
-  /**
-   * Build environment variables export command using the existing getCleanEnvironment function
-   */
-  private async buildEnvironmentExportsFromCleanEnv(): Promise<string> {
-    try {
-      const cleanEnv = await this.getCleanEnvironment();
-      const exports: string[] = [];
-      
-      // Find all API key environment variables and export them
-      for (const [key, value] of Object.entries(cleanEnv)) {
-        if (key.includes('API_KEY') && value) {
-          // Escape the value to handle special characters in shell
-          const escapedValue = value.replace(/'/g, "'\"'\"'");
-          exports.push(`export ${key}='${escapedValue}'`);
-        }
-      }
-      
-      if (exports.length > 0) {
-        log.info(`[buildEnvironmentExportsFromCleanEnv] Built export command with ${exports.length} API keys`);
-        return exports.join(' && ');
-      }
-      
-      return '';
-    } catch (error) {
-      log.error('[buildEnvironmentExportsFromCleanEnv] Failed to build environment exports:', error);
-      return '';
-    }
+  private async buildPythonCommand(oumiArgs: string[]): Promise<{ command: string; args: string[] }> {
+    return this.buildStandaloneCommand(oumiArgs);
   }
 
   /**
@@ -601,7 +554,7 @@ export class PythonServerManager {
   /**
    * Build standalone Python command for production
    */
-  private buildStandaloneCommand(oumiArgs: string[]): string {
+  private buildStandaloneCommand(oumiArgs: string[]): { command: string; args: string[] } {
     if (!this.environmentInfo?.isValid) {
       const errorMsg = `Python environment not ready. Environment info: ${JSON.stringify(this.environmentInfo)}`;
       log.error(`[PythonServerManager] ${errorMsg}`);
@@ -616,12 +569,10 @@ export class PythonServerManager {
       log.error(`[PythonServerManager] ${errorMsg}`);
       throw new Error(errorMsg);
     }
-    
-    const oumiCommand = `"${pythonPath}" -m oumi ${oumiArgs.join(' ')}`;
-    
+    const args = ['-m', 'oumi', ...oumiArgs];
+
     log.info(`[PythonServerManager] Using standalone Python: ${pythonPath}`);
-    log.info(`[PythonServerManager] Full command: ${oumiCommand}`);
-    return oumiCommand;
+    return { command: pythonPath, args };
   }
 
   /**
@@ -921,9 +872,9 @@ export class PythonServerManager {
       
       const testCommand = await this.buildPythonCommand([
         'infer',
-        '-c', `"${resolvedConfigPath}"`,
-        '--input_path', `"${tempInputPath}"`,
-        '--output_path', `"${tempOutputPath}"`
+        '-c', resolvedConfigPath,
+        '--input_path', tempInputPath,
+        '--output_path', tempOutputPath
       ]);
 
       log.info(`Resolved config path: ${resolvedConfigPath}`);
@@ -935,20 +886,12 @@ export class PythonServerManager {
         const cleanEnvironment = await this.getCleanEnvironment();
 
         // Use appropriate shell for the platform
-        let testProcess: ChildProcess;
-        if (process.platform === 'win32') {
-          testProcess = spawn('cmd', ['/c', testCommand], {
-            stdio: ['pipe', 'pipe', 'pipe'],
-            env: cleanEnvironment,
-            cwd: this.getOumiRootPath()
-          });
-        } else {
-          testProcess = spawn('bash', ['-c', testCommand], {
-            stdio: ['pipe', 'pipe', 'pipe'],
-            env: cleanEnvironment,
-            cwd: this.getOumiRootPath()
-          });
-        }
+        const testProcess: ChildProcess = spawn(testCommand.command, testCommand.args, {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          env: cleanEnvironment,
+          cwd: this.getOumiRootPath(),
+          shell: false
+        });
 
         log.info(`Test process spawned with PID: ${testProcess.pid}`);
         // Update test status

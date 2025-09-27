@@ -104,6 +104,16 @@ export class ConfigMatcher {
     const engineLower = engine.toLowerCase();
     const warnings: string[] = [];
 
+    // Windows desktop build does not ship local VLLM support
+    if (system.platform === 'win32' && engineLower.includes('vllm')) {
+      warnings.push('VLLM is not supported on Windows builds');
+      return {
+        score: -30,
+        reason: 'Engine unavailable on Windows',
+        warnings
+      };
+    }
+
     // macOS preferences - only recommend LlamaCPP and small native configs
     if (system.platform === 'darwin') {
       if (engineLower === 'llamacpp') {

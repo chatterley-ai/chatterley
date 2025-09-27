@@ -25,6 +25,45 @@ const DISTRIBUTIONS = {
 const FRONTEND_DIR = path.resolve(__dirname, '..');
 const PYTHON_DIST_DIR = path.join(FRONTEND_DIR, 'python-dist');
 
+/**
+ * Parse requested platforms from CLI args or environment
+ */
+function getRequestedPlatforms() {
+  const args = process.argv.slice(2);
+  const requested = new Set();
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+
+    if (arg === '--platform' || arg === '--platforms') {
+      const value = args[i + 1];
+      if (!value) {
+        throw new Error(`Missing value for ${arg}`);
+      }
+      value.split(',').map((p) => p.trim()).filter(Boolean).forEach((p) => requested.add(p));
+      i++;
+      continue;
+    }
+
+    if (arg.startsWith('--platform=') || arg.startsWith('--platforms=')) {
+      arg.split('=')[1]
+        .split(',')
+        .map((p) => p.trim())
+        .filter(Boolean)
+        .forEach((p) => requested.add(p));
+    }
+  }
+
+  if (process.env.CH_PYTHON_PLATFORMS) {
+    process.env.CH_PYTHON_PLATFORMS.split(',')
+      .map((p) => p.trim())
+      .filter(Boolean)
+      .forEach((p) => requested.add(p));
+  }
+
+  return requested;
+}
+
 console.log('🐍 Downloading Python distributions for Chatterley...');
 console.log(`Frontend dir: ${FRONTEND_DIR}`);
 console.log(`Python dist dir: ${PYTHON_DIST_DIR}`);
@@ -338,15 +377,23 @@ async function main() {
     // Determine which platforms to download
     const currentPlatform = getCurrentPlatform();
     console.log(`🖥️  Current platform: ${currentPlatform}`);
-    
-    // For now, just download current platform (can be expanded for CI builds)
-    const platforms = [currentPlatform];
-    
-    // Check if we should download all platforms (CI mode)
-    if (process.argv.includes('--all-platforms')) {
-      platforms.push(...Object.keys(DISTRIBUTIONS).filter(p => p !== currentPlatform));
+
+    const requestedPlatforms = getRequestedPlatforms();
+
+    let platforms = [];
+    if (requestedPlatforms.size > 0) {
+      platforms = Array.from(requestedPlatforms);
+      console.log(`📦 Platforms requested via flags/env: ${platforms.join(', ')}`);
+    } else {
+      platforms = [currentPlatform];
     }
-    
+
+    if (process.argv.includes('--all-platforms')) {
+      console.log('🌐 --all-platforms flag detected; adding remaining distributions');
+      Object.keys(DISTRIBUTIONS).forEach((platform) => requestedPlatforms.add(platform));
+      platforms = Array.from(requestedPlatforms);
+    }
+
     console.log(`📦 Will check/download distributions for: ${platforms.join(', ')}`);
     
     // Check existing distributions first
