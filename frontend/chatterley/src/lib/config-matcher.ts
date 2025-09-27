@@ -104,12 +104,12 @@ export class ConfigMatcher {
     const engineLower = engine.toLowerCase();
     const warnings: string[] = [];
 
-    // Windows desktop build does not ship local VLLM support
-    if (system.platform === 'win32' && engineLower.includes('vllm')) {
-      warnings.push('VLLM is not supported on Windows builds');
+    // Deprioritize SGLang engine across platforms (experimental backend)
+    if (engineLower === 'sglang') {
+      warnings.push('SGLang is experimental and may require additional setup');
       return {
-        score: -30,
-        reason: 'Engine unavailable on Windows',
+        score: -40,
+        reason: 'Experimental backend (low priority)',
         warnings
       };
     }
@@ -338,6 +338,8 @@ export class ConfigMatcher {
       return 'General-purpose engine';
     } else if (engineName === 'vllm') {
       return system.cudaAvailable ? 'High-performance GPU engine' : 'GPU-optimized engine';
+    } else if (engineName === 'sglang') {
+      return 'Experimental SGLang backend';
     } else if (engineName === 'llamacpp') {
       return 'CPU-optimized engine';
     }

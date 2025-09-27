@@ -170,15 +170,10 @@ class ElectronApiClient {
     try {
       const { configPathResolver } = await import('./config-path-resolver');
       const staticConfigs = await configPathResolver.loadStaticConfigs();
-      const platformInfo = this.getPlatform();
-      const filteredConfigs = this.filterConfigsForPlatform(
-        staticConfigs.configs || [],
-        platformInfo.os
-      );
 
       return {
         success: true,
-        data: { configs: filteredConfigs }
+        data: { configs: staticConfigs.configs || [] }
       };
     } catch (error) {
       console.error('UnifiedConfigPathResolver failed:', error);
@@ -493,6 +488,14 @@ class ElectronApiClient {
     return window.electronAPI.python.isSetupNeeded();
   }
 
+  // Install SGLang backend
+  public async installSGLangBackend(): Promise<{ success: boolean; message: string }> {
+    if (!this.isElectron) {
+      throw new Error('SGLang installation only available in Electron app');
+    }
+    return window.electronAPI.python.installSGLang();
+  }
+
   public async getPythonUserDataPath(): Promise<string> {
     if (!this.isElectron) return '';
     return window.electronAPI.python.getUserDataPath();
@@ -565,25 +568,7 @@ class ElectronApiClient {
     return window.electronAPI.platform;
   }
 
-  private filterConfigsForPlatform(configs: ConfigOption[], platform: string): ConfigOption[] {
-    if (platform !== 'win32') {
-      return configs;
-    }
-
-    const filtered = configs.filter((config) => {
-      const engine = (config.engine || '').toLowerCase();
-      return engine !== 'vllm' && engine !== 'remote_vllm';
-    });
-
-    if (filtered.length !== configs.length) {
-      console.info(
-        '[ElectronApi] Filtered VLLM-based configs for Windows platform',
-        { removed: configs.length - filtered.length }
-      );
-    }
-
-    return filtered;
-  }
+  // No platform-specific filtering; engines are presented as defined in configs
 
   // File operations for conversation save/load
   public async saveConversationToFile(conversation: Message[], filename?: string): Promise<boolean> {

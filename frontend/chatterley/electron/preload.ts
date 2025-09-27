@@ -142,6 +142,7 @@ export interface ElectronAPI {
     getSystemChangeInfo: () => Promise<any>;
     getEnvironmentSystemInfo: () => Promise<any>;
     getBasicSystemInfo: () => Promise<any>;
+    installSGLang: () => Promise<{ success: boolean; message: string }>;
     onSetupProgress: (callback: (progress: any) => void) => void;
     offSetupProgress: (callback: (progress: any) => void) => void;
     onSetupError: (callback: (error: string) => void) => void;
@@ -330,6 +331,7 @@ const electronAPI: ElectronAPI = {
     getSystemChangeInfo: () => ipcRenderer.invoke('python:get-system-change-info'),
     getEnvironmentSystemInfo: () => ipcRenderer.invoke('python:get-environment-system-info'),
     getBasicSystemInfo: () => ipcRenderer.invoke('python:get-basic-system-info'),
+    installSGLang: () => ipcRenderer.invoke('python:install-sglang'),
     onSetupProgress: (callback: (progress: any) => void) => {
       const wrappedCallback = (_: IpcRendererEvent, progress: any) => callback(progress);
       ipcRenderer.on('python:setup-progress', wrappedCallback);

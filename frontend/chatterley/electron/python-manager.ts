@@ -126,6 +126,24 @@ export class PythonServerManager {
   }
 
   /**
+   * Install SGLang backend into the managed Python environment
+   */
+  public async installSGLangBackend(): Promise<{ success: boolean; message: string }> {
+    try {
+      await this.ensurePythonEnvironment();
+      if (this.setupProgressCallback) {
+        this.envManager.setProgressCallback(this.setupProgressCallback);
+      }
+      await this.envManager.installSGLangBackend();
+      return { success: true, message: 'SGLang installed successfully' };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      log.error('[PythonServerManager] Failed to install SGLang:', msg);
+      return { success: false, message: msg };
+    }
+  }
+
+  /**
    * Stop the Python backend server
    */
   public async stop(): Promise<void> {

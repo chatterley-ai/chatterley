@@ -1116,6 +1116,15 @@ class UnifiedApiClient {
     }
   }
 
+  // Install SGLang backend (Electron only)
+  async installSGLangBackend(): Promise<{ success: boolean; message: string }> {
+    if (this.isElectron()) {
+      return this.electronClient.installSGLangBackend();
+    } else {
+      return { success: false, message: 'SGLang install not available in web version' };
+    }
+  }
+
   async getSystemChangeInfo(): Promise<{ hasChanged: boolean; changes: string[]; shouldRebuild: boolean } | null> {
     if (this.isElectron()) {
       return this.electronClient.getSystemChangeInfo();
@@ -1218,6 +1227,8 @@ class UnifiedApiClient {
       return null;
     }
   }
+
+  
 
   onSetupProgress(callback: (progress: any) => void): void {
     if (this.isElectron()) {

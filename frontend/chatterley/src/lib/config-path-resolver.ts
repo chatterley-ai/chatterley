@@ -54,7 +54,7 @@ class UnifiedConfigPathResolver implements ConfigPathResolver {
           
           if (response.ok) {
             const loaded = await response.json();
-            this.staticConfigs = this.filterConfigsForPlatform(loaded);
+            this.staticConfigs = loaded;
             logger.info(
               'ConfigPathResolver',
               `Successfully loaded ${this.staticConfigs.configs?.length || 0} configs from: ${location}`
@@ -116,41 +116,7 @@ class UnifiedConfigPathResolver implements ConfigPathResolver {
     this.staticConfigs = undefined;
   }
 
-  private filterConfigsForPlatform(data: any): any {
-    if (!data || !Array.isArray(data.configs)) {
-      return data;
-    }
-
-    let platform = 'unknown';
-    try {
-      if (typeof window !== 'undefined' && (window as any)?.electronAPI?.platform?.os) {
-        platform = (window as any).electronAPI.platform.os;
-      }
-    } catch (error) {
-      logger.warn('ConfigPathResolver', 'Unable to determine platform when filtering configs', error);
-    }
-
-    if (platform === 'win32') {
-      const filteredConfigs = data.configs.filter((config: any) => {
-        const engine = (config?.engine || '').toString().toLowerCase();
-        return !engine.includes('vllm');
-      });
-
-      if (filteredConfigs.length !== data.configs.length) {
-        logger.info(
-          'ConfigPathResolver',
-          `Filtered ${data.configs.length - filteredConfigs.length} VLLM configs for Windows platform`
-        );
-      }
-
-      return {
-        ...data,
-        configs: filteredConfigs
-      };
-    }
-
-    return data;
-  }
+  // No platform-specific filtering here; return loaded configs as-is
 }
 
 // Export singleton instance

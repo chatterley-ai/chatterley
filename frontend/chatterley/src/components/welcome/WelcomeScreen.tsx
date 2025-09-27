@@ -97,6 +97,48 @@ export default function WelcomeScreen({ onConfigSelected, systemCapabilities }: 
     completedFiles: 0,
     hasError: false
   });
+  // Keep a live ref of download state for async waits
+  const downloadStateRef = React.useRef<DownloadState>(downloadState);
+  React.useEffect(() => {
+    downloadStateRef.current = downloadState;
+  }, [downloadState]);
+
+  // Helper: wait until all downloads finish (or error)
+  const waitForDownloadsToFinish = React.useCallback(async () => {
+    // Quick exit if nothing is downloading
+    const isActive = () => {
+      const s = downloadStateRef.current;
+      // Consider downloads active if marked downloading or if there are any incomplete files
+      const anyFiles = s.totalFiles > 0 || s.downloads.size > 0;
+      const incomplete = s.completedFiles < s.totalFiles;
+      return s.isDownloading || (anyFiles && incomplete);
+    };
+
+    if (!isActive()) return;
+
+    await new Promise<void>((resolve, reject) => {
+      const start = Date.now();
+      const interval = setInterval(() => {
+        const s = downloadStateRef.current;
+        // Abort on error
+        if (s.hasError) {
+          clearInterval(interval);
+          reject(new Error(s.errorMessage || 'Download error'));
+          return;
+        }
+        if (!isActive()) {
+          clearInterval(interval);
+          resolve();
+        }
+      }, 500);
+      // Safety net: if something goes wrong, don't loop forever. Give very generous window.
+      const maxWaitMs = 6 * 60 * 60 * 1000; // 6 hours
+      setTimeout(() => {
+        try { clearInterval(interval); } catch {}
+        resolve();
+      }, maxWaitMs);
+    });
+  }, []);
 
   // Python environment setup state
   const [envSetupNeeded, setEnvSetupNeeded] = React.useState(false);
@@ -519,16 +561,41 @@ export default function WelcomeScreen({ onConfigSelected, systemCapabilities }: 
       }));
 
       setTestProgress('Testing model configuration...');
-      
-      // Run model test to trigger download if needed
-      const testResult = await apiClient.testModel(config.config_path);
-      
-      if (!testResult.success) {
-        throw new Error(testResult.message || 'Model test failed');
-      }
 
-      if (!testResult.data?.success) {
-        throw new Error(testResult.data?.message || 'Model test did not complete successfully');
+      // Run model test to trigger download if needed (download-aware)
+      const runTest = async () => {
+        const result = await apiClient.testModel(config.config_path);
+        if (!result.success) {
+          throw new Error(result.message || 'Model test failed');
+        }
+        if (!result.data?.success) {
+          throw new Error(result.data?.message || 'Model test did not complete successfully');
+        }
+        return result;
+      };
+
+      let testResult;
+      try {
+        testResult = await runTest();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        const downloadsActive = (() => {
+          const s = downloadStateRef.current;
+          const anyFiles = s.totalFiles > 0 || s.downloads.size > 0;
+          const incomplete = s.completedFiles < s.totalFiles;
+          return s.isDownloading || (anyFiles && incomplete);
+        })();
+
+        const looksLikeTimeout = /timeout|timed out|time out/i.test(msg);
+        if (downloadsActive && looksLikeTimeout) {
+          // Pause failure handling while weights are downloading; retry after completion
+          setTestProgress('Model test timed out, but downloads are in progress. Waiting for downloads to complete...');
+          await waitForDownloadsToFinish();
+          setTestProgress('Downloads complete. Retrying model test...');
+          testResult = await runTest();
+        } else {
+          throw err;
+        }
       }
 
       try {
@@ -615,6 +682,7 @@ export default function WelcomeScreen({ onConfigSelected, systemCapabilities }: 
     switch (e) {
       case 'vllm': return <Zap className="w-4 h-4 text-blue-500" />;
       case 'native': return <Bot className="w-4 h-4 text-green-500" />;
+      case 'sglang': return <Settings className="w-4 h-4 text-orange-500" />;
       case 'llamacpp': return <Settings className="w-4 h-4 text-purple-500" />;
       default: return <Bot className="w-4 h-4 text-gray-500" />;
     }
@@ -971,6 +1039,7 @@ export default function WelcomeScreen({ onConfigSelected, systemCapabilities }: 
                     <option value="all">All Engines</option>
                     <option value="native">Native (CPU/GPU)</option>
                     <option value="vllm">vLLM (GPU)</option>
+                    <option value="sglang">SGLang (GPU)</option>
                     <option value="llamacpp">LlamaCPP (CPU)</option>
                   </select>
 

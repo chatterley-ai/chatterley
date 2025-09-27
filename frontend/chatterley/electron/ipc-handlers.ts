@@ -711,6 +711,18 @@ function setupPythonEnvironmentHandlers(pythonManager: PythonServerManager): voi
     }
   });
 
+  // Install SGLang backend in environment
+  ipcMain.handle('python:install-sglang', async () => {
+    try {
+      log.info('Installing SGLang backend via IPC');
+      const result = await pythonManager.installSGLangBackend();
+      return result;
+    } catch (error) {
+      log.error('Failed to install SGLang backend:', error);
+      return { success: false, message: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  });
+
   // Get user data path
   ipcMain.handle('python:get-user-data-path', async () => {
     try {

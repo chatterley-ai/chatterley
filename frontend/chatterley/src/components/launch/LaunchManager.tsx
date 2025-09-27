@@ -390,14 +390,33 @@ export default function LaunchManager({}: LaunchManagerProps) {
           await handleRebuildPythonEnvironment();
         };
 
+        const handleInstallSGLangMessage = async () => {
+          console.log('🔧 [LaunchManager] Received menu:install-sglang message');
+          try {
+            const confirmInstall = window.confirm('Install SGLang backend into the Chatterley Python environment?');
+            if (!confirmInstall) return;
+            const result = await apiClient.installSGLangBackend();
+            if (result.success) {
+              alert('SGLang backend installed successfully. You may need to reload the engine.');
+            } else {
+              alert(`Failed to install SGLang backend: ${result.message}`);
+            }
+          } catch (e) {
+            console.error('SGLang install failed:', e);
+            alert(`Failed to install SGLang backend: ${e instanceof Error ? e.message : 'Unknown error'}`);
+          }
+        };
+
         console.log('🔧 [LaunchManager] Registering menu listeners');
         window.electronAPI.onMenuMessage('menu:reset-welcome-settings', handleResetWelcomeMessage);
         window.electronAPI.onMenuMessage('menu:rebuild-python-environment', handleRebuildEnvironmentMessage);
+        window.electronAPI.onMenuMessage('menu:install-sglang', handleInstallSGLangMessage);
 
         return () => {
           console.log('🔧 [LaunchManager] Cleaning up menu listeners');
           window.electronAPI.removeMenuListener('menu:reset-welcome-settings', handleResetWelcomeMessage);
           window.electronAPI.removeMenuListener('menu:rebuild-python-environment', handleRebuildEnvironmentMessage);
+          window.electronAPI.removeMenuListener('menu:install-sglang', handleInstallSGLangMessage);
         };
       }
     };

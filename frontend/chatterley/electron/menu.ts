@@ -128,6 +128,24 @@ export function createApplicationMenu(mainWindow: BrowserWindow): Menu {
             }
           }
         },
+        {
+          label: 'Install SGLang Backend',
+          click: async () => {
+            log.info('🔧 Menu: Install SGLang Backend clicked');
+            const result = await dialog.showMessageBox(mainWindow, {
+              type: 'question',
+              title: 'Install SGLang Backend',
+              message: 'Install SGLang backend into the Chatterley Python environment?',
+              buttons: ['Cancel', 'Install'],
+              defaultId: 1,
+              cancelId: 0
+            });
+
+            if (result.response === 1) {
+              mainWindow.webContents.send('menu:install-sglang');
+            }
+          }
+        },
         ...(!isMac ? [
           { type: 'separator' as const },
           { label: 'Exit', accelerator: 'Ctrl+Q', click: () => app.quit() }

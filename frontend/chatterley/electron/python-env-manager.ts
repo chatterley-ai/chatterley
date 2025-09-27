@@ -869,4 +869,97 @@ export class PythonEnvironmentManager {
       throw error;
     }
   }
+
+  /**
+   * Ensure SGLang backend is installed in the managed environment
+   */
+  public async installSGLangBackend(): Promise<void> {
+    // Ensure environment exists and is valid
+    const envInfo = await this.checkEnvironment();
+    let pythonPath = envInfo.pythonPath;
+    const envPath = this.getEnvironmentPath();
+
+    if (!envInfo.isValid || !pythonPath) {
+      // Create environment if missing/invalid
+      const setup = await this.setupEnvironment();
+      pythonPath = setup.pythonPath;
+    }
+
+    // Determine uv path inside the venv
+    const uvPath = process.platform === 'win32'
+      ? path.join(envPath, 'Scripts', 'uv.exe')
+      : path.join(envPath, 'bin', 'uv');
+
+    // Install uv if missing
+    if (!fs.existsSync(uvPath)) {
+      await this.reportProgress('sglang', 5, 'Installing uv package manager...');
+      await this.installUv(pythonPath);
+    }
+
+    await this.reportProgress('sglang', 15, 'Installing SGLang backend...');
+
+    await new Promise<void>((resolve, reject) => {
+      const installProcess = spawn(uvPath, [
+        'pip', 'install',
+        'sglang',
+        '-v'
+      ], {
+        stdio: 'pipe',
+        env: {
+          ...process.env,
+          VIRTUAL_ENV: envPath,
+          PATH: `${path.dirname(uvPath)}:${process.env.PATH}`,
+        }
+      });
+
+      let stderr = '';
+      let stdout = '';
+      
+      installProcess.stdout?.on('data', (data) => {
+        stdout += data.toString();
+        const line = data.toString().trim();
+        if (line) {
+          log.info(`[PythonEnvManager] SGLang install: ${line}`);
+        }
+      });
+      
+      installProcess.stderr?.on('data', (data) => {
+        stderr += data.toString();
+        const line = data.toString().trim();
+        if (line) {
+          log.info(`[PythonEnvManager] SGLang install stderr: ${line}`);
+        }
+      });
+
+      installProcess.on('close', async (code) => {
+        if (code === 0) {
+          await this.reportProgress('sglang', 90, 'Verifying SGLang installation...');
+          try {
+            // Quick import check inside the environment
+            const checkProc = spawn(pythonPath, ['-c', 'import sglang; print("OK")'], { stdio: 'pipe' });
+            let ok = false;
+            checkProc.stdout?.on('data', (d) => { if (String(d).includes('OK')) ok = true; });
+            checkProc.on('close', async () => {
+              if (ok) {
+                await this.reportProgress('sglang', 100, 'SGLang installation complete', true);
+                resolve();
+              } else {
+                reject(new Error('SGLang import test failed'));
+              }
+            });
+          } catch (e) {
+            reject(e instanceof Error ? e : new Error(String(e)));
+          }
+        } else {
+          log.error('[PythonEnvManager] SGLang installation failed:', stderr);
+          reject(new Error(stderr || 'Failed to install SGLang'));
+        }
+      });
+
+      installProcess.on('error', (error) => {
+        log.error('[PythonEnvManager] SGLang installation error:', error);
+        reject(error);
+      });
+    });
+  }
 }

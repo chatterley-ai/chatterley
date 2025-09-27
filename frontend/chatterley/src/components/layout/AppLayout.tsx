@@ -240,6 +240,69 @@ export default function AppLayout() {
     }
   }, [isInitialized, currentBranchId, setCurrentBranch]);
 
+  // Auto-reload engine on wake (app regains visibility/focus after sleep)
+  React.useEffect(() => {
+    let lastHiddenAt: number | null = null;
+
+    const waitForHealthy = async (maxWaitMs = 60000) => {
+      const start = Date.now();
+      let delay = 300;
+      while (Date.now() - start < maxWaitMs) {
+        try {
+          const h = await apiClient.health();
+          if (h.success) return true;
+        } catch {}
+        await new Promise(r => setTimeout(r, delay));
+        delay = Math.min(2000, Math.round(delay * 1.3 + Math.random() * 100));
+      }
+      return false;
+    };
+
+    const reloadEngine = async () => {
+      try {
+        if (apiClient.isElectron && apiClient.isElectron()) {
+          await apiClient.restartServer();
+          await waitForHealthy();
+        } else {
+          try { await apiClient.clearModel(); } catch {}
+          // Lazy reload by probing
+          await apiClient.health().catch(() => {});
+        }
+        console.log('🔁 Engine reloaded after wake');
+      } catch (e) {
+        console.warn('Failed to auto-reload engine after wake:', e);
+      }
+    };
+
+    const onVisibility = () => {
+      if (document.hidden) {
+        lastHiddenAt = Date.now();
+      } else {
+        // Became visible; if it was hidden for a while, treat as wake
+        const sleptMs = lastHiddenAt ? Date.now() - lastHiddenAt : 0;
+        lastHiddenAt = null;
+        if (sleptMs > 30000) {
+          void reloadEngine();
+        }
+      }
+    };
+
+    const onFocus = () => {
+      // Fallback: if regaining focus after a long gap, reload
+      if (lastHiddenAt && Date.now() - lastHiddenAt > 30000) {
+        void reloadEngine();
+        lastHiddenAt = null;
+      }
+    };
+
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('focus', onFocus);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, []);
+
   const handleClearConversation = async () => {
     if (confirm('Are you sure you want to clear this conversation? This action cannot be undone.')) {
       try {
@@ -641,6 +704,5 @@ export default function AppLayout() {
         <ToastContainer />
       </div>
     </div>
-  </div>
 );
 }

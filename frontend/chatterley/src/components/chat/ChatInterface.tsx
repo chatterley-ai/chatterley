@@ -5,6 +5,8 @@
 "use client";
 
 import React from 'react';
+import useErrorHandler from '@/hooks/useErrorHandler';
+import ErrorDialog from '@/components/ui/ErrorDialog';
 import { generateDisplayName } from '@/lib/nameGen';
 import { useChatStore } from '@/lib/store';
 import { useAutoSave } from '@/hooks/useAutoSave';
@@ -432,6 +434,8 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
   };
 
   const [isOmniCapable, setIsOmniCapable] = React.useState(false);
+  // Error dialog state for actionable errors
+  const { currentError, showError, clearError } = useErrorHandler();
 
   React.useEffect(() => {
     void ensureModelLoaded();
@@ -445,7 +449,37 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
   // eslint-disable-next-line react-hooks-exhaustive-deps
   }, [settings.selectedModel]);
 
-  const handleChatMessage = async (content: string, attachments?: PreparedAttachment[]) => {
+  // Helper: wait for backend health up to a cap
+  const waitForHealthy = async (maxWaitMs = 30000) => {
+    const start = Date.now();
+    let delay = 300;
+    while (Date.now() - start < maxWaitMs) {
+      try {
+        const h = await apiClient.health();
+        if (h.success) return true;
+      } catch {}
+      await new Promise(r => setTimeout(r, delay));
+      delay = Math.min(2000, Math.round(delay * 1.3 + Math.random() * 100));
+    }
+    return false;
+  };
+
+  const reloadEngine = async () => {
+    try {
+      if (apiClient.isElectron && apiClient.isElectron()) {
+        await apiClient.restartServer();
+        await waitForHealthy(60000);
+      } else {
+        // Web fallback: clear model and try to reload lazily
+        try { await apiClient.clearModel(); } catch {}
+        await ensureModelLoaded();
+      }
+    } catch (e) {
+      console.warn('Engine reload failed:', e);
+    }
+  };
+
+  const handleChatMessage = async (content: string, attachments?: PreparedAttachment[], allowRetry: boolean = true) => {
     setTyping(true);
     setShouldStop(false);
     
@@ -579,17 +613,46 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
       
       // Clear streaming state on error
       currentStreamingMessageId.current = null;
-      
-      // Add error message
-      const errorMessage: Message = {
-        id: `error-${Date.now()}`,
-        role: 'assistant',
-        content: error instanceof Error && error.message.includes('Backend may still be loading')
-          ? '🔄 Backend is starting up. Please wait for the model to load and try again.'
-          : `❌ Error: ${error instanceof Error ? error.message : 'Failed to send message'}`,
-        timestamp: Date.now(),
-      };
-      addMessage(errorMessage);
+
+      const msg = error instanceof Error ? error.message : String(error ?? '');
+      const inactiveEngine = /inactive inference engine/i.test(msg) || /Inference failed:\s*Inactive/i.test(msg);
+
+      if (inactiveEngine && allowRetry) {
+        // Show actionable popup: Reload engine and retry
+        showError(
+          'Engine Inactive',
+          'The inference engine appears to be inactive. You can reload the engine and try your request again.',
+          `❌ Error: ${msg}`,
+          {
+            actions: {
+              primary: {
+                label: 'Reload Engine and Retry',
+                action: async () => {
+                  clearError();
+                  await reloadEngine();
+                  // Retry once without looping endlessly
+                  void handleChatMessage(content, attachments, false);
+                },
+              },
+              secondary: {
+                label: 'Cancel',
+                action: () => clearError(),
+              }
+            }
+          }
+        );
+      } else {
+        // Add error message to chat stream
+        const errorMessage: Message = {
+          id: `error-${Date.now()}`,
+          role: 'assistant',
+          content: error instanceof Error && msg.includes('Backend may still be loading')
+            ? '🔄 Backend is starting up. Please wait for the model to load and try again.'
+            : `❌ Error: ${msg || 'Failed to send message'}`,
+          timestamp: Date.now(),
+        };
+        addMessage(errorMessage);
+      }
     } finally {
       setTyping(false);
     }
@@ -630,6 +693,8 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
           isOmniCapable={isOmniCapable}
         />
       </div>
+      {/* Error dialog for actionable engine errors */}
+      <ErrorDialog error={currentError} onClose={clearError} />
     </div>
   );
 }
