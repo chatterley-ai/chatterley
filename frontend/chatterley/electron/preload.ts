@@ -1,0 +1,438 @@
+/**
+ * Electron preload script - secure IPC bridge between main and renderer processes
+ */
+
+import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
+
+// Raise listener cap to reduce noisy dev warnings while we fix leaks
+// Note: This does not replace proper add/remove pairing below.
+try {
+  ipcRenderer.setMaxListeners?.(50);
+} catch {}
+
+// Internal maps to ensure we remove the exact wrapped listeners we add
+const menuListenerMap = new Map<string, Map<Function, Function>>();
+const eventsListenerMap = new Map<string, Map<Function, Function>>();
+const downloadProgressListenerMap = new Map<Function, Function>();
+const downloadErrorListenerMap = new Map<Function, Function>();
+
+// API interface for renderer process
+export interface ElectronAPI {
+  // Application control
+  app: {
+    getVersion: () => Promise<string>;
+    quit: () => void;
+    reload: () => void;
+    toggleDevTools: () => void;
+    toggleFullScreen: () => void;
+    zoom: (direction: 'in' | 'out' | 'reset') => void;
+    hideLoadingScreen: () => Promise<{ success: boolean; message: string }>;
+  };
+
+  // File system operations
+  files: {
+    showSaveDialog: (options: any) => Promise<string | null>;
+    showOpenDialog: (options: any) => Promise<string[] | null>;
+    writeFile: (filePath: string, content: string) => Promise<boolean>;
+    readFile: (filePath: string) => Promise<string | null>;
+    exists: (filePath: string) => Promise<boolean>;
+  };
+
+  // Server control
+  server: {
+    start: (configPath?: string, systemPrompt?: string) => Promise<any>;
+    stop: () => Promise<any>;
+    restart: () => Promise<any>;
+    status: () => Promise<any>;
+    testModel: (configPath: string) => Promise<{ success: boolean; message?: string }>;
+  };
+
+  // Chat API operations (replacing HTTP calls)
+  chat: {
+    // Health and system info
+    health: () => Promise<any>;
+    getSystemStats: (sessionId?: string) => Promise<any>;
+    getModelStats: () => Promise<any>;
+    clearModel: () => Promise<any>;
+
+    // Chat operations
+    chatCompletion: (request: any) => Promise<any>;
+    streamChatCompletion: (request: any, onChunk: (chunk: string) => void) => Promise<any>;
+
+    // Configuration
+    getConfigs: () => Promise<any>;
+    getModels: () => Promise<any>;
+
+    // Branch management
+    getBranches: (sessionId?: string) => Promise<any>;
+    createBranch: (sessionId: string, name: string, parentBranchId?: string) => Promise<any>;
+    switchBranch: (sessionId: string, branchId: string) => Promise<any>;
+    deleteBranch: (sessionId: string, branchId: string) => Promise<any>;
+
+    // Conversation management
+    getConversation: (sessionId?: string, branchId?: string) => Promise<any>;
+    sendMessage: (content: string, sessionId?: string, branchId?: string) => Promise<any>;
+
+    // Command execution
+    executeCommand: (
+      command: string,
+      args?: string[],
+      sessionId?: string,
+      branchId?: string,
+      target?: { messageId?: string; index?: number; payload?: string }
+    ) => Promise<any>;
+
+    // Node regen
+    regenNode: (
+      params: { assistantId?: string; userMessageId?: string; prompt?: string; sessionId?: string; branchId?: string; historyMode?: 'none'|'last_user'|'full' }
+    ) => Promise<any>;
+  };
+
+  // Real-time event system (replacing WebSocket)
+  events: {
+    // Listen for events from main process
+    on: (channel: string, listener: (...args: any[]) => void) => void;
+    off: (channel: string, listener: (...args: any[]) => void) => void;
+    
+    // Send events to main process
+    send: (channel: string, ...args: any[]) => void;
+    
+    // Invoke and wait for response
+    invoke: (channel: string, ...args: any[]) => Promise<any>;
+  };
+
+  // Storage operations
+  storage: {
+    get: (key: string, defaultValue?: any) => Promise<any>;
+    set: (key: string, value: any) => Promise<void>;
+    delete: (key: string) => Promise<void>;
+    clear: () => Promise<void>;
+    getAllKeys: () => Promise<string[]>;
+    resetWelcomeSettings: () => Promise<any>;
+  };
+
+  // System detection
+  system: {
+    getCapabilities: () => Promise<any>;
+    getInfo: () => Promise<any>;
+    getModelTestStatus: () => Promise<{ running: boolean; pid?: number; startedAt?: string }>; 
+  };
+
+  // API Key management
+  apiKeys: {
+    store: (config: any) => Promise<any>;
+    get: (providerId: string) => Promise<any>;
+    getAll: () => Promise<any>;
+    remove: (providerId: string) => Promise<any>;
+    updateStatus: (providerId: string, updates: any) => Promise<any>;
+    validateWithOumi: (providerId: string) => Promise<any>;
+    testWithConfig: (providerId: string, configPath: string) => Promise<any>;
+    checkMigrationNeeded: () => Promise<any>;
+    clearAll: () => Promise<any>;
+  };
+
+
+  // Python environment setup
+  python: {
+    isSetupNeeded: () => Promise<boolean>;
+    getUserDataPath: () => Promise<string>;
+    cancelSetup: () => Promise<void>;
+    rebuildEnvironment: () => Promise<{ success: boolean; message: string }>;
+    removeEnvironment: () => Promise<{ success: boolean; message: string }>;
+    getSystemChangeInfo: () => Promise<any>;
+    getEnvironmentSystemInfo: () => Promise<any>;
+    getBasicSystemInfo: () => Promise<any>;
+    onSetupProgress: (callback: (progress: any) => void) => void;
+    offSetupProgress: (callback: (progress: any) => void) => void;
+    onSetupError: (callback: (error: string) => void) => void;
+    offSetupError: (callback: (error: string) => void) => void;
+  };
+
+  // Platform information
+  platform: {
+    os: string;
+    arch: string;
+    version: string;
+  };
+
+  // Menu message handlers
+  onMenuMessage: (channel: string, callback: (...args: any[]) => void) => void;
+  removeMenuListener: (channel: string, callback: (...args: any[]) => void) => void;
+
+  // Download progress handlers
+  onDownloadProgress: (callback: (progress: any) => void) => void;
+  onDownloadError: (callback: (error: any) => void) => void;
+  removeDownloadProgressListener: (callback: (progress: any) => void) => void;
+  removeDownloadErrorListener: (callback: (error: any) => void) => void;
+
+  // Logging system
+  logger?: {
+    writeLog: (entry: any) => Promise<void>;
+  };
+}
+
+// Create the API object
+const electronAPI: ElectronAPI = {
+  app: {
+    getVersion: () => ipcRenderer.invoke('app:get-version'),
+    quit: () => ipcRenderer.send('app:quit'),
+    reload: () => ipcRenderer.send('app:reload'),
+    toggleDevTools: () => ipcRenderer.send('app:toggle-dev-tools'),
+    toggleFullScreen: () => ipcRenderer.send('app:toggle-full-screen'),
+    zoom: (direction) => ipcRenderer.send('app:zoom', direction),
+    hideLoadingScreen: () => ipcRenderer.invoke('app:hide-loading-screen')
+  },
+
+  files: {
+    showSaveDialog: (options) => ipcRenderer.invoke('files:show-save-dialog', options),
+    showOpenDialog: (options) => ipcRenderer.invoke('files:show-open-dialog', options),
+    writeFile: (filePath, content) => ipcRenderer.invoke('files:write-file', filePath, content),
+    readFile: (filePath) => ipcRenderer.invoke('files:read-file', filePath),
+    exists: (filePath) => ipcRenderer.invoke('files:exists', filePath)
+  },
+
+  server: {
+    start: (configPath?: string, systemPrompt?: string) => ipcRenderer.invoke('server:start', configPath, systemPrompt),
+    stop: () => ipcRenderer.invoke('server:stop'),
+    restart: () => ipcRenderer.invoke('server:restart'),
+    status: () => ipcRenderer.invoke('server:status'),
+    testModel: (configPath: string) => ipcRenderer.invoke('server:test-model', configPath)
+  },
+
+  chat: {
+    health: () => ipcRenderer.invoke('chat:health'),
+    getSystemStats: (sessionId?: string) => ipcRenderer.invoke('chat:get-system-stats', sessionId),
+    getModelStats: () => ipcRenderer.invoke('chat:get-model-stats'),
+    clearModel: () => ipcRenderer.invoke('chat:clear-model'),
+
+    chatCompletion: (request) => ipcRenderer.invoke('chat:completion', request),
+    streamChatCompletion: async (request, onChunk) => {
+      // Set up stream listener
+      const streamId = Math.random().toString(36).substr(2, 9);
+      
+      const cleanup = () => {
+        ipcRenderer.removeAllListeners(`chat:stream-chunk:${streamId}`);
+        ipcRenderer.removeAllListeners(`chat:stream-end:${streamId}`);
+        ipcRenderer.removeAllListeners(`chat:stream-error:${streamId}`);
+      };
+
+      return new Promise((resolve, reject) => {
+        // Listen for chunks
+        ipcRenderer.on(`chat:stream-chunk:${streamId}`, (_, chunk) => {
+          onChunk(chunk);
+        });
+
+        // Listen for stream end
+        ipcRenderer.on(`chat:stream-end:${streamId}`, (_, result) => {
+          cleanup();
+          resolve(result);
+        });
+
+        // Listen for errors
+        ipcRenderer.on(`chat:stream-error:${streamId}`, (_, error) => {
+          cleanup();
+          reject(new Error(error));
+        });
+
+        // Start the stream
+        ipcRenderer.invoke('chat:stream-completion', request, streamId).catch(reject);
+      });
+    },
+
+    getConfigs: () => ipcRenderer.invoke('chat:get-configs'),
+    getModels: () => ipcRenderer.invoke('chat:get-models'),
+
+    getBranches: (sessionId) => ipcRenderer.invoke('chat:get-branches', sessionId),
+    createBranch: (sessionId, name, parentBranchId) => 
+      ipcRenderer.invoke('chat:create-branch', sessionId, name, parentBranchId),
+    switchBranch: (sessionId, branchId) => 
+      ipcRenderer.invoke('chat:switch-branch', sessionId, branchId),
+    deleteBranch: (sessionId, branchId) => 
+      ipcRenderer.invoke('chat:delete-branch', sessionId, branchId),
+
+    getConversation: (sessionId, branchId = 'main') => 
+      ipcRenderer.invoke('chat:get-conversation', sessionId, branchId),
+    sendMessage: (content, sessionId, branchId = 'main') => 
+      ipcRenderer.invoke('chat:send-message', content, sessionId, branchId),
+
+    executeCommand: (command, args = [], sessionId?: string, branchId?: string, target?: { messageId?: string; index?: number; payload?: string }) => 
+      ipcRenderer.invoke('chat:execute-command', command, args, sessionId, branchId, target),
+
+    regenNode: (params) => ipcRenderer.invoke('chat:regen-node', params),
+  },
+
+  events: {
+    on: (channel: string, listener: (...args: any[]) => void) => {
+      const wrapped = (_: IpcRendererEvent, ...args: any[]) => listener(...args);
+      let map = eventsListenerMap.get(channel);
+      if (!map) {
+        map = new Map();
+        eventsListenerMap.set(channel, map);
+      }
+      map.set(listener, wrapped);
+      ipcRenderer.on(channel, wrapped);
+    },
+
+    off: (channel: string, listener: (...args: any[]) => void) => {
+      const wrapped = eventsListenerMap.get(channel)?.get(listener) as any;
+      if (wrapped) {
+        ipcRenderer.removeListener(channel, wrapped);
+        eventsListenerMap.get(channel)!.delete(listener);
+      }
+    },
+    
+    send: (channel: string, ...args: any[]) => {
+      ipcRenderer.send(channel, ...args);
+    },
+    
+    invoke: (channel: string, ...args: any[]) => {
+      return ipcRenderer.invoke(channel, ...args);
+    }
+  },
+
+  storage: {
+    get: (key, defaultValue) => ipcRenderer.invoke('storage:get', key, defaultValue),
+    set: (key, value) => ipcRenderer.invoke('storage:set', key, value),
+    delete: (key) => ipcRenderer.invoke('storage:delete', key),
+    clear: () => ipcRenderer.invoke('storage:clear'),
+    getAllKeys: () => ipcRenderer.invoke('storage:get-all-keys'),
+    resetWelcomeSettings: () => ipcRenderer.invoke('storage:reset-welcome-settings')
+  },
+
+  // System detection
+  system: {
+    getCapabilities: () => ipcRenderer.invoke('system:get-capabilities'),
+    getInfo: () => ipcRenderer.invoke('system:get-info'),
+    getModelTestStatus: () => ipcRenderer.invoke('test:get-status')
+  },
+
+  // API Key management
+  apiKeys: {
+    store: (config) => ipcRenderer.invoke('apikey:store', config),
+    get: (providerId) => ipcRenderer.invoke('apikey:get', providerId),
+    getAll: () => ipcRenderer.invoke('apikey:get-all'),
+    remove: (providerId) => ipcRenderer.invoke('apikey:remove', providerId),
+    updateStatus: (providerId, updates) => ipcRenderer.invoke('apikey:update-status', providerId, updates),
+    validateWithOumi: (providerId) => ipcRenderer.invoke('apikey:validate-with-oumi', providerId),
+    testWithConfig: (providerId, configPath) => ipcRenderer.invoke('apikey:test-with-config', providerId, configPath),
+    checkMigrationNeeded: () => ipcRenderer.invoke('apikey:check-migration-needed'),
+    clearAll: () => ipcRenderer.invoke('apikey:clear-all')
+  },
+
+
+  // Python environment setup
+  python: {
+    isSetupNeeded: () => ipcRenderer.invoke('python:is-setup-needed'),
+    getUserDataPath: () => ipcRenderer.invoke('python:get-user-data-path'),
+    cancelSetup: () => ipcRenderer.invoke('python:cancel-setup'),
+    rebuildEnvironment: () => ipcRenderer.invoke('python:rebuild-environment'),
+    removeEnvironment: () => ipcRenderer.invoke('python:remove-environment'),
+    getSystemChangeInfo: () => ipcRenderer.invoke('python:get-system-change-info'),
+    getEnvironmentSystemInfo: () => ipcRenderer.invoke('python:get-environment-system-info'),
+    getBasicSystemInfo: () => ipcRenderer.invoke('python:get-basic-system-info'),
+    onSetupProgress: (callback: (progress: any) => void) => {
+      const wrappedCallback = (_: IpcRendererEvent, progress: any) => callback(progress);
+      ipcRenderer.on('python:setup-progress', wrappedCallback);
+    },
+    offSetupProgress: (callback: (progress: any) => void) => {
+      ipcRenderer.removeAllListeners('python:setup-progress');
+    },
+    onSetupError: (callback: (error: string) => void) => {
+      const wrappedCallback = (_: IpcRendererEvent, error: string) => callback(error);
+      ipcRenderer.on('python:setup-error', wrappedCallback);
+    },
+    offSetupError: (callback: (error: string) => void) => {
+      ipcRenderer.removeAllListeners('python:setup-error');
+    }
+  },
+
+  platform: {
+    os: process.platform,
+    arch: process.arch,
+    version: process.version
+  },
+
+  // Menu message handlers
+  onMenuMessage: (channel: string, callback: (...args: any[]) => void) => {
+    const wrapped = (_: IpcRendererEvent, ...args: any[]) => callback(...args);
+    let map = menuListenerMap.get(channel);
+    if (!map) {
+      map = new Map();
+      menuListenerMap.set(channel, map);
+    }
+    map.set(callback, wrapped);
+    ipcRenderer.on(channel, wrapped);
+  },
+
+  removeMenuListener: (channel: string, callback: (...args: any[]) => void) => {
+    const wrapped = menuListenerMap.get(channel)?.get(callback) as any;
+    if (wrapped) {
+      ipcRenderer.removeListener(channel, wrapped);
+      menuListenerMap.get(channel)!.delete(callback);
+    }
+  },
+
+  // Download progress handlers
+  onDownloadProgress: (callback: (progress: any) => void) => {
+    const wrapped = (_: IpcRendererEvent, progress: any) => callback(progress);
+    downloadProgressListenerMap.set(callback, wrapped);
+    ipcRenderer.on('server:download-progress', wrapped as any);
+  },
+
+  onDownloadError: (callback: (error: any) => void) => {
+    const wrapped = (_: IpcRendererEvent, error: any) => callback(error);
+    downloadErrorListenerMap.set(callback, wrapped);
+    ipcRenderer.on('server:download-error', wrapped as any);
+  },
+
+  removeDownloadProgressListener: (callback: (progress: any) => void) => {
+    const wrapped = downloadProgressListenerMap.get(callback) as any;
+    if (wrapped) {
+      ipcRenderer.removeListener('server:download-progress', wrapped);
+      downloadProgressListenerMap.delete(callback);
+    }
+  },
+
+  removeDownloadErrorListener: (callback: (error: any) => void) => {
+    const wrapped = downloadErrorListenerMap.get(callback) as any;
+    if (wrapped) {
+      ipcRenderer.removeListener('server:download-error', wrapped);
+      downloadErrorListenerMap.delete(callback);
+    }
+  },
+
+  // Logging system (optional - may not be implemented in main process yet)
+  logger: {
+    writeLog: async (entry: any) => {
+      try {
+        return await ipcRenderer.invoke('logger:write', entry);
+      } catch (error) {
+        console.warn('[Logger] Failed to write log to file:', error);
+      }
+    }
+  }
+};
+
+// Expose the API to the renderer process
+contextBridge.exposeInMainWorld('electronAPI', electronAPI);
+
+// Type declaration for global window object (used in renderer)
+declare global {
+  interface Window {
+    electronAPI: ElectronAPI;
+  }
+}
+
+// Validate that context isolation is working
+window.addEventListener('DOMContentLoaded', () => {
+  const replaceText = (selector: string, text: string) => {
+    const element = document.getElementById(selector);
+    if (element) element.innerText = text;
+  };
+
+  for (const dependency of ['chrome', 'node', 'electron']) {
+    replaceText(`${dependency}-version`, (process.versions as any)[dependency]);
+  }
+});
+
+export {};

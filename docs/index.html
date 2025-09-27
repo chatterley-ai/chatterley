@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Chatterley – Local-first Desktop AI</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <header>
+    <a href="./"><img src="../frontend/chatterley/public/images/chatterley-logo.png" alt="Chatterley" /></a>
+  </header>
+  <main class="container">
+    <section class="hero">
+      <div style="max-width:640px">
+        <h1>Chatterley</h1>
+        <p>Private, local-first desktop AI chat. Electron + Next.js app with an embedded Oumi backend for fast, configurable inference.</p>
+        <div class="cta">
+          <a class="btn" href="https://github.com/chatterley-ai/chatterley">View on GitHub</a>
+          <a class="btn secondary" href="./downloads.html">Download</a>
+          <a class="btn secondary" href="#quickstart">Quickstart</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="grid">
+      <div class="card">
+        <h3>Why Chatterley?</h3>
+        <ul>
+          <li><strong>Local-first</strong>: keep data on your machine</li>
+          <li><strong>Flexible</strong>: Transformers, vLLM, llama.cpp, APIs</li>
+          <li><strong>Cross-platform</strong>: macOS, Windows, Linux</li>
+          <li><strong>Integrated</strong>: Desktop UI + Python backend</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Model Library</h3>
+        <p>Discovers configs from <code>backend/oumi/configs</code>, including local text models and diffusers (e.g., SDXL). API providers supported via separate config files.</p>
+      </div>
+      <div class="card">
+        <h3>Developer Friendly</h3>
+        <p>Electron tooling manages a clean Python environment, spawns Oumi processes, and streams logs for diagnostics.</p>
+      </div>
+    </section>
+
+    <section id="quickstart" class="card" style="margin-top:16px">
+      <h2>Quickstart</h2>
+      <pre><code># Backend (terminal A)
+cd backend/oumi
+conda activate oumi
+python -m oumi.webchat.server --port 9000
+
+# Desktop app (terminal B)
+cd frontend/chatterley
+npm install
+NEXT_PUBLIC_BACKEND_URL=http://localhost:9000 npm run electron:debug</code></pre>
+      <p>Pick a model in Settings → Model. Diffusion configs appear in the Diffusion Workbench.</p>
+    </section>
+
+    <section class="card" style="margin-top:16px">
+      <h2>REST API</h2>
+      <pre><code>curl -s http://localhost:9000/v1/chat/completions -X POST \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "messages": [{"role":"user","content":"Why is the sky blue?"}],
+    "max_tokens": 64,
+    "stream": false
+  }'</code></pre>
+      <p>See <code>backend/oumi/src/oumi/webchat/routes.py</code> for more endpoints.</p>
+    </section>
+  </main>
+  <footer>
+    <p>© Chatterley • Powered by Oumi</p>
+  </footer>
+</body>
+</html>
+

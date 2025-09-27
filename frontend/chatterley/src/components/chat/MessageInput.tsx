@@ -1,0 +1,901 @@
+/**
+ * Message input component with send functionality, image/file attachments, and fetch command
+ */
+
+"use client";
+
+import React from 'react';
+import { Send, Image as ImageIcon, Paperclip, Loader2, Globe, Mic, Video } from 'lucide-react';
+import { isValidCommand } from '@/lib/constants';
+import apiClient from '@/lib/unified-api';
+import { useChatStore } from '@/lib/store';
+
+interface AttachmentResult {
+  success: boolean;
+  files?: File[];
+  error?: string;
+}
+
+export interface PreparedAttachment {
+  id: string;
+  type: 'image' | 'document' | 'fetch' | 'audio' | 'video';
+  name: string;
+  size?: number;
+  mimeType?: string;
+  base64?: string;
+  dataUrl?: string;
+  fetchUrl?: string;
+  fetchContent?: string;
+  placeholder?: string;
+}
+
+type StagedAttachment = PreparedAttachment;
+
+interface MessageInputProps {
+  onSendMessage: (message: string, attachments?: PreparedAttachment[]) => void;
+  onAttachFiles?: (files: FileList) => void;
+  disabled?: boolean;
+  isLoading?: boolean;
+  placeholder?: string;
+  isOmniCapable?: boolean;
+}
+
+const DEFAULT_MEDIA_SETTINGS = Object.freeze({
+  resizeImages: true,
+  targetImageWidth: 640,
+  targetImageHeight: 360,
+});
+
+export default function MessageInput({
+  onSendMessage,
+  onAttachFiles,
+  disabled = false,
+  isLoading = false,
+  placeholder = "Type your message...",
+  isOmniCapable = false,
+}: MessageInputProps) {
+  const [message, setMessage] = React.useState('');
+  const [stagedAttachments, setStagedAttachments] = React.useState<StagedAttachment[]>([]);
+  const [showFetchDialog, setShowFetchDialog] = React.useState(false);
+  const [fetchUrl, setFetchUrl] = React.useState('');
+  const [isFetching, setIsFetching] = React.useState(false);
+  const [isProcessingAttachments, setIsProcessingAttachments] = React.useState(false);
+  const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+  const imageInputRef = React.useRef<HTMLInputElement>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const audioInputRef = React.useRef<HTMLInputElement>(null);
+  const videoInputRef = React.useRef<HTMLInputElement>(null);
+  const mediaSettings = useChatStore((state) => state.settings.media);
+  const imageProcessingSettings = React.useMemo(() => mediaSettings ?? DEFAULT_MEDIA_SETTINGS, [mediaSettings]);
+
+  React.useEffect(() => {
+    console.log(
+      '[MessageInput] omni capability changed %o',
+      {
+        isOmniCapable,
+        disabled,
+        isLoading,
+        timestamp: new Date().toISOString(),
+      }
+    );
+  }, [isOmniCapable, disabled, isLoading]);
+
+  // Supported file types based on Oumi backend analysis
+  const SUPPORTED_IMAGE_TYPES = '.jpg,.jpeg,.png,.gif,.bmp,.tiff,.webp,.svg';
+  const SUPPORTED_DOCUMENT_TYPES = '.txt,.md,.rst,.log,.cfg,.ini,.conf,.py,.js,.ts,.html,.css,.java,.cpp,.c,.h,.go,.rs,.php,.rb,.swift,.kt,.scala,.sh,.yaml,.yml,.pdf,.csv,.json';
+  const SUPPORTED_AUDIO_TYPES = '.wav,.mp3,.m4a,.flac,.ogg,.opus,.webm';
+  const SUPPORTED_VIDEO_TYPES = '.mp4,.mov,.m4v,.webm,.mkv,.avi,.mpeg,.mpg';
+  const MAX_IMAGE_SIZE = 30 * 1024 * 1024; // 30MB
+  const MAX_DOCUMENT_SIZE = 30 * 1024 * 1024; // 30MB
+  const MAX_AUDIO_SIZE = 25 * 1024 * 1024; // 25MB
+  const MAX_VIDEO_SIZE = 80 * 1024 * 1024; // 80MB
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isProcessingAttachments) {
+      return;
+    }
+    if ((message.trim() || stagedAttachments.length > 0) && !disabled && !isLoading) {
+      onSendMessage(message, stagedAttachments.length > 0 ? stagedAttachments : undefined);
+      setMessage('');
+      setStagedAttachments([]);
+      // Reset textarea height
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+      }
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit(e);
+    }
+  };
+
+  const insertPlaceholderAtCursor = (placeholder: string) => {
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      setMessage(prev => (prev ? `${prev} ${placeholder}` : placeholder));
+      return;
+    }
+    const { selectionStart, selectionEnd } = textarea;
+    setMessage(prev => {
+      const before = prev.slice(0, selectionStart);
+      const after = prev.slice(selectionEnd);
+      return `${before}${placeholder}${after}`;
+    });
+    requestAnimationFrame(() => {
+      const pos = selectionStart + placeholder.length;
+      textarea.selectionStart = textarea.selectionEnd = pos;
+    });
+  };
+
+  const removePlaceholderFromMessage = (placeholder?: string) => {
+    if (!placeholder) return;
+    setMessage(prev => (prev ? prev.split(placeholder).join('') : prev));
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setMessage(e.target.value);
+    
+    // Auto-resize textarea
+    const textarea = e.target;
+    textarea.style.height = 'auto';
+    const newHeight = Math.min(textarea.scrollHeight, 120); // Max height of 120px
+    textarea.style.height = `${newHeight}px`;
+  };
+
+  // File validation functions
+  const validateFile = (
+    file: File,
+    allowedTypes: string[],
+    options: { maxSize: number; kind: 'image' | 'audio' | 'video' | 'document' }
+  ): { valid: boolean; error?: string } => {
+    const { maxSize, kind } = options;
+    // Check file size
+    if (file.size > maxSize) {
+      const limitMb = (maxSize / (1024 * 1024)).toFixed(1);
+      return { valid: false, error: `File "${file.name}" exceeds ${limitMb}MB limit (${(file.size / (1024 * 1024)).toFixed(1)}MB)` };
+    }
+
+    // Check for empty files
+    if (file.size === 0) {
+      return { valid: false, error: `File "${file.name}" is empty` };
+    }
+
+    // Check file extension
+    const extension = '.' + file.name.split('.').pop()?.toLowerCase();
+    if (!allowedTypes.includes(extension)) {
+      const typeLabel = kind === 'image' ? 'image' : kind === 'audio' ? 'audio' : kind === 'video' ? 'video' : 'document';
+      return { valid: false, error: `File "${file.name}" is not a supported ${typeLabel} format` };
+    }
+
+    // Check for archives (common archive extensions)
+    const archiveExtensions = ['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.xz', '.tgz'];
+    if (archiveExtensions.includes(extension)) {
+      return { valid: false, error: `Archive files are not allowed: "${file.name}"` };
+    }
+
+    // Additional validation by kind
+    if (kind === 'image' && file.type && !file.type.startsWith('image/')) {
+      return { valid: false, error: `File "${file.name}" is not a valid image file` };
+    }
+    if (kind === 'audio' && file.type && !file.type.startsWith('audio/')) {
+      return { valid: false, error: `File "${file.name}" is not a valid audio file` };
+    }
+    if (kind === 'video' && file.type && !file.type.startsWith('video/')) {
+      return { valid: false, error: `File "${file.name}" is not a valid video file` };
+    }
+
+    return { valid: true };
+  };
+
+  const validateFiles = (
+    files: FileList,
+    allowedTypes: string,
+    options: { maxSize: number; kind: 'image' | 'audio' | 'video' | 'document' }
+  ): AttachmentResult => {
+    const validFiles: File[] = [];
+    const errors: string[] = [];
+    const typeArray = allowedTypes.split(',');
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const validation = validateFile(file, typeArray, options);
+      
+      if (validation.valid) {
+        validFiles.push(file);
+      } else {
+        errors.push(validation.error!);
+      }
+    }
+
+    if (errors.length > 0) {
+      return { success: false, error: errors.join('\n') };
+    }
+
+    return { success: true, files: validFiles };
+  };
+
+  const readFileAsDataUrl = React.useCallback((file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    }), []);
+
+  const loadImageElement = React.useCallback((dataUrl: string): Promise<HTMLImageElement> =>
+    new Promise((resolve, reject) => {
+      const img = document.createElement('img');
+      img.onload = () => resolve(img);
+      img.onerror = (err) => reject(err);
+      img.decoding = 'async';
+      img.src = dataUrl;
+    }), []);
+
+  const processImageFile = React.useCallback(async (file: File) => {
+    const originalDataUrl = await readFileAsDataUrl(file);
+    const originalBase64 = originalDataUrl.split(',')[1] || '';
+
+    if (!imageProcessingSettings.resizeImages) {
+      return {
+        dataUrl: originalDataUrl,
+        base64: originalBase64,
+        size: file.size,
+      };
+    }
+
+    const maxWidth = imageProcessingSettings.targetImageWidth || DEFAULT_MEDIA_SETTINGS.targetImageWidth;
+    const maxHeight = imageProcessingSettings.targetImageHeight || DEFAULT_MEDIA_SETTINGS.targetImageHeight;
+
+    const computeBase64Size = (base64: string) => {
+      const padding = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0;
+      return Math.max(0, Math.ceil((base64.length * 3) / 4) - padding);
+    };
+
+    try {
+      const img = await loadImageElement(originalDataUrl);
+      const { width, height } = img;
+
+      if (width <= maxWidth && height <= maxHeight) {
+        return {
+          dataUrl: originalDataUrl,
+          base64: originalBase64,
+          size: computeBase64Size(originalBase64) || file.size,
+        };
+      }
+
+      const scale = Math.min(maxWidth / width, maxHeight / height);
+      const targetWidth = Math.max(1, Math.round(width * scale));
+      const targetHeight = Math.max(1, Math.round(height * scale));
+
+      const canvas = document.createElement('canvas');
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        throw new Error('Canvas 2D context not available');
+      }
+
+      ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+      const outputMime = file.type && file.type.startsWith('image/') ? file.type : 'image/png';
+      const resizedDataUrl = canvas.toDataURL(outputMime);
+      const resizedBase64 = resizedDataUrl.split(',')[1] || '';
+
+      return {
+        dataUrl: resizedDataUrl,
+        base64: resizedBase64,
+        size: computeBase64Size(resizedBase64),
+      };
+    } catch (error) {
+      console.warn('[MessageInput] Failed to resize image, using original file', error);
+      return {
+        dataUrl: originalDataUrl,
+        base64: originalBase64,
+        size: computeBase64Size(originalBase64) || file.size,
+      };
+    }
+  }, [imageProcessingSettings, loadImageElement, readFileAsDataUrl]);
+
+  const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+
+    const validation = validateFiles(e.target.files, SUPPORTED_IMAGE_TYPES, {
+      maxSize: MAX_IMAGE_SIZE,
+      kind: 'image',
+    });
+
+    if (!validation.success) {
+      alert(`❌ Image Attachment Error:\n\n${validation.error}`);
+      e.target.value = '';
+      return;
+    }
+
+    const allowMultipleImages = isOmniCapable;
+    if (!allowMultipleImages && (stagedAttachments.some(a => a.type === 'image') || (validation.files?.length || 0) > 1)) {
+      const shouldReset = confirm(
+        '⚠️ Single Image Model Warning\n\n' +
+          'This model only supports one image at a time. Adding images will replace existing images.\n\n' +
+          'Do you want to continue?'
+      );
+
+      if (!shouldReset) {
+        e.target.value = '';
+        return;
+      }
+
+      setStagedAttachments(prev => prev.filter(a => a.type !== 'image'));
+    }
+
+    const files = validation.success ? validation.files || [] : [];
+    if (files.length === 0) {
+      e.target.value = '';
+      return;
+    }
+
+    setIsProcessingAttachments(true);
+    try {
+      const newAttachments: StagedAttachment[] = [];
+      for (const file of files) {
+        const { dataUrl, base64, size } = await processImageFile(file);
+        const id = `image-${Date.now()}-${Math.random()}`;
+        const placeholder = `[attachment:${id}]`;
+        insertPlaceholderAtCursor(placeholder);
+        newAttachments.push({
+          id,
+          type: 'image',
+          name: file.name,
+          size,
+          mimeType: file.type || undefined,
+          dataUrl,
+          base64,
+          placeholder,
+        });
+      }
+      if (newAttachments.length > 0) {
+        setStagedAttachments(prev => [...prev, ...newAttachments]);
+      }
+    } catch (error) {
+      console.error('Failed to process image attachments', error);
+      alert('❌ Failed to process selected images. Please try again.');
+    } finally {
+      setIsProcessingAttachments(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+
+    const validation = validateFiles(e.target.files, SUPPORTED_DOCUMENT_TYPES, {
+      maxSize: MAX_DOCUMENT_SIZE,
+      kind: 'document',
+    });
+    
+    if (!validation.success) {
+      alert(`❌ File Attachment Error:\n\n${validation.error}`);
+      e.target.value = '';
+      return;
+    }
+
+    // Warn about large files that might exceed token limits
+    const largeFiles = (validation.files || []).filter(f => f.size > 1024 * 1024); // > 1MB
+    if (largeFiles.length > 0) {
+      const fileNames = largeFiles.map(f => `${f.name} (${(f.size / (1024 * 1024)).toFixed(1)}MB)`).join('\n');
+      const shouldContinue = confirm(
+        '⚠️ Large File Warning\n\n' +
+        'The following files are large and may exceed token limits:\n\n' +
+        fileNames + '\n\n' +
+        'Large files will be truncated or summarized. Continue?'
+      );
+      
+      if (!shouldContinue) {
+        e.target.value = '';
+        return;
+      }
+    }
+
+    // Stage the documents instead of immediately attaching
+    const files = validation.files || [];
+    const newAttachments: StagedAttachment[] = files.map(file => ({
+      id: `document-${Date.now()}-${Math.random()}`,
+      type: 'document',
+      name: file.name,
+      size: file.size,
+      mimeType: file.type || undefined,
+    }));
+
+    setStagedAttachments(prev => [...prev, ...newAttachments]);
+    e.target.value = '';
+  };
+
+  const handleAudioSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    if (!isOmniCapable) {
+      console.warn('[MessageInput] Audio attachment blocked because omni capability is false');
+      alert('🎧 Audio attachments are only supported for Qwen Omni models.');
+      e.target.value = '';
+      return;
+    }
+
+    const validation = validateFiles(e.target.files, SUPPORTED_AUDIO_TYPES, {
+      maxSize: MAX_AUDIO_SIZE,
+      kind: 'audio',
+    });
+
+    if (!validation.success) {
+      alert(`❌ Audio Attachment Error:\n\n${validation.error}`);
+      e.target.value = '';
+      return;
+    }
+
+    const files = validation.files || [];
+    setIsProcessingAttachments(true);
+    try {
+      const newAttachments: StagedAttachment[] = [];
+      for (const file of files) {
+        const dataUrl = await readFileAsDataUrl(file);
+        const base64 = dataUrl.split(',')[1] || '';
+        const id = `audio-${Date.now()}-${Math.random()}`;
+        const placeholder = `[attachment:${id}]`;
+        insertPlaceholderAtCursor(placeholder);
+        newAttachments.push({
+          id,
+          type: 'audio',
+          name: file.name,
+          size: file.size,
+          mimeType: file.type || undefined,
+          dataUrl,
+          base64,
+          placeholder,
+        });
+      }
+      if (newAttachments.length > 0) {
+        setStagedAttachments(prev => [...prev, ...newAttachments]);
+      }
+    } catch (error) {
+      console.error('Failed to process audio attachments', error);
+      alert('❌ Failed to process audio files. Please try again.');
+    } finally {
+      setIsProcessingAttachments(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleVideoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    if (!isOmniCapable) {
+      console.warn('[MessageInput] Video attachment blocked because omni capability is false');
+      alert('🎬 Video attachments are only supported for Qwen Omni models.');
+      e.target.value = '';
+      return;
+    }
+
+    const validation = validateFiles(e.target.files, SUPPORTED_VIDEO_TYPES, {
+      maxSize: MAX_VIDEO_SIZE,
+      kind: 'video',
+    });
+
+    if (!validation.success) {
+      alert(`❌ Video Attachment Error:\n\n${validation.error}`);
+      e.target.value = '';
+      return;
+    }
+
+    const files = validation.files || [];
+    setIsProcessingAttachments(true);
+    try {
+      const newAttachments: StagedAttachment[] = [];
+      for (const file of files) {
+        const dataUrl = await readFileAsDataUrl(file);
+        const base64 = dataUrl.split(',')[1] || '';
+        const id = `video-${Date.now()}-${Math.random()}`;
+        const placeholder = `[attachment:${id}]`;
+        insertPlaceholderAtCursor(placeholder);
+        newAttachments.push({
+          id,
+          type: 'video',
+          name: file.name,
+          size: file.size,
+          mimeType: file.type || undefined,
+          dataUrl,
+          base64,
+          placeholder,
+        });
+      }
+      if (newAttachments.length > 0) {
+        setStagedAttachments(prev => [...prev, ...newAttachments]);
+      }
+    } catch (error) {
+      console.error('Failed to process video attachments', error);
+      alert('❌ Failed to process video files. Please try again.');
+    } finally {
+      setIsProcessingAttachments(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleFetch = async () => {
+    if (!fetchUrl.trim()) {
+      alert('Please enter a valid URL');
+      return;
+    }
+
+    // Basic URL validation
+    try {
+      const url = new URL(fetchUrl.trim());
+      if (!['http:', 'https:'].includes(url.protocol)) {
+        throw new Error('Only HTTP and HTTPS URLs are supported');
+      }
+    } catch (error) {
+      alert('❌ Invalid URL. Please enter a valid HTTP or HTTPS URL.');
+      return;
+    }
+
+    const shouldContinue = confirm(
+      '🌐 Fetch Website Content\n\n' +
+      `URL: ${fetchUrl}\n\n` +
+      '⚠️ Note: Only text content will be retrieved. Images, videos, and interactive elements will be ignored.\n\n' +
+      'Continue?'
+    );
+
+    if (!shouldContinue) return;
+
+    setIsFetching(true);
+    try {
+      // Call the backend fetch command
+      const response = await apiClient.executeCommand('fetch', [fetchUrl.trim()]);
+      
+      if (response.success) {
+        // Stage the fetched content instead of immediately sending
+        const fetchAttachment: StagedAttachment = {
+          id: `fetch-${Date.now()}`,
+          type: 'fetch',
+          name: `Website: ${fetchUrl}`,
+          fetchUrl: fetchUrl.trim(),
+          fetchContent: response.data || 'Content retrieved successfully.'
+        };
+
+        setStagedAttachments(prev => [...prev, fetchAttachment]);
+        setShowFetchDialog(false);
+        setFetchUrl('');
+      } else {
+        alert(`❌ Failed to fetch content:\n${response.message || 'Unknown error occurred'}`);
+      }
+    } catch (error) {
+      console.error('Fetch error:', error);
+      alert(`❌ Error fetching content:\n${error instanceof Error ? error.message : 'Unknown error occurred'}`);
+    } finally {
+      setIsFetching(false);
+    }
+  };
+
+  // Function to remove staged attachment
+  const removeStagedAttachment = (id: string) => {
+    setStagedAttachments(prev => {
+      const target = prev.find(a => a.id === id);
+      if (target?.placeholder) {
+        removePlaceholderFromMessage(target.placeholder);
+      }
+      return prev.filter(a => a.id !== id);
+    });
+  };
+
+  const isCommand = isValidCommand(message.trim());
+
+  return (
+    <>
+      <div className="border-t border-border bg-card p-4">
+        <form onSubmit={handleSubmit} className="flex items-center gap-3">
+          {/* Attachment buttons */}
+          {onAttachFiles && (
+            <div className="flex-shrink-0 flex gap-2">
+              {/* Image attachment */}
+              <>
+                <input
+                  ref={imageInputRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={handleImageSelect}
+                  accept={SUPPORTED_IMAGE_TYPES}
+                />
+                <button
+                  type="button"
+                  onClick={() => imageInputRef.current?.click()}
+                  disabled={disabled || isLoading || isProcessingAttachments}
+                  className="p-2 rounded-md border border-border hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  title="Attach images (jpg, png, gif, etc.)"
+                >
+                  <ImageIcon size={20} className="text-blue-600" />
+                </button>
+              </>
+
+              {/* File attachment */}
+              <>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={handleFileSelect}
+                  accept={SUPPORTED_DOCUMENT_TYPES}
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={disabled || isLoading || isProcessingAttachments}
+                  className="p-2 rounded-md border border-border hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  title="Attach documents (pdf, txt, code files, etc.)"
+                >
+                  <Paperclip size={20} className="text-green-600" />
+                </button>
+              </>
+
+              {/* Audio attachment */}
+              <>
+                <input
+                  ref={audioInputRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={handleAudioSelect}
+                  accept={SUPPORTED_AUDIO_TYPES}
+                />
+                <button
+                  type="button"
+                  onClick={() => audioInputRef.current?.click()}
+                  disabled={disabled || isLoading || isProcessingAttachments || !isOmniCapable}
+                  className="p-2 rounded-md border border-border hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  title={isOmniCapable ? 'Attach audio clips (wav, mp3, etc.)' : 'Audio attachments require a Qwen Omni model'}
+                >
+                  <Mic size={20} className={isOmniCapable ? 'text-orange-600' : 'text-muted-foreground'} />
+                </button>
+              </>
+
+              {/* Video attachment */}
+              <>
+                <input
+                  ref={videoInputRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={handleVideoSelect}
+                  accept={SUPPORTED_VIDEO_TYPES}
+                />
+                <button
+                  type="button"
+                  onClick={() => videoInputRef.current?.click()}
+                  disabled={disabled || isLoading || isProcessingAttachments || !isOmniCapable}
+                  className="p-2 rounded-md border border-border hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  title={isOmniCapable ? 'Attach video clips (mp4, mov, webm, etc.)' : 'Video attachments require a Qwen Omni model'}
+                >
+                  <Video size={20} className={isOmniCapable ? 'text-red-600' : 'text-muted-foreground'} />
+                </button>
+              </>
+
+              {/* Fetch button */}
+              <button
+                type="button"
+                onClick={() => setShowFetchDialog(true)}
+                disabled={disabled || isLoading || isFetching || isProcessingAttachments}
+                className="p-2 rounded-md border border-border hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                title="Fetch content from a website"
+              >
+                {isFetching ? (
+                  <Loader2 size={20} className="text-purple-600 animate-spin" />
+                ) : (
+                  <Globe size={20} className="text-purple-600" />
+                )}
+              </button>
+            </div>
+          )}
+
+        {/* Message input */}
+        <div className="flex-1 relative">
+          {/* Staged attachments display */}
+          {stagedAttachments.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-3">
+              {stagedAttachments.map((attachment) => {
+                const displayName = attachment.name || 'Attachment';
+                const sizeLabel = typeof attachment.size === 'number'
+                  ? `${(attachment.size / 1024).toFixed(1)} KB`
+                  : undefined;
+                const mimeType = attachment.mimeType || (attachment.type === 'image' ? 'image/png' : undefined);
+                const imagePreviewSrc = attachment.type === 'image'
+                  ? attachment.dataUrl || (attachment.base64 && mimeType ? `data:${mimeType};base64,${attachment.base64}` : undefined)
+                  : undefined;
+
+                const renderFallbackIcon = () => {
+                  switch (attachment.type) {
+                    case 'document':
+                      return <Paperclip size={18} className="text-green-600" />;
+                    case 'fetch':
+                      return <Globe size={18} className="text-purple-600" />;
+                    case 'audio':
+                      return <Mic size={18} className="text-orange-600" />;
+                    case 'video':
+                      return <Video size={18} className="text-red-600" />;
+                    default:
+                      return <ImageIcon size={18} className="text-blue-600" />;
+                  }
+                };
+
+                return (
+                  <div
+                    key={attachment.id}
+                    className="relative flex items-center gap-3 rounded-lg border border-border bg-muted/70 p-2 pr-8 text-sm"
+                  >
+                    {imagePreviewSrc ? (
+                      <div className="h-16 w-16 overflow-hidden rounded-md border border-border bg-background">
+                        <img
+                          src={imagePreviewSrc}
+                          alt={`Preview of ${displayName}`}
+                          className="h-full w-full object-cover"
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex h-10 w-10 items-center justify-center rounded-md border border-border bg-background text-muted-foreground">
+                        {renderFallbackIcon()}
+                      </div>
+                    )}
+
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-medium text-foreground" title={displayName}>
+                        {displayName}
+                      </div>
+                      {sizeLabel && (
+                        <div className="text-xs text-muted-foreground">{sizeLabel}</div>
+                      )}
+                      {attachment.type === 'fetch' && attachment.fetchUrl && (
+                        <div className="text-xs text-blue-600 truncate" title={attachment.fetchUrl}>
+                          {attachment.fetchUrl}
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => removeStagedAttachment(attachment.id)}
+                      className="absolute top-1 right-1 rounded-full bg-background/80 px-1 text-xs text-muted-foreground hover:bg-red-100 hover:text-red-600 transition-colors"
+                      title="Remove attachment"
+                      aria-label={`Remove ${displayName}`}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <textarea
+            ref={textareaRef}
+            value={message}
+            onChange={handleInputChange}
+            onKeyDown={handleKeyDown}
+            placeholder={stagedAttachments.length > 0 ? "Add a message (optional)..." : placeholder}
+            disabled={disabled || isLoading}
+            rows={1}
+            className={`w-full resize-none border rounded-md px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed transition-all text-input bg-input placeholder:text-muted-foreground ${
+              isCommand 
+                ? 'border-red-500 bg-red-900/20' 
+                : 'border-border'
+            }`}
+            style={{ minHeight: '56px', maxHeight: '160px' }}
+          />
+          
+          {/* Command indicator */}
+          {isCommand && (
+            <div className="absolute -top-6 left-0 text-xs text-red-400 font-medium">
+              Command blocked
+            </div>
+          )}
+        </div>
+
+        {/* Send button */}
+        <button
+          type="submit"
+          disabled={(!message.trim() && stagedAttachments.length === 0) || disabled || isLoading || isProcessingAttachments}
+          className="flex-shrink-0 bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-primary-foreground p-3 rounded-md transition-colors flex items-center justify-center min-w-[48px] min-h-[48px]"
+        >
+          {isLoading || isProcessingAttachments ? (
+            <Loader2 size={20} className="animate-spin" />
+          ) : (
+            <Send size={20} />
+          )}
+        </button>
+      </form>
+      
+        {/* Helper text */}
+        <div className="mt-2 text-xs text-muted-foreground flex items-center justify-between">
+          <span>
+            Press Enter to send, Shift+Enter for new line
+          </span>
+          {isCommand && (
+            <span className="text-red-400">
+              Commands cannot be executed here - use UI controls instead
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Fetch Dialog */}
+      {showFetchDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="w-full max-w-md bg-background border border-border rounded-lg shadow-2xl p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                <Globe size={20} className="text-purple-600" />
+                Fetch Website Content
+              </h3>
+              <button
+                onClick={() => {
+                  setShowFetchDialog(false);
+                  setFetchUrl('');
+                }}
+                className="p-1 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground"
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-2">
+                  Website URL
+                </label>
+                <input
+                  type="url"
+                  value={fetchUrl}
+                  onChange={(e) => setFetchUrl(e.target.value)}
+                  placeholder="https://example.com"
+                  className="w-full px-3 py-2 border border-border bg-input text-foreground placeholder:text-muted-foreground rounded-md focus:ring-2 focus:ring-primary focus:border-primary"
+                  disabled={isFetching}
+                />
+              </div>
+              
+              <div className="bg-muted/50 border border-border rounded-md p-3">
+                <p className="text-sm text-muted-foreground">
+                  ⚠️ <strong>Note:</strong> Only text content will be retrieved. Images, videos, and interactive elements will be ignored.
+                </p>
+              </div>
+              
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => {
+                    setShowFetchDialog(false);
+                    setFetchUrl('');
+                  }}
+                  className="flex-1 px-4 py-2 text-sm border border-border rounded-md hover:bg-accent transition-colors"
+                  disabled={isFetching}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleFetch}
+                  disabled={!fetchUrl.trim() || isFetching}
+                  className="flex-1 px-4 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                >
+                  {isFetching ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      Fetching...
+                    </>
+                  ) : (
+                    <>
+                      <Globe size={16} />
+                      Fetch Content
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}

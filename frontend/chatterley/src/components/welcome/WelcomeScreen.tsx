@@ -1,0 +1,1142 @@
+/**
+ * Welcome screen for Chatterley - Model configuration selection
+ */
+
+"use client";
+
+import React from 'react';
+import { Bot, Search, Zap, Settings, ArrowRight, Loader2, AlertCircle, CheckCircle2, MessageSquare, Wand2, BookOpen, Heart, Briefcase, Code, Gamepad2, Save, Star, AlertTriangle } from 'lucide-react';
+import apiClient from '@/lib/unified-api';
+import DownloadProgressMonitor from '@/components/monitoring/DownloadProgressMonitor';
+import SystemMonitor from '@/components/monitoring/SystemMonitor';
+import PythonSetupProgress from '@/components/monitoring/PythonSetupProgress';
+import ErrorDialog from '@/components/ui/ErrorDialog';
+import useErrorHandler from '@/hooks/useErrorHandler';
+import { DownloadState, DownloadProgress, DownloadErrorEvent } from '@/lib/types';
+import { ConfigMatcher, SystemCapabilities } from '@/lib/config-matcher';
+import { configPathResolver } from '@/lib/config-path-resolver';
+import { HuggingFaceService } from '@/lib/huggingface-service';
+import { useChatStore } from '@/lib/store';
+import { logger } from '@/lib/logger';
+import SettingsScreen from '@/components/settings/SettingsScreen';
+import { formatContextLength } from '@/lib/api-model-context';
+
+interface ConfigOption {
+  id: string;
+  config_path: string;
+  relative_path: string;
+  display_name: string;
+  model_name: string;
+  engine: string;
+  context_length: number;
+  model_family: string;
+  filename: string;
+  size_category: string;
+  recommendation?: {
+    goodMatch: boolean;
+    reason: string;
+    score: number;
+    warnings?: string[];
+  };
+}
+
+interface SystemPromptPreset {
+  id: string;
+  name: string;
+  icon: React.ReactNode;
+  description: string;
+  prompt: string;
+  category: 'general' | 'creative' | 'professional' | 'personal';
+}
+
+interface WelcomeScreenProps {
+  onConfigSelected: (configId: string, systemPrompt?: string) => void;
+  systemCapabilities?: SystemCapabilities | null;
+}
+
+export default function WelcomeScreen({ onConfigSelected, systemCapabilities }: WelcomeScreenProps) {
+  const { settings } = useChatStore();
+  const [configs, setConfigs] = React.useState<ConfigOption[]>([]);
+  const [filteredConfigs, setFilteredConfigs] = React.useState<ConfigOption[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = React.useState('');
+  const [selectedEngine, setSelectedEngine] = React.useState<string>('all');
+  const [selectedSize, setSelectedSize] = React.useState<string>('all');
+  const [starting, setStarting] = React.useState(false);
+  const [testing, setTesting] = React.useState(false);
+  const [testProgress, setTestProgress] = React.useState('');
+  
+  // System prompt state
+  const [showSystemPrompt, setShowSystemPrompt] = React.useState(false);
+  const [selectedConfig, setSelectedConfig] = React.useState<string | null>(null);
+  const [systemPrompt, setSystemPrompt] = React.useState('');
+  const [selectedPreset, setSelectedPreset] = React.useState<string>('default');
+  
+  // Welcome screen caching state
+  const [enableWelcomeCaching, setEnableWelcomeCaching] = React.useState(false);
+  
+  // Settings modal state
+  const [showSettings, setShowSettings] = React.useState(false);
+  
+  // Error handling
+  const { 
+    currentError, 
+    showModelTestError, 
+    showConfigError, 
+    showDownloadError,
+    clearError 
+  } = useErrorHandler();
+  
+  // Download monitoring state
+  const [downloadState, setDownloadState] = React.useState<DownloadState>({
+    isDownloading: false,
+    downloads: new Map(),
+    overallProgress: 0,
+    totalFiles: 0,
+    completedFiles: 0,
+    hasError: false
+  });
+
+  // Python environment setup state
+  const [envSetupNeeded, setEnvSetupNeeded] = React.useState(false);
+  const [showEnvSetup, setShowEnvSetup] = React.useState(false);
+  
+  // System capabilities are now passed as a prop from LaunchManager
+
+  // System prompt presets
+  const systemPromptPresets: SystemPromptPreset[] = [
+    {
+      id: 'default',
+      name: 'Default Assistant',
+      icon: <Bot className="w-5 h-5" />,
+      description: 'Helpful, harmless, and honest AI assistant',
+      prompt: 'You are a helpful, harmless, and honest AI assistant. Provide accurate, thoughtful responses while being respectful and ethical.',
+      category: 'general'
+    },
+    {
+      id: 'creative_writer',
+      name: 'Creative Writer',
+      icon: <BookOpen className="w-5 h-5" />,
+      description: 'Storytelling and creative writing companion',
+      prompt: 'You are a creative writing assistant with expertise in storytelling, world-building, and narrative techniques. Help users craft compelling stories, develop characters, and explore creative ideas with imagination and literary flair.',
+      category: 'creative'
+    },
+    {
+      id: 'roleplay',
+      name: 'Roleplay Partner',
+      icon: <Gamepad2 className="w-5 h-5" />,
+      description: 'Immersive character roleplay and scenarios',
+      prompt: 'You are a skilled roleplay partner who can embody different characters and scenarios. Maintain character consistency, create engaging dialogue, and help build immersive fictional worlds while respecting boundaries.',
+      category: 'creative'
+    },
+    {
+      id: 'therapist',
+      name: 'Supportive Listener',
+      icon: <Heart className="w-5 h-5" />,
+      description: 'Empathetic support and reflection (not professional therapy)',
+      prompt: 'You are a compassionate, empathetic listener who provides emotional support and thoughtful reflection. Use active listening, ask clarifying questions, and offer gentle guidance. Remember: you are not a licensed therapist - encourage professional help when appropriate.',
+      category: 'personal'
+    },
+    {
+      id: 'coding_mentor',
+      name: 'Coding Mentor',
+      icon: <Code className="w-5 h-5" />,
+      description: 'Programming guidance and code review',
+      prompt: 'You are an experienced software engineer and coding mentor. Provide clear explanations, best practices, code reviews, and debugging help. Focus on teaching concepts, writing clean code, and helping users become better programmers.',
+      category: 'professional'
+    },
+    {
+      id: 'business_advisor',
+      name: 'Business Advisor',
+      icon: <Briefcase className="w-5 h-5" />,
+      description: 'Strategic business insights and planning',
+      prompt: 'You are a knowledgeable business advisor with expertise in strategy, operations, and entrepreneurship. Provide practical advice, help analyze business decisions, and offer insights on market trends and business development.',
+      category: 'professional'
+    },
+    {
+      id: 'teacher',
+      name: 'Patient Teacher',
+      icon: <Wand2 className="w-5 h-5" />,
+      description: 'Educational explanations and learning support',
+      prompt: 'You are a patient, encouraging teacher who excels at explaining complex topics in simple terms. Use examples, analogies, and step-by-step breakdowns. Adapt your teaching style to the user\'s level and learning preferences.',
+      category: 'general'
+    }
+  ];
+
+  React.useEffect(() => {
+    loadConfigs();
+    loadWelcomeCachingPreference();
+    setupDownloadMonitoring();
+  }, []);
+
+  // Set up download progress monitoring
+  const setupDownloadMonitoring = () => {
+    if (!apiClient.isElectron || !apiClient.isElectron()) return;
+
+    const handleDownloadProgress = (progress: DownloadProgress) => {
+      setDownloadState(prev => {
+        const newDownloads = new Map(prev.downloads);
+        newDownloads.set(progress.filename, progress);
+        
+        const completed = Array.from(newDownloads.values()).filter(d => d.isComplete).length;
+        const total = newDownloads.size;
+        const overall = total > 0 ? (completed / total) * 100 : 0;
+        
+        return {
+          ...prev,
+          isDownloading: total > completed,
+          downloads: newDownloads,
+          overallProgress: overall,
+          totalFiles: total,
+          completedFiles: completed,
+          hasError: false
+        };
+      });
+    };
+
+    const handleDownloadError = (error: DownloadErrorEvent) => {
+      setDownloadState(prev => ({
+        ...prev,
+        hasError: true,
+        errorMessage: error.message,
+        isDownloading: false
+      }));
+    };
+
+    // Add event listeners if electronAPI is available
+    if (typeof window !== 'undefined' && window.electronAPI) {
+      window.electronAPI.onDownloadProgress(handleDownloadProgress);
+      window.electronAPI.onDownloadError(handleDownloadError);
+      
+      // Cleanup function
+      return () => {
+        window.electronAPI.removeDownloadProgressListener(handleDownloadProgress);
+        window.electronAPI.removeDownloadErrorListener(handleDownloadError);
+      };
+    }
+  };
+
+  // Load current welcome caching preference
+  const loadWelcomeCachingPreference = async () => {
+    try {
+      if (apiClient.isElectron && apiClient.isElectron()) {
+        const cachingEnabled = await apiClient.getStorageItem('enableWelcomeCaching', false);
+        setEnableWelcomeCaching(cachingEnabled);
+      }
+    } catch (err) {
+      console.warn('Failed to load welcome caching preference:', err);
+    }
+  };
+
+  React.useEffect(() => {
+    filterConfigs();
+  }, [configs, searchTerm, selectedEngine, selectedSize]);
+
+  // Handle ESC key to close settings modal
+  React.useEffect(() => {
+    const handleEscKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && showSettings) {
+        setShowSettings(false);
+      }
+    };
+
+    if (showSettings) {
+      document.addEventListener('keydown', handleEscKey);
+      return () => document.removeEventListener('keydown', handleEscKey);
+    }
+  }, [showSettings]);
+
+  // Update system prompt when preset changes
+  React.useEffect(() => {
+    const preset = systemPromptPresets.find(p => p.id === selectedPreset);
+    if (preset) {
+      setSystemPrompt(preset.prompt);
+    }
+  }, [selectedPreset, systemPromptPresets]);
+
+  // Handle menu messages (Electron-specific)
+  React.useEffect(() => {
+    const handleBrowseConfigFromMenu = (configPath: string) => {
+      const customConfig: ConfigOption = {
+        id: `custom-${Date.now()}`,
+        config_path: configPath,
+        relative_path: configPath,
+        display_name: `Custom: ${configPath.split('/').pop() || 'Unknown'}`,
+        model_name: 'Custom Model',
+        engine: 'native',
+        context_length: 8192,
+        model_family: 'custom',
+        filename: configPath.split('/').pop() || 'Unknown',
+        size_category: 'unknown'
+      };
+
+      // Add to configs list
+      setConfigs(prev => [customConfig, ...prev]);
+      
+      // Auto-select the custom config
+      setSelectedConfig(customConfig.id);
+      setShowSystemPrompt(true);
+    };
+
+    // Listen for menu messages (Electron-specific)
+    if (typeof window !== 'undefined' && window.electronAPI) {
+      window.electronAPI.onMenuMessage('menu:browse-config', handleBrowseConfigFromMenu);
+    }
+
+    return () => {
+      if (typeof window !== 'undefined' && window.electronAPI) {
+        window.electronAPI.removeMenuListener('menu:browse-config', handleBrowseConfigFromMenu);
+      }
+    };
+  }, []);
+
+  const loadConfigs = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // System capabilities are now passed as a prop and loaded by LaunchManager
+      
+      // Try runtime config discovery first (Electron app)
+      if (apiClient.isElectronApp()) {
+        try {
+          const { configPathResolver } = await import('@/lib/config-path-resolver');
+          const staticConfigs = await configPathResolver.loadStaticConfigs();
+          
+          if (staticConfigs?.configs) {
+            let transformedConfigs = staticConfigs.configs;
+            
+            // Enhance with fresh HuggingFace metadata if credentials are available
+            const hasHfCredentials = settings.huggingFace?.username && settings.huggingFace?.token;
+            if (hasHfCredentials) {
+              console.log('Enhancing configs with authenticated HuggingFace metadata...');
+              transformedConfigs = await HuggingFaceService.enhanceConfigsWithMetadata(
+                transformedConfigs,
+                settings.huggingFace
+              );
+            }
+            
+            // Apply smart recommendations using ConfigMatcher if system capabilities are available
+            logger.debug('WelcomeScreen', 'System capabilities detected', systemCapabilities);
+            if (systemCapabilities) {
+              logger.info('WelcomeScreen', 'Applying ConfigMatcher recommendations to Electron configs');
+              transformedConfigs = ConfigMatcher.sortConfigsByRecommendation(transformedConfigs, systemCapabilities);
+            } else {
+              logger.warn('WelcomeScreen', 'No system capabilities available - skipping recommendations');
+            }
+            
+            setConfigs(transformedConfigs);
+            return;
+          } else {
+            throw new Error('Config discovery failed - no configs found');
+          }
+        } catch (electronError) {
+          console.warn('Electron config discovery failed, falling back to static file:', electronError);
+        }
+      }
+      
+      // Fallback to unified config resolver (handles static configs and multiple locations)
+      const data = await configPathResolver.loadStaticConfigs();
+      
+      if (data.configs && Array.isArray(data.configs)) {
+        let configs = data.configs;
+        
+        // Enhance with fresh HuggingFace metadata if credentials are available
+        const hasHfCredentials = settings.huggingFace?.username && settings.huggingFace?.token;
+        if (hasHfCredentials) {
+          console.log('Enhancing configs with authenticated HuggingFace metadata...');
+          configs = await HuggingFaceService.enhanceConfigsWithMetadata(
+            configs,
+            settings.huggingFace!
+          );
+        }
+        
+        // Apply smart recommendations using ConfigMatcher if system capabilities are available
+        logger.debug('WelcomeScreen', 'System capabilities for static configs', systemCapabilities);
+        if (systemCapabilities) {
+          logger.info('WelcomeScreen', 'Applying ConfigMatcher recommendations to static configs');
+          configs = ConfigMatcher.sortConfigsByRecommendation(configs, systemCapabilities);
+        } else {
+          logger.warn('WelcomeScreen', 'No system capabilities available for static configs - skipping recommendations');
+        }
+        
+        setConfigs(configs);
+      } else {
+        throw new Error('Invalid configuration format');
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to load configurations';
+      
+      showConfigError(
+        errorMessage,
+        () => {
+          clearError();
+          loadConfigs();
+        }
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+
+  const filterConfigs = () => {
+    let filtered = [...configs];
+
+    // Search filter
+    if (searchTerm) {
+      const lower = (v: unknown) => (typeof v === 'string' ? v.toLowerCase() : '');
+      const term = lower(searchTerm);
+      filtered = filtered.filter(config => 
+        lower(config.display_name).includes(term) ||
+        lower(config.model_name).includes(term) ||
+        lower(config.model_family).includes(term)
+      );
+    }
+
+    // Engine filter
+    if (selectedEngine !== 'all') {
+      const lower = (v: unknown) => (typeof v === 'string' ? v.toLowerCase() : '');
+      filtered = filtered.filter(config => lower(config.engine) === lower(selectedEngine));
+    }
+
+    // Size filter
+    if (selectedSize !== 'all') {
+      filtered = filtered.filter(config => ConfigMatcher.getModelSizeCategory(config) === selectedSize);
+    }
+
+    // Sort by smart recommendations first, then by recommended flag, then by model family and size
+    filtered.sort((a, b) => {
+      // Sort by recommendation score (highest first) if both have recommendations
+      if (a.recommendation && b.recommendation) {
+        const scoreDiff = b.recommendation.score - a.recommendation.score;
+        if (scoreDiff !== 0) return scoreDiff;
+      }
+      
+      // Sort by "good match" status
+      if (a.recommendation?.goodMatch && !b.recommendation?.goodMatch) return -1;
+      if (!a.recommendation?.goodMatch && b.recommendation?.goodMatch) return 1;
+      
+      // Sort by recommendation score if available
+      const aScore = a.recommendation?.score || 0;
+      const bScore = b.recommendation?.score || 0;
+      if (aScore !== bScore) return bScore - aScore;
+      
+      // Sort by model family
+      if (a.model_family !== b.model_family) {
+        return a.model_family.localeCompare(b.model_family);
+      }
+      
+      // Finally sort by display name
+      return a.display_name.localeCompare(b.display_name);
+    });
+
+    setFilteredConfigs(filtered);
+  };
+
+  const handleConfigSelect = (configId: string) => {
+    setSelectedConfig(configId);
+    setShowSystemPrompt(true);
+  };
+
+  const handleBrowseConfig = async () => {
+    try {
+      const filePaths = await apiClient.showOpenDialog({
+        title: 'Select Configuration File',
+        filters: [
+          { name: 'YAML Config Files', extensions: ['yaml', 'yml'] },
+          { name: 'All Files', extensions: ['*'] }
+        ],
+        properties: ['openFile']
+      });
+
+      if (filePaths && filePaths.length > 0) {
+        const configPath = filePaths[0];
+        
+        // Create a custom config entry
+        const customConfig: ConfigOption = {
+          id: `custom-${Date.now()}`,
+          config_path: configPath,
+          relative_path: configPath,
+          display_name: `Custom: ${configPath.split('/').pop() || 'Unknown'}`,
+          model_name: 'Custom Model',
+          engine: 'native',
+          context_length: 8192,
+          model_family: 'custom',
+          filename: configPath.split('/').pop() || 'Unknown',
+          size_category: 'unknown'
+        };
+
+        // Add to configs list
+        setConfigs(prev => [customConfig, ...prev]);
+        
+        // Auto-select the custom config
+        setSelectedConfig(customConfig.id);
+        setShowSystemPrompt(true);
+      }
+    } catch (error) {
+      console.error('Error browsing for config:', error);
+      setError('Failed to browse for configuration file');
+    }
+  };
+
+  const handleStartChat = async () => {
+    if (!selectedConfig) return;
+    
+    const config = configs.find(c => c.id === selectedConfig);
+    if (!config) {
+      setError('Selected configuration not found');
+      return;
+    }
+
+    setTesting(true);
+    setTestProgress('Preparing model test...');
+    
+    try {
+      // Check if Python environment setup is needed (only in Electron)
+      if (apiClient.isElectronApp()) {
+        setTestProgress('Checking Python environment...');
+        const setupNeeded = await apiClient.isEnvironmentSetupNeeded();
+        
+        if (setupNeeded) {
+          setTesting(false);
+          setEnvSetupNeeded(true);
+          setShowEnvSetup(true);
+          return; // Environment setup will continue the flow
+        }
+      }
+      // Save welcome caching preference
+      if (apiClient.isElectron && apiClient.isElectron()) {
+        await apiClient.setStorageItem('enableWelcomeCaching', enableWelcomeCaching);
+      }
+
+      // Reset download state
+      setDownloadState(prev => ({
+        ...prev,
+        hasError: false,
+        errorMessage: undefined
+      }));
+
+      setTestProgress('Testing model configuration...');
+      
+      // Run model test to trigger download if needed
+      const testResult = await apiClient.testModel(config.config_path);
+      
+      if (!testResult.success) {
+        throw new Error(testResult.message || 'Model test failed');
+      }
+
+      if (!testResult.data?.success) {
+        throw new Error(testResult.data?.message || 'Model test did not complete successfully');
+      }
+
+      try {
+        await apiClient.setStorageItem('lastSuccessfulModelTest', {
+          configId: config.id,
+          configPath: config.config_path,
+          timestamp: Date.now(),
+        });
+      } catch (storageError) {
+        console.warn('Failed to persist lastSuccessfulModelTest after warm start:', storageError);
+      }
+
+      setTestProgress('Model test successful! Starting application...');
+      
+      // Wait a moment for user to see success message
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Now proceed to main application
+      setTesting(false);
+      setStarting(true);
+      onConfigSelected(selectedConfig, systemPrompt.trim() || undefined);
+      
+    } catch (err) {
+      console.error('Model test failed:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to test model configuration';
+      
+      setTesting(false);
+      
+      // Reset download state on error
+      setDownloadState(prev => ({
+        ...prev,
+        isDownloading: false
+      }));
+
+      // Show informative error dialog with retry options
+      showModelTestError(
+        errorMessage,
+        () => {
+          // Retry the test
+          clearError();
+          handleStartChat();
+        },
+        () => {
+          // Go back to model selection
+          clearError();
+          setShowSystemPrompt(false);
+          setSelectedConfig(null);
+        }
+      );
+    }
+  };
+
+  const handleBackToModels = () => {
+    setShowSystemPrompt(false);
+    setSelectedConfig(null);
+  };
+
+  // Environment setup handlers
+  const handleEnvSetupComplete = () => {
+    setShowEnvSetup(false);
+    setEnvSetupNeeded(false);
+    // Continue with model testing after environment is set up
+    if (selectedConfig) {
+      setTesting(true);
+      setTestProgress('Continuing model test...');
+    }
+  };
+
+  const handleEnvSetupCancel = () => {
+    setShowEnvSetup(false);
+    setTesting(false);
+    setTestProgress('');
+  };
+
+  const handleEnvSetupError = (error: string) => {
+    setShowEnvSetup(false);
+    setTesting(false);
+    setTestProgress('');
+    showModelTestError(`Environment setup failed: ${error}`);
+  };
+
+  const getEngineIcon = (engine: string) => {
+    const e = typeof engine === 'string' ? engine.toLowerCase() : '';
+    switch (e) {
+      case 'vllm': return <Zap className="w-4 h-4 text-blue-500" />;
+      case 'native': return <Bot className="w-4 h-4 text-green-500" />;
+      case 'llamacpp': return <Settings className="w-4 h-4 text-purple-500" />;
+      default: return <Bot className="w-4 h-4 text-gray-500" />;
+    }
+  };
+
+  const getSizeColor = (size: string) => {
+    switch (size) {
+      case 'small': return 'text-green-600 bg-green-50 dark:text-green-400 dark:bg-green-900/20';
+      case 'medium': return 'text-blue-600 bg-blue-50 dark:text-blue-400 dark:bg-blue-900/20';
+      case 'large': return 'text-orange-600 bg-orange-50 dark:text-orange-400 dark:bg-orange-900/20';
+      default: return 'text-muted-foreground bg-muted';
+    }
+  };
+
+  if (starting) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="bg-card rounded-lg shadow-lg p-8 max-w-md w-full mx-4 text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-primary mx-auto mb-6"></div>
+          <h2 className="text-xl font-semibold mb-2 text-foreground">Starting Chatterley</h2>
+          <p className="text-muted-foreground">Loading your selected model configuration...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (testing) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="bg-card rounded-lg shadow-lg p-8 max-w-2xl w-full mx-4">
+          {/* Show download progress if downloading */}
+          {downloadState.isDownloading || downloadState.downloads.size > 0 ? (
+            <div className="space-y-4">
+              <div className="text-center mb-6">
+                <h2 className="text-xl font-semibold mb-2 text-foreground">Preparing Your Model</h2>
+                <p className="text-muted-foreground">
+                  We're downloading and testing the model to ensure it's ready for you.
+                </p>
+              </div>
+              <DownloadProgressMonitor downloadState={downloadState} />
+              
+              {/* Python Environment Setup Progress */}
+              <PythonSetupProgress
+                isVisible={showEnvSetup}
+                onComplete={handleEnvSetupComplete}
+                onCancel={handleEnvSetupCancel}
+                onError={handleEnvSetupError}
+              />
+            </div>
+          ) : (
+            /* Standard testing UI */
+            <div className="text-center">
+              <Loader2 className="w-12 h-12 animate-spin mx-auto mb-6 text-primary" />
+              <h2 className="text-xl font-semibold mb-2 text-foreground">Testing Model</h2>
+              <p className="text-muted-foreground mb-4">{testProgress}</p>
+              
+              {/* Progress indicator */}
+              <div className="w-full bg-muted rounded-full h-2">
+                <div 
+                  className="bg-primary h-2 rounded-full transition-all duration-300 ease-out animate-pulse"
+                  style={{ width: '60%' }}
+                ></div>
+              </div>
+              
+              <div className="mt-6 max-w-md mx-auto">
+                <SystemMonitor />
+              </div>
+              
+              <div className="mt-4">
+                <p className="text-xs text-muted-foreground">
+                  This may take a few minutes if the model needs to be downloaded...
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // System Prompt Configuration Screen
+  if (showSystemPrompt && selectedConfig) {
+    const config = configs.find(c => c.id === selectedConfig);
+    
+    return (
+      <div className="min-h-screen bg-background">
+        <div className="container mx-auto px-4 py-8">
+          {/* Header */}
+          <div className="text-center mb-8">
+            <div className="flex items-center justify-center mb-4">
+              <img 
+                src="./images/chatterley-logo.png" 
+                alt="Chatterley Logo"
+                className="w-12 h-12 mr-3"
+                onError={(e) => {
+                  // Fallback to MessageSquare icon if logo is not found
+                  e.currentTarget.style.display = 'none';
+                  e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                }}
+              />
+              <MessageSquare className="w-12 h-12 text-primary mr-3 hidden" />
+              <h1 className="text-4xl font-bold text-foreground">Customize Your AI</h1>
+            </div>
+            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+              Choose how your AI assistant should behave. You can use a preset or create your own system prompt.
+            </p>
+          </div>
+
+          <div className="max-w-4xl mx-auto">
+            {/* Selected Config Summary */}
+            <div className="bg-card rounded-lg shadow-lg p-6 mb-6">
+              <h2 className="text-xl font-semibold mb-2 text-foreground">Selected Model</h2>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-medium text-foreground">{config?.display_name}</h3>
+                  <p className="text-sm text-muted-foreground">{config?.model_name}</p>
+                </div>
+                <button 
+                  onClick={handleBackToModels}
+                  className="text-primary hover:opacity-80 text-sm font-medium"
+                >
+                  Change Model
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Preset Selection */}
+              <div className="bg-card rounded-lg shadow-lg p-6">
+                <h2 className="text-xl font-semibold mb-4 text-foreground">Choose a Preset</h2>
+                <div className="space-y-3">
+                  {systemPromptPresets.map((preset) => (
+                    <div 
+                      key={preset.id}
+                      className={`p-4 border rounded-lg cursor-pointer transition-all ${
+                        selectedPreset === preset.id 
+                          ? 'border-primary bg-accent' 
+                          : 'border-border hover:border-primary'
+                      }`}
+                      onClick={() => setSelectedPreset(preset.id)}
+                    >
+                      <div className="flex items-start space-x-3">
+                        <div className="flex-shrink-0 text-primary">
+                          {preset.icon}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-medium text-foreground">{preset.name}</h3>
+                          <p className="text-sm text-muted-foreground mt-1">{preset.description}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Custom System Prompt */}
+              <div className="bg-card rounded-lg shadow-lg p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-semibold text-foreground">System Prompt</h2>
+                  <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
+                    {systemPrompt.length} characters
+                  </span>
+                </div>
+                
+                <textarea
+                  value={systemPrompt}
+                  onChange={(e) => {
+                    setSystemPrompt(e.target.value);
+                    setSelectedPreset('custom');
+                  }}
+                  placeholder="Enter a custom system prompt to define how your AI assistant should behave..."
+                  className="w-full h-64 p-3 bg-input border border-border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary resize-none text-input-foreground placeholder:text-muted-foreground"
+                />
+                
+                <div className="mt-4 space-y-2">
+                  <h4 className="font-medium text-foreground">Tips:</h4>
+                  <ul className="text-sm text-muted-foreground space-y-1">
+                    <li>• Be specific about the AI's role and expertise</li>
+                    <li>• Include desired tone (formal, casual, friendly, etc.)</li>
+                    <li>• Mention any constraints or guidelines</li>
+                    <li>• Keep it clear and concise</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            {/* Welcome Screen Caching Option */}
+            {apiClient.isElectron && apiClient.isElectron() && (
+              <div className="mt-6 bg-card rounded-lg shadow-lg p-6">
+                <div className="flex items-start space-x-3">
+                  <input 
+                    type="checkbox" 
+                    id="enableWelcomeCaching"
+                    checked={enableWelcomeCaching}
+                    onChange={(e) => setEnableWelcomeCaching(e.target.checked)}
+                    className="mt-1 h-4 w-4 text-primary focus:ring-primary border-border rounded"
+                  />
+                  <div className="flex-1">
+                    <label htmlFor="enableWelcomeCaching" className="flex items-center cursor-pointer">
+                      <Save className="w-4 h-4 text-primary mr-2" />
+                      <span className="font-medium text-foreground">Remember my choices</span>
+                    </label>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Skip the welcome screens and automatically use your saved configuration next time you open the app.
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      You can always change this setting in the File menu or by adding ?welcome=true to the URL.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="mt-8 flex justify-center space-x-4">
+              <button 
+                onClick={handleBackToModels}
+                className="px-6 py-3 bg-muted text-foreground rounded-lg hover:bg-accent transition-colors font-medium"
+              >
+                ← Back to Models
+              </button>
+              <button 
+                onClick={handleStartChat}
+                disabled={testing}
+                className="px-8 py-3 bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-opacity font-medium flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {testing ? (
+                  <>
+                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                    Testing Model...
+                  </>
+                ) : (
+                  <>
+                    Start Chat
+                    <ArrowRight className="w-5 h-5 ml-2" />
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div className="text-center mt-8 pt-6 border-t border-border">
+            <p className="text-sm text-muted-foreground">
+              Powered by{' '}
+              <a 
+                href="https://github.com/oumi-ai/oumi" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="text-primary hover:underline font-medium"
+              >
+                Oumi.AI
+              </a>
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-background">
+      <div className="container mx-auto px-4 py-8">
+        {/* Header */}
+        <div className="relative text-center mb-8">
+          {/* Settings button - positioned in top-right */}
+          <button
+            onClick={() => setShowSettings(true)}
+            className="absolute top-0 right-0 p-2 rounded-lg hover:bg-muted transition-colors flex items-center gap-2 text-muted-foreground hover:text-foreground"
+            title="Open Settings"
+          >
+            <Settings size={20} />
+            <span className="hidden sm:inline text-sm">Settings</span>
+          </button>
+
+          <div className="flex items-center justify-center mb-4">
+            <img 
+              src="./images/chatterley-logo.png" 
+              alt="Chatterley Logo"
+              className="w-12 h-12 mr-3"
+              onError={(e) => {
+                // Fallback to Bot icon if logo is not found
+                e.currentTarget.style.display = 'none';
+                e.currentTarget.nextElementSibling?.classList.remove('hidden');
+              }}
+            />
+            <Bot className="w-12 h-12 text-primary mr-3 hidden" />
+            <h1 className="text-4xl font-bold text-foreground">Chatterley</h1>
+          </div>
+          <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+            Welcome to Chatterley. Select a model configuration to get started with your AI conversations.
+          </p>
+        </div>
+
+        {/* Content */}
+        <div className="max-w-6xl mx-auto">
+          {loading ? (
+            <div className="bg-card rounded-lg shadow-lg p-8 text-center">
+              <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-primary" />
+              <p className="text-muted-foreground">Loading available configurations...</p>
+            </div>
+          ) : error ? (
+            <div className="bg-card rounded-lg shadow-lg p-8 text-center">
+              <AlertCircle className="w-8 h-8 mx-auto mb-4 text-red-500" />
+              <h3 className="text-lg font-semibold mb-2 text-red-700">Error Loading Configurations</h3>
+              <p className="text-muted-foreground mb-4">{error}</p>
+              <button 
+                onClick={loadConfigs}
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-opacity"
+              >
+                Retry
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="mb-6 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-400 dark:bg-amber-500/10 dark:text-amber-100">
+                <span className="font-medium">Reminder:</span> Load an LLM from this screen before using image generation.
+                Diffusion configs rely on the active model pipeline being initialized first.
+              </div>
+              {/* System Capabilities & Filters */}
+              <div className="bg-card rounded-lg shadow-lg p-6 mb-6">
+                {/* System Capabilities Banner */}
+                {systemCapabilities && (
+                  <div className="mb-4 p-3 bg-accent/50 rounded-lg border border-border/50">
+                    <div className="flex items-center gap-2 mb-2">
+                      <CheckCircle2 className="w-4 h-4 text-green-500" />
+                      <span className="text-sm font-medium text-foreground">Smart Recommendations Enabled</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      System: {ConfigMatcher.getSystemSummary(systemCapabilities)}
+                    </p>
+                  </div>
+                )}
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* Search */}
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <input
+                      type="text"
+                      placeholder="Search models..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2 bg-input border border-border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary text-input-foreground placeholder:text-muted-foreground"
+                    />
+                  </div>
+
+                  {/* Engine Filter */}
+                  <select
+                    value={selectedEngine}
+                    onChange={(e) => setSelectedEngine(e.target.value)}
+                    className="px-4 py-2 bg-input border border-border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary text-input-foreground"
+                  >
+                    <option value="all">All Engines</option>
+                    <option value="native">Native (CPU/GPU)</option>
+                    <option value="vllm">vLLM (GPU)</option>
+                    <option value="llamacpp">LlamaCPP (CPU)</option>
+                  </select>
+
+                  {/* Size Filter */}
+                  <select
+                    value={selectedSize}
+                    onChange={(e) => setSelectedSize(e.target.value)}
+                    className="px-4 py-2 bg-input border border-border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary text-input-foreground"
+                  >
+                    <option value="all">All Sizes</option>
+                    <option value="small">Small (≤3B)</option>
+                    <option value="medium">Medium (≤30B)</option>
+                    <option value="large">Large (&gt;30B)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Browse Section */}
+              <div className="bg-card rounded-lg shadow-lg p-6 mb-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-semibold text-foreground mb-2">Custom Configuration</h3>
+                    <p className="text-muted-foreground">
+                      Have your own configuration file? Browse and select a custom YAML config.
+                    </p>
+                  </div>
+                  <button
+                    onClick={handleBrowseConfig}
+                    className="flex items-center gap-2 px-6 py-3 bg-secondary text-secondary-foreground rounded-lg hover:bg-secondary/80 transition-colors font-medium"
+                  >
+                    <Search className="w-4 h-4" />
+                    Browse for Config...
+                  </button>
+                </div>
+              </div>
+
+              {/* Model Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredConfigs.map((config) => {
+                  const isRecommended = config.recommendation?.goodMatch;
+                  return (
+                  <div 
+                    key={config.id}
+                    className={`rounded-lg shadow-lg p-6 hover:shadow-xl transition-shadow cursor-pointer relative ${
+                      isRecommended 
+                        ? 'bg-blue-900/20 dark:bg-blue-900/30 border border-blue-500/30' 
+                        : 'bg-card'
+                    }`}
+                    onClick={() => handleConfigSelect(config.id)}
+                  >
+                    {/* Recommendation badges */}
+                    <div className="absolute top-2 right-2 flex gap-1">
+                      {config.recommendation?.goodMatch && (
+                        <div className="flex items-center gap-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-2 py-1 rounded-full text-xs font-medium">
+                          <Star className="w-3 h-3 fill-current" />
+                          Good Match
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div className="flex items-start justify-between mb-4 mt-6">
+                      <div className="flex items-center">
+                        {getEngineIcon(config.engine)}
+                        <span className="ml-2 text-sm font-medium text-muted-foreground uppercase">
+                          {config.engine}
+                        </span>
+                      </div>
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${getSizeColor(ConfigMatcher.getModelSizeCategory(config))}`}>
+                        {ConfigMatcher.getModelSizeCategory(config)}
+                      </span>
+                    </div>
+
+                    <h3 className="text-lg font-semibold mb-2 text-foreground">
+                      {config.display_name}
+                    </h3>
+                    
+                    <p className="text-sm text-muted-foreground mb-3">
+                      {config.model_name}
+                    </p>
+
+                    {/* Recommendation reason */}
+                    {config.recommendation && systemCapabilities && (
+                      <div className="mb-3 p-2 bg-muted/50 rounded text-xs">
+                        <div className="text-foreground font-medium">{config.recommendation.reason}</div>
+                        {config.recommendation.warnings && config.recommendation.warnings.length > 0 && (
+                          <div className="mt-1 text-amber-600 dark:text-amber-400 flex items-start gap-1">
+                            <AlertTriangle className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                            <span>{config.recommendation.warnings[0]}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between text-sm text-muted-foreground mb-4">
+                      <span>Context: {formatContextLength(config.context_length, config.engine)}</span>
+                      <span className="capitalize">{config.model_family}</span>
+                    </div>
+
+                    <div className="flex items-center text-primary hover:opacity-80">
+                      <span className="text-sm font-medium">Select this model</span>
+                      <ArrowRight className="w-4 h-4 ml-2" />
+                    </div>
+                  </div>
+                  );
+                })}
+              </div>
+
+              {filteredConfigs.length === 0 && (
+                <div className="bg-card rounded-lg shadow-lg p-8 text-center">
+                  <p className="text-muted-foreground">No configurations match your filters. Try adjusting your search criteria.</p>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="text-center mt-8 pt-6 border-t border-border">
+          <p className="text-sm text-muted-foreground">
+            Powered by{' '}
+            <a 
+              href="https://github.com/oumi-ai/oumi" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="text-primary hover:underline font-medium"
+            >
+              Oumi.AI
+            </a>
+          </p>
+        </div>
+      </div>
+      
+      {/* Settings Modal */}
+      {showSettings && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          onClick={(e) => {
+            // Close modal when clicking on backdrop
+            if (e.target === e.currentTarget) {
+              setShowSettings(false);
+            }
+          }}
+        >
+          <div className="bg-background rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-4 border-b border-border">
+              <h2 className="text-xl font-semibold text-foreground">Settings</h2>
+              <button
+                onClick={() => setShowSettings(false)}
+                className="p-1 rounded hover:bg-muted transition-colors"
+                title="Close Settings"
+              >
+                ✕
+              </button>
+            </div>
+            
+            {/* Modal Content */}
+            <div className="overflow-y-auto max-h-[calc(90vh-80px)]">
+              <SettingsScreen />
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Error Dialog */}
+      <ErrorDialog error={currentError} onClose={clearError} />
+    </div>
+  );
+}

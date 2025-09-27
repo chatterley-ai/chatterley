@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Chatterley Downloads</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <header>
+    <a href="./"><img src="../frontend/chatterley/public/images/chatterley-logo.png" alt="Chatterley" /></a>
+  </header>
+  <main class="container">
+    <h1>Downloads</h1>
+    <p>Production installers are published via GitHub Releases. Use the links below once a release is created.</p>
+
+    <div class="grid" style="margin-top:16px">
+      <div class="card">
+        <h3>macOS</h3>
+        <ul>
+          <li>Download: <a href="https://github.com/chatterley-ai/chatterley/releases">Releases</a></li>
+          <li>Build locally:
+            <pre><code>cd frontend/chatterley
+npm install
+npm run dist:mac</code></pre>
+          </li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Windows</h3>
+        <ul>
+          <li>Download: <a href="https://github.com/chatterley-ai/chatterley/releases">Releases</a></li>
+          <li>Build locally:
+            <pre><code>cd frontend\chatterley
+npm install
+npm run dist:win</code></pre>
+          </li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Linux</h3>
+        <ul>
+          <li>Download: <a href="https://github.com/chatterley-ai/chatterley/releases">Releases</a></li>
+          <li>Build locally:
+            <pre><code>cd frontend/chatterley
+npm install
+npm run dist:linux</code></pre>
+          </li>
+        </ul>
+      </div>
+    </div>
+
+    <section class="card" style="margin-top:16px">
+      <h2>Backend (Docker)</h2>
+      <pre><code>cd backend/oumi
+docker build -t chatterley-oumi .
+docker run --rm -p 9000:9000 chatterley-oumi \
+  python -m oumi.webchat.server --host 0.0.0.0 --port 9000</code></pre>
+    </section>
+
+  </main>
+  <footer>
+    <p>© Chatterley • Powered by Oumi</p>
+  </footer>
+</body>
+</html>
+

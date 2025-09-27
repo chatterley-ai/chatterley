@@ -1,0 +1,291 @@
+{
+  "name": "chatterley",
+  "version": "0.1.0",
+  "description": "Chatterley - A cross-platform desktop application for conversing with AI models, powered by the Oumi AI platform",
+  "author": {
+    "name": "Benjamin Feuer",
+    "email": "penfever@gmail.com"
+  },
+  "homepage": "https://oumi.ai",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "dev:backend": "cd ../../backend/oumi && source ~/.zshrc && conda activate oumi && python -m oumi.webchat.server --port 9000",
+    "dev:full": "concurrently \"npm run dev:backend\" \"NEXT_PUBLIC_BACKEND_URL=http://localhost:9000 npm run dev -- -p 7860\" --names \"backend,frontend\" --prefix-colors \"blue,green\"",
+    "build": "npm run generate-configs && next build",
+    "build:electron": "npm run generate-configs && ELECTRON_BUILD=true next build",
+    "start": "next start",
+    "lint": "next lint",
+    "type-check": "tsc --noEmit",
+    "generate-configs": "node scripts/generate-configs.js",
+    "download-python": "node scripts/download-python.js",
+    "prepare-python": "npm run download-python",
+    "electron:compile": "tsc electron/*.ts --outDir dist/electron --target es2020 --module commonjs --moduleResolution node --esModuleInterop --allowSyntheticDefaultImports --skipLibCheck",
+    "electron:dev": "npm run generate-configs && npm run electron:compile && concurrently \"npm run dev\" \"node scripts/wait-for-next.js\"",
+    "electron:debug": "node scripts/debug-electron.js",
+    "electron:debug-build": "node scripts/debug-electron.js --build",
+    "clear-electron-cache": "node scripts/clear-electron-cache.js",
+    "electron:build-debug": "OUMI_LOG_LEVEL=DEBUG node scripts/clear-pycache.js && npm run clear-electron-cache && OUMI_LOG_LEVEL=DEBUG npm run build:electron && OUMI_LOG_LEVEL=DEBUG npm run electron:compile && npm run clear-electron-cache && OUMI_LOG_LEVEL=DEBUG npm run electron:debug",
+    "electron:pack": "npm run prepare-python && npm run build:electron && npm run electron:compile && electron-builder",
+    "electron:dist": "npm run prepare-python && npm run build:electron && npm run electron:compile && electron-builder --publish=never",
+    "electron:publish": "npm run prepare-python && npm run build:electron && npm run electron:compile && electron-builder --publish=always",
+    "electron:build:mac": "npm run prepare-python && npm run build:electron && npm run electron:compile && node scripts/cleanup-dmg.js && electron-builder --mac",
+    "electron:build:win": "npm run prepare-python && npm run build:electron && npm run electron:compile && electron-builder --win",
+    "electron:build:linux": "npm run prepare-python && npm run build:electron && npm run electron:compile && electron-builder --linux",
+    "electron:build:all": "npm run prepare-python && npm run build:electron && npm run electron:compile && electron-builder --mac --win --linux",
+    "dist:mac": "npm run electron:build:mac",
+    "dist:win": "npm run electron:build:win",
+    "dist:linux": "npm run electron:build:linux",
+    "dist:all": "npm run electron:build:all",
+    "postinstall": "electron-builder install-app-deps",
+    "test": "jest --passWithNoTests"
+  },
+  "dependencies": {
+    "@huggingface/hub": "^2.5.2",
+    "@types/d3": "^7.4.3",
+    "d3": "^7.9.0",
+    "electron-log": "^5.4.3",
+    "electron-store": "^8.2.0",
+    "electron-updater": "^6.6.2",
+    "highlight.js": "^11.11.1",
+    "js-yaml": "^4.1.0",
+    "katex": "^0.16.22",
+    "lucide-react": "^0.344.0",
+    "markdown-to-jsx": "^7.7.13",
+    "next": "14.2.15",
+    "os-browserify": "^0.3.0",
+    "path-browserify": "^1.0.1",
+    "prismjs": "^1.30.0",
+    "querystring-es3": "^0.2.1",
+    "react": "^18.2.0",
+    "react-d3-tree": "^3.6.6",
+    "react-dom": "^18.2.0",
+    "stream-browserify": "^3.0.0",
+    "url": "^0.11.4",
+    "util": "^0.12.5",
+    "zustand": "^4.5.7"
+  },
+  "devDependencies": {
+    "@electron/notarize": "^3.0.2",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "autoprefixer": "^10.4.0",
+    "buffer": "^6.0.3",
+    "concurrently": "^8.2.2",
+    "electron": "^32.2.7",
+    "electron-builder": "^26.0.12",
+    "electron-packager": "^17.1.2",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "14.2.15",
+    "jest": "^30.1.3",
+    "jest-environment-jsdom": "^30.1.2",
+    "node-polyfill-webpack-plugin": "^4.1.0",
+    "postcss": "^8.4.0",
+    "process": "^0.11.10",
+    "string-replace-loader": "^3.2.0",
+    "tailwindcss": "^3.4.0",
+    "ts-jest": "^29.4.1",
+    "typescript": "^5",
+    "wait-on": "^8.0.4"
+  },
+  "main": "dist/electron/main.js",
+  "build": {
+    "appId": "ai.oumi.chatterley",
+    "productName": "Chatterley",
+    "icon": "assets/icon",
+    "directories": {
+      "output": "dist/packages",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/electron/**/*",
+      "out/**/*",
+      "node_modules/**/*",
+      "!node_modules/.cache",
+      "!node_modules/electron",
+      "!node_modules/electron-builder",
+      "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
+      "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
+      "!**/node_modules/*.d.ts",
+      "!**/node_modules/.bin",
+      "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}",
+      "!.editorconfig",
+      "!**/._*",
+      "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}",
+      "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}",
+      "!**/{appveyor.yml,.travis.yml,circle.yml}",
+      "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
+    ],
+    "extraResources": [
+      {
+        "from": "../",
+        "to": "python/",
+        "filter": [
+          "pyproject.toml",
+          "README.md",
+          "LICENSE",
+          "src/**/*.py",
+          "configs/**/*.yaml",
+          "configs/**/*.json",
+          "configs/**/*.md",
+          "!src/**/__pycache__/**",
+          "!src/**/*.pyc",
+          "!src/**/*.pyo",
+          "!src/**/test/**",
+          "!src/**/tests/**",
+          "!tests/**",
+          "!frontend/**",
+          "!docs/**",
+          "!notebooks/**",
+          "!scripts/**",
+          "!.git/**",
+          "!**/.git/**",
+          "!**/__pycache__/**",
+          "!**/*.pyc",
+          "!**/*.pyo"
+        ]
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "assets/icon.icns",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extraResources": [
+        {
+          "from": "python-dist/darwin-${arch}/",
+          "to": "python-dist/",
+          "filter": [
+            "**/*"
+          ]
+        }
+      ],
+      "target": [
+        {
+          "target": "dmg",
+          "arch": "x64"
+        },
+        {
+          "target": "dmg",
+          "arch": "arm64"
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ]
+    },
+    "dmg": {
+      "contents": [
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ],
+      "title": "Chatterley ${version}",
+      "format": "ULFO",
+      "window": {
+        "width": 540,
+        "height": 380
+      }
+    },
+    "win": {
+      "extraResources": [
+        {
+          "from": "python-dist/win32-x64/",
+          "to": "python-dist/",
+          "filter": [
+            "**/*"
+          ]
+        }
+      ],
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "verifyUpdateCodeSignature": false,
+      "requestedExecutionLevel": "asInvoker",
+      "artifactName": "Chatterley-${version}-win-${arch}.${ext}",
+      "signAndEditExecutable": false
+    },
+    "linux": {
+      "icon": "assets/icon.png",
+      "maintainer": "Benjamin Feuer <penfever@gmail.com>",
+      "extraResources": [
+        {
+          "from": "python-dist/linux-${arch}/",
+          "to": "python-dist/",
+          "filter": [
+            "**/*"
+          ]
+        }
+      ],
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": "x64"
+        },
+        {
+          "target": "AppImage",
+          "arch": "arm64"
+        },
+        {
+          "target": "deb",
+          "arch": "x64"
+        },
+        {
+          "target": "deb",
+          "arch": "arm64"
+        }
+      ],
+      "category": "Office"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "deleteAppDataOnUninstall": true,
+      "runAfterFinish": true,
+      "shortcutName": "Chatterley",
+      "differentialPackage": false
+    },
+    "appImage": {},
+    "deb": {
+      "category": "office"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "oumi-ai",
+        "repo": "oumi-chat-desktop"
+      }
+    ],
+    "afterSign": "scripts/notarize.js",
+    "compression": "maximum",
+    "artifactName": "Chatterley-${version}-${os}-${arch}.${ext}"
+  }
+}
