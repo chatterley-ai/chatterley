@@ -170,10 +170,15 @@ class ElectronApiClient {
     try {
       const { configPathResolver } = await import('./config-path-resolver');
       const staticConfigs = await configPathResolver.loadStaticConfigs();
-      
+      const platformInfo = this.getPlatform();
+      const filteredConfigs = this.filterConfigsForPlatform(
+        staticConfigs.configs || [],
+        platformInfo.os
+      );
+
       return {
         success: true,
-        data: { configs: staticConfigs.configs || [] }
+        data: { configs: filteredConfigs }
       };
     } catch (error) {
       console.error('UnifiedConfigPathResolver failed:', error);
@@ -558,6 +563,26 @@ class ElectronApiClient {
       };
     }
     return window.electronAPI.platform;
+  }
+
+  private filterConfigsForPlatform(configs: ConfigOption[], platform: string): ConfigOption[] {
+    if (platform !== 'win32') {
+      return configs;
+    }
+
+    const filtered = configs.filter((config) => {
+      const engine = (config.engine || '').toLowerCase();
+      return engine !== 'vllm' && engine !== 'remote_vllm';
+    });
+
+    if (filtered.length !== configs.length) {
+      console.info(
+        '[ElectronApi] Filtered VLLM-based configs for Windows platform',
+        { removed: configs.length - filtered.length }
+      );
+    }
+
+    return filtered;
   }
 
   // File operations for conversation save/load
