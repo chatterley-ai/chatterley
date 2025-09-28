@@ -86,7 +86,7 @@ interface ChatStore {
 
   // Actions
   addMessage: (message: Message) => void;
-  setMessages: (conversationId: string, branchId: string, messages: Message[]) => void;
+  setMessages: (conversationId: string, branchId: string, messages: Message[], options?: { allowTruncate?: boolean }) => void;
   updateMessage: (conversationId: string, branchId: string, messageId: string, updates: Partial<Message>) => void;
   deleteMessage: (conversationId: string, branchId: string, messageId: string) => void;
   
@@ -595,15 +595,40 @@ export const useChatStore = create<ChatStore>()(
           };
         }),
 
-      setMessages: (conversationId: string, branchId: string, messages: Message[]) =>
+      setMessages: (conversationId: string, branchId: string, messages: Message[], options?: { allowTruncate?: boolean }) =>
         set((state) => {
           const { conversationMessages } = state;
+
+          const existingMessages = conversationMessages[conversationId]?.[branchId] || [];
+          const allowTruncate = options?.allowTruncate ?? false;
+
+          let normalizedMessages = messages;
+          if (!allowTruncate && messages.length > 0 && existingMessages.length > messages.length) {
+            const prefixMatches = messages.every((msg, index) => {
+              const existing = existingMessages[index];
+              return existing ? String(existing.id) === String(msg.id) : false;
+            });
+
+            if (prefixMatches) {
+              if (process.env.NODE_ENV !== 'production') {
+                console.warn('[store.setMessages] Preserving tail to avoid suspected truncation', {
+                  conversationId,
+                  branchId,
+                  incoming: messages.length,
+                  existing: existingMessages.length,
+                });
+              }
+              normalizedMessages = existingMessages.map((existing, index) =>
+                index < messages.length ? messages[index] : existing
+              );
+            }
+          }
 
           const updatedConversationMessages = {
             ...conversationMessages,
             [conversationId]: {
               ...(conversationMessages[conversationId] || {}),
-              [branchId]: messages
+              [branchId]: normalizedMessages
             }
           };
 
@@ -616,7 +641,7 @@ export const useChatStore = create<ChatStore>()(
             const newTimeline: string[] = [];
             const newHeads: { [id: string]: string } = {};
             const newNodes: { [id: string]: MessageNode } = { ...convNodes };
-            messages.forEach((msg, i) => {
+            normalizedMessages.forEach((msg, i) => {
               const base = (msg && (msg as any).id != null) ? String((msg as any).id) : 'auto';
               const nodeId = `node-${conversationId}-${branchId}-${i}-${base}`;
               const verId = (msg && (msg as any).id != null) ? String((msg as any).id) : `ver-${i}-${Date.now()}-${Math.random().toString(36).slice(2,6)}`;
@@ -639,12 +664,12 @@ export const useChatStore = create<ChatStore>()(
             const timeline = convTimelines[branchId] || [];
             const headsForBranch = { ...(convHeads[branchId] || {}) } as { [id: string]: string };
             const nodesForConv = { ...convNodes } as { [id: string]: MessageNode };
-            const count = Math.min(messages.length, timeline.length);
+            const count = Math.min(normalizedMessages.length, timeline.length);
             for (let i = 0; i < count; i++) {
               const nodeId = timeline[i];
               const node = nodesForConv[nodeId];
               if (!node) continue;
-              const backendMsg = messages[i];
+              const backendMsg = normalizedMessages[i];
               const headId = headsForBranch[nodeId] || (node.versions[node.versions.length - 1]?.id);
               const head = node.versions.find(v => v.id === headId) || node.versions[node.versions.length - 1];
               const backendText = backendMsg?.content ?? '';
@@ -680,7 +705,7 @@ export const useChatStore = create<ChatStore>()(
                     };
                     const newVersions = [...newNode.versions];
                     newVersions[headIndex] = updatedHead;
-                    newNode = { ...newNode, versions: newVersions };
+                    newNode = { ...node, versions: newVersions };
                   }
                 }
                 nodesForConv[nodeId] = newNode;
@@ -691,15 +716,15 @@ export const useChatStore = create<ChatStore>()(
           }
 
           const now = new Date().toISOString();
-          const firstMessage = messages[0];
-          const lastMessage = messages[messages.length - 1];
+          const firstMessage = normalizedMessages[0];
+          const lastMessage = normalizedMessages[normalizedMessages.length - 1];
           const conversationMetadata = state.branchMetadata[conversationId] || {};
           const branchMeta = conversationMetadata[branchId] || {};
           const updatedBranchMetadataForConv = {
             ...conversationMetadata,
             [branchId]: {
               ...branchMeta,
-              messageCount: messages.length,
+              messageCount: normalizedMessages.length,
               lastActive: lastMessage ? new Date(lastMessage.timestamp).toISOString() : (branchMeta.lastActive || now),
               createdAt: branchMeta.createdAt || (firstMessage ? new Date(firstMessage.timestamp).toISOString() : now),
               preview: branchMeta.preview || (lastMessage ? lastMessage.content.slice(0, 50) + (lastMessage.content.length > 50 ? '...' : '') : undefined)
@@ -756,7 +781,7 @@ export const useChatStore = create<ChatStore>()(
                   heads: convHeads[branchId] || {},
                   metadata: {
                     ...(state.branchState[conversationId]?.[branchId]?.metadata || {}),
-                    messageCount: messages.length,
+                    messageCount: normalizedMessages.length,
                     createdAt: state.branchState[conversationId]?.[branchId]?.metadata?.createdAt || (firstMessage ? new Date(firstMessage.timestamp).toISOString() : now),
                     lastActive: lastMessage ? new Date(lastMessage.timestamp).toISOString() : (state.branchState[conversationId]?.[branchId]?.metadata?.lastActive || now),
                     preview: lastMessage ? lastMessage.content.slice(0, 50) + (lastMessage.content.length > 50 ? '...' : '') : state.branchState[conversationId]?.[branchId]?.metadata?.preview,
@@ -768,6 +793,7 @@ export const useChatStore = create<ChatStore>()(
             }
           };
         }),
+
 
       updateMessage: (conversationId: string, branchId: string, messageId: string, updates: Partial<Message>) =>
         set((state) => {

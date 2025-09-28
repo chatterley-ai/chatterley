@@ -113,20 +113,20 @@ export const transformBackendMessages = (
     const rawMeta = rawMetaSource ? { ...rawMetaSource } : undefined;
 
     const derivedModelName = coalesce<string>(
-      rawMeta?.model_name,
-      rawMeta?.modelName,
-      rawMeta?.model,
-      existingMeta?.modelName,
-      nodeMeta?.modelName,
+      rawMeta?.model_name as string | null | undefined,
+      rawMeta?.modelName as string | null | undefined,
+      rawMeta?.model as string | null | undefined,
+      existingMeta?.modelName as string | null | undefined,
+      nodeMeta?.modelName as string | null | undefined,
       backendMsg.role === 'assistant' ? options.fallbackModel : undefined,
       backendMsg.role === 'assistant' ? options.settings.selectedModel : undefined
     );
 
     const derivedEngine = coalesce<string>(
-      rawMeta?.engine,
-      rawMeta?.provider,
-      existingMeta?.engine,
-      nodeMeta?.engine,
+      rawMeta?.engine as string | null | undefined,
+      rawMeta?.provider as string | null | undefined,
+      existingMeta?.engine as string | null | undefined,
+      nodeMeta?.engine as string | null | undefined,
       backendMsg.role === 'assistant' ? options.fallbackEngine : undefined,
       backendMsg.role === 'assistant' ? options.settings.selectedProvider : undefined
     );
@@ -171,7 +171,11 @@ export const transformBackendMessages = (
     );
 
     meta.authorName = backendMsg.role === 'assistant' ? assistantAuthorName : userAuthorName;
-    meta.createdAt = coalesce<number | string>(existingMeta?.createdAt, meta.createdAt, timestamp);
+    meta.createdAt = coalesce<number | string>(
+      existingMeta?.createdAt as string | number | null | undefined, 
+      meta.createdAt as string | number | null | undefined, 
+      timestamp
+    );
 
     if (derivedModelName) {
       meta.modelName = derivedModelName;

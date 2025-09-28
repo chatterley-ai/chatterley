@@ -353,6 +353,27 @@ export function buildChatHistoryForCurrentSession(): ChatHistory {
 export function hydrateStoreFromChatHistory(artifact: ChatHistory): void {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const storeMod = require('../store') as Record<string, unknown>;
+  interface ChatStoreState {
+    conversations?: Conversation[];
+    conversationMessages?: Record<string, Record<string, Message[]>>;
+    messageNodes?: Record<string, Record<string, MessageNode>>;
+    branchTimelines?: Record<string, Record<string, string[]>>;
+    branchHeads?: Record<string, Record<string, Record<string, string>>>;
+    branchTombstones?: Record<string, Record<string, Record<string, boolean>>>;
+    merges?: Record<string, unknown[]>;
+    currentConversationId?: string | null;
+    currentBranchId?: string | null;
+    settings?: {
+      selectedModel?: string;
+      selectedProvider?: string;
+      user?: {
+        displayName?: string;
+      };
+    };
+    generationParams?: {
+      contextLength?: number;
+    };
+  }
   const state = (storeMod.useChatStore as {getState: () => unknown}).getState() as unknown as ChatStoreState; // eslint-disable-line @typescript-eslint/no-unused-vars
   const setState = (storeMod.useChatStore as {setState: (state: Record<string, unknown>) => void}).setState;
 

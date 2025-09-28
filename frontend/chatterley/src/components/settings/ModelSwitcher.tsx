@@ -103,18 +103,18 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
         // Load available configs first
         const configsResponse = await apiClient.getConfigs();
         if (configsResponse.success && configsResponse.data?.configs) {
-          const sanitized = configsResponse.data.configs.map((c: Record<string, unknown>) => ({
-            id: c.id ?? c.relative_path ?? c.config_path ?? c.filename ?? '',
-            config_path: c.config_path ?? '',
-            relative_path: c.relative_path ?? '',
+          const sanitized = configsResponse.data.configs.map((c: ConfigOption) => ({
+            id: c.id || (c.relative_path as string) || (c.config_path as string) || (c.filename as string) || '',
+            config_path: c.config_path || '',
+            relative_path: c.relative_path || '',
             display_name: typeof c.display_name === 'string' && c.display_name.length > 0
               ? c.display_name
-              : (c.model_name || c.filename || c.relative_path || 'Unknown'),
-            model_name: c.model_name ?? '',
-            engine: c.engine ?? 'UNKNOWN',
+              : ((c.model_name as string) || (c.filename as string) || (c.relative_path as string) || 'Unknown'),
+            model_name: c.model_name || '',
+            engine: c.engine || 'UNKNOWN',
             context_length: typeof c.context_length === 'number' ? c.context_length : 0,
-            model_family: c.model_family ?? 'unknown',
-            filename: c.filename ?? '',
+            model_family: c.model_family || 'unknown',
+            filename: c.filename || '',
           }));
           setAvailableConfigs(sanitized);
           debugLog(`📋 Loaded ${configsResponse.data.configs.length} inference configurations`);

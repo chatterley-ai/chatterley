@@ -339,9 +339,10 @@ export function useConversationCommand() {
         if (backend && target) {
           const requestedId = backend.messageId;
           const requestedIndex = backend.index;
-          const resolvedId = ('message_id' in target ? target.message_id as string : 
-                      'messageId' in target ? target.messageId as string : undefined);
-        const resolvedIndex = 'index' in target ? target.index as number : undefined;
+          const targetObj = target as Record<string, unknown>;
+        const resolvedId = 'message_id' in targetObj ? targetObj.message_id as string : 
+                      'messageId' in targetObj ? targetObj.messageId as string : undefined;
+        const resolvedIndex = 'index' in targetObj ? targetObj.index as number : undefined;
           const idMismatch = requestedId && resolvedId && requestedId !== resolvedId;
           const idxMismatch = typeof requestedIndex === 'number' && typeof resolvedIndex === 'number' && requestedIndex !== resolvedIndex;
           const looksLikeIdRemap = idMismatch && requestedId?.startsWith('user-') && resolvedId?.startsWith('msg_');

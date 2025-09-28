@@ -38,7 +38,7 @@ export default function AppLayout() {
   const [isResetting, setIsResetting] = React.useState(false);
   const [resetProgress, setResetProgress] = React.useState<string[]>([]);
   const [resetSuccess, setResetSuccess] = React.useState<string | undefined>(undefined);
-  const { clearMessages, currentBranchId, currentConversationId, generationParams, setCurrentBranch, setMessages, getCurrentSessionId } = useChatStore();
+  const { clearMessages, currentBranchId, currentConversationId, setCurrentBranch, getCurrentSessionId } = useChatStore();
   // Note: setBranches is no longer needed as branches are derived on demand
   const { executeCommand, isExecuting } = useConversationCommand();
   const chatInterfaceRef = React.useRef<ChatInterfaceRef | null>(null);
@@ -249,7 +249,7 @@ React.useEffect(() => {
     const cleanup = setupElectronIntegration();
 
     return cleanup;
-  }, []);
+  }, [handleClearConversation]);
 
 
   // Initialize app state from backend on first load
@@ -280,7 +280,7 @@ React.useEffect(() => {
             : 'main';
 
           // Transform backend branches to frontend format
-          const transformedBranches = backendBranches.map((branch: any) => ({
+          const transformedBranches = backendBranches.map((branch: Record<string, unknown>) => ({
             id: branch.id,
             name: branch.name,
             isActive: branch.id === currentBranchFromBackend,
@@ -331,7 +331,7 @@ React.useEffect(() => {
     if (!isInitialized) {
       initializeApp();
     }
-  }, [isInitialized, currentBranchId, setCurrentBranch]);
+  }, [isInitialized, currentBranchId, setCurrentBranch, currentConversationId, getCurrentSessionId]);
 
   // Auto-reload engine on wake (app regains visibility/focus after sleep)
   React.useEffect(() => {
@@ -437,7 +437,7 @@ React.useEffect(() => {
         version: string;
         timestamp: string;
         session_id: string;
-        branches: Record<string, any>;
+        branches: Record<string, unknown>;
       } = {
         version: "1.0",
         timestamp: new Date().toISOString(),
@@ -462,7 +462,7 @@ React.useEffect(() => {
       
       // Save backup to file
       const filename = `chat-backup-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.json`;
-      const saved = await apiClient.saveConversationToFile(backupData as any, filename);
+      const saved = await apiClient.saveConversationToFile(backupData, filename);
       
       if (saved) {
         setResetProgress(prev => [...prev, `Backup saved successfully to ${filename}`]);
@@ -518,7 +518,7 @@ React.useEffect(() => {
               setCurrentBranch(current_branch);
             }
           }
-        } catch (err) {
+        } catch (_err) {
           // Non-fatal; continue with main branch implied
           setResetProgress(prev => [...prev, `Warning: Could not get branch information. Using main branch.`]);
         }
@@ -528,7 +528,7 @@ React.useEffect(() => {
       } else {
         throw new Error(result.message || "Reset operation failed");
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error("Reset error:", error);
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
       setResetProgress(prev => [...prev, `Reset error: ${errorMessage}`]);

@@ -66,7 +66,7 @@ function ApiKeyInput({ provider, existingKey, onSave, onCancel, onRemove }: ApiK
               details: data.details ? {
                 ...basicResult.details,
                 ...(data.details as Record<string, unknown>),
-                validatedWith: 'Oumi + Direct API'
+                // Omit validatedWith from the returned details to match the expected type
               } : basicResult.details
             };
           }

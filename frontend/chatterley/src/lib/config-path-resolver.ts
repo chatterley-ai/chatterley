@@ -57,9 +57,9 @@ class UnifiedConfigPathResolver implements ConfigPathResolver {
             this.staticConfigs = loaded;
             logger.info(
               'ConfigPathResolver',
-              `Successfully loaded ${Array.isArray(this.staticConfigs.configs) ? this.staticConfigs.configs.length : 0} configs from: ${location}`
+              `Successfully loaded ${Array.isArray(this.staticConfigs?.configs) ? this.staticConfigs.configs.length : 0} configs from: ${location}`
             );
-            return this.staticConfigs;
+            return this.staticConfigs || { configs: [] };
           } else {
             errors.push(`${location}: ${response.status} ${response.statusText}`);
           }
