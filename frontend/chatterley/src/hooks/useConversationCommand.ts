@@ -108,19 +108,29 @@ export function useConversationCommand() {
         const { branches, current_branch } = branchesResponse.data;
         
         // Transform backend branches to frontend format
-        const transformedBranches = branches.map((branch: any) => ({
-          id: branch.id,
-          name: branch.name,
-          isActive: branch.id === current_branch,
-          messageCount: branch.message_count || 0,
-          createdAt: branch.created_at,
-          lastActive: branch.last_active || branch.created_at,
-          preview: branch.message_count > 0 ? `${branch.message_count} messages` : 'Empty branch'
-        }));
+        const { currentBranchId, getCurrentMessages } = useChatStore.getState();
+        const transformedBranches = branches.map((branch: any) => {
+          const isActive = branch.id === current_branch;
+          const messageCount = isActive
+            ? getCurrentMessages().length
+            : (branch.message_count || 0);
+          return {
+            id: branch.id,
+            name: branch.name,
+            isActive,
+            messageCount,
+            createdAt: branch.created_at,
+            lastActive: branch.last_active || branch.created_at,
+            preview: messageCount > 0 ? `${messageCount} message${messageCount !== 1 ? 's' : ''}` : 'Empty branch'
+          };
+        });
         
+        const { currentConversationId, mergeBranchMetadata } = useChatStore.getState();
+        if (currentConversationId) {
+          mergeBranchMetadata(currentConversationId, transformedBranches);
+        }
+
         console.log(`🌿 Branches updated from backend:`, transformedBranches);
-        // Note: We don't need to setBranches anymore since they are derived on demand
-        // The branches will be available via getBranches() which reads from the store
         if (current_branch) {
           setCurrentBranch(current_branch);
         }
@@ -343,7 +353,8 @@ export function useConversationCommand() {
           const resolvedIndex = target.index;
           const idMismatch = requestedId && resolvedId && requestedId !== resolvedId;
           const idxMismatch = typeof requestedIndex === 'number' && typeof resolvedIndex === 'number' && requestedIndex !== resolvedIndex;
-          if (idMismatch || idxMismatch) {
+          const looksLikeIdRemap = idMismatch && requestedId?.startsWith('user-') && resolvedId?.startsWith('msg_');
+          if ((idMismatch && !looksLikeIdRemap) || idxMismatch) {
             const parts: string[] = [];
             if (requestedId && resolvedId && requestedId !== resolvedId) {
               parts.push(`id ${requestedId} → ${resolvedId}`);
@@ -358,6 +369,8 @@ export function useConversationCommand() {
             } catch {
               // no-op
             }
+          } else if (looksLikeIdRemap) {
+            console.debug('[COMMAND] ID remapped by server', { command, requestedId, resolvedId });
           }
         }
       } catch {}

@@ -35,7 +35,8 @@ export default function BranchTree({ className = '' }: BranchTreeProps) {
     setMessages,
     getCurrentMessages,
     getBranchMessages,
-    getBranches
+    getBranches,
+    loadConversation
   } = useChatStore();
 
   // Get branches using the selector
@@ -113,6 +114,10 @@ export default function BranchTree({ className = '' }: BranchTreeProps) {
           };
         });
         // Branches are now derived on demand, no need to set them manually
+        const { mergeBranchMetadata, currentConversationId } = useChatStore.getState();
+        if (currentConversationId) {
+          mergeBranchMetadata(currentConversationId, formattedBranches);
+        }
         setCurrentBranch(response.data?.current_branch || 'main');
         debugLog('🌿 BranchTree: fetched branches from backend', formattedBranches.length);
       }
@@ -178,6 +183,9 @@ export default function BranchTree({ className = '' }: BranchTreeProps) {
 
       if (response.success) {
         setCurrentBranch(branchId);
+        if (currentConversationId) {
+          await loadConversation(currentConversationId, branchId);
+        }
         await loadBranches();
       } else {
         console.error('Failed to switch branch:', response.message);

@@ -25,6 +25,11 @@ interface ChatStore {
       [branchId: string]: Message[]
     }
   };
+  branchMetadata: {
+    [conversationId: string]: {
+      [branchId: string]: Partial<ConversationBranch>
+    }
+  };
   messageNodes: {
     [conversationId: string]: {
       [nodeId: string]: MessageNode
@@ -43,6 +48,15 @@ interface ChatStore {
   branchTombstones: {
     [conversationId: string]: {
       [branchId: string]: { [nodeId: string]: boolean }
+    }
+  };
+  branchState: {
+    [conversationId: string]: {
+      [branchId: string]: {
+        timeline: string[];
+        heads: { [nodeId: string]: string };
+        metadata: Partial<ConversationBranch>;
+      }
     }
   };
   merges: {
@@ -81,6 +95,8 @@ interface ChatStore {
   addBranch: (branchId: string, name?: string, parentId?: string) => void;
   deleteBranch: (branchId: string) => void;
   setCurrentBranch: (branchId: string) => void;
+  mergeBranchMetadata: (conversationId: string, branches: Array<Partial<ConversationBranch> & { id: string }>) => void;
+  removeBranchMetadata: (conversationId: string, branchId: string) => void;
   
   // Conversation actions
   addConversation: (conversation: Conversation) => void;
@@ -166,10 +182,12 @@ export const useChatStore = create<ChatStore>()(
     (set, get) => ({
       // Branch-specific message storage
       conversationMessages: {},
+      branchMetadata: {},
       messageNodes: {},
       branchTimelines: {},
       branchHeads: {},
       branchTombstones: {},
+      branchState: {},
       merges: {},
       
       // Initial state
@@ -239,38 +257,50 @@ export const useChatStore = create<ChatStore>()(
       
       getBranchMessages: (conversationId: string, branchId: string): Message[] => {
         const state = get();
-        const timeline = state.branchTimelines[conversationId]?.[branchId];
-        const nodes = state.messageNodes[conversationId];
-        const heads = state.branchHeads[conversationId]?.[branchId];
-        if (timeline && nodes && heads) {
-          const out: Message[] = [];
-          for (const nodeId of timeline) {
-            const isDeleted = state.branchTombstones[conversationId]?.[branchId]?.[nodeId];
-            if (isDeleted) continue;
-            const node = nodes[nodeId];
-            if (!node) continue;
-            const headId = heads[nodeId];
-            const v = node.versions.find(x => x.id === headId) || node.versions[node.versions.length - 1];
-            if (!v) continue;
-            out.push({ id: v.id, role: v.role, content: v.content, timestamp: v.timestamp, attachments: v.attachments, branchId, meta: (v as any).meta });
+        const branchStateEntry = state.branchState[conversationId]?.[branchId];
+        if (branchStateEntry) {
+          const nodes = state.messageNodes[conversationId];
+          const { timeline, heads } = branchStateEntry;
+          if (timeline && nodes && heads) {
+            const out: Message[] = [];
+            for (const nodeId of timeline) {
+              const isDeleted = state.branchTombstones[conversationId]?.[branchId]?.[nodeId];
+              if (isDeleted) continue;
+              const node = nodes[nodeId];
+              if (!node) continue;
+              const headId = heads[nodeId];
+              const headVersion = headId ? node.versions.find(v => v.id === headId) : undefined;
+              const version = headVersion || node.versions[node.versions.length - 1];
+              if (!version) continue;
+              out.push({
+                id: version.id,
+                role: version.role,
+                content: version.content,
+                timestamp: version.timestamp,
+                attachments: version.attachments,
+                branchId,
+                meta: (version as any).meta
+              });
+            }
+            if (out.length) return out;
           }
-          return out;
         }
+
+        // Fallback to legacy storage if branchState missing
         return state.conversationMessages[conversationId]?.[branchId] || [];
       },
       
       getBranches: (conversationId?: string): ConversationBranch[] => {
         const state = get();
         const targetConversationId = conversationId || state.currentConversationId;
-        
-        // If no conversation ID, return empty array
+
         if (!targetConversationId) return [];
-        
-        // Get branch metadata using the adapter utility
+
         return getBranchMetadata(
           targetConversationId,
           state.conversationMessages,
-          state.currentBranchId
+          state.currentBranchId,
+          state.branchMetadata[targetConversationId]
         );
       },
       
@@ -284,7 +314,8 @@ export const useChatStore = create<ChatStore>()(
         const branches = getBranchMetadata(
           conversationId,
           state.conversationMessages,
-          state.currentBranchId
+          state.currentBranchId,
+          state.branchMetadata[conversationId]
         );
         
         return branches.find(branch => branch.id === branchId);
@@ -350,6 +381,8 @@ export const useChatStore = create<ChatStore>()(
               meta: (message as any).meta
             };
 
+            const branchPreview = message.content.slice(0, 50) + (message.content.length > 50 ? '...' : '');
+
             return {
               conversationMessages: {
                 ...conversationMessages,
@@ -382,6 +415,38 @@ export const useChatStore = create<ChatStore>()(
                 [newConversationId]: {
                   ...(state.branchHeads[newConversationId] || {}),
                   [currentBranchId]: { [firstNodeId]: firstVersion.id }
+                }
+              },
+              branchMetadata: {
+                ...state.branchMetadata,
+                [newConversationId]: {
+                  ...(state.branchMetadata[newConversationId] || {}),
+                  [currentBranchId]: {
+                    ...(state.branchMetadata[newConversationId]?.[currentBranchId] || {}),
+                    messageCount: 1,
+                    createdAt: currentTime,
+                    lastActive: currentTime,
+                    preview: branchPreview
+                  }
+                }
+              },
+              branchState: {
+                ...state.branchState,
+                [newConversationId]: {
+                  ...(state.branchState[newConversationId] || {}),
+                  [currentBranchId]: {
+                    timeline: [firstNodeId],
+                    heads: { [firstNodeId]: firstVersion.id },
+                    metadata: {
+                      ...(state.branchState[newConversationId]?.[currentBranchId]?.metadata || {}),
+                      messageCount: 1,
+                      createdAt: currentTime,
+                      lastActive: currentTime,
+                      preview: branchPreview,
+                      name: state.branchState[newConversationId]?.[currentBranchId]?.metadata?.name,
+                      parentId: state.branchState[newConversationId]?.[currentBranchId]?.metadata?.parentId
+                    }
+                  }
                 }
               }
             };
@@ -433,6 +498,9 @@ export const useChatStore = create<ChatStore>()(
               : conv
           );
           
+          const lastMessageForPersist = newMessages[newMessages.length - 1];
+          const firstMessageForPersist = newMessages[0];
+          
           // Auto-save updated conversation to backend
           const updatedConv = updatedConversations.find(c => c.id === currentConversationId);
           if (updatedConv) {
@@ -442,7 +510,22 @@ export const useChatStore = create<ChatStore>()(
               ...updatedConv,
               branches: buildBranchStructure(
                 currentConversationId,
-                updatedConversationMessages
+                updatedConversationMessages,
+                getBranchMetadata(
+                  currentConversationId,
+                  updatedConversationMessages,
+                  state.currentBranchId,
+                  {
+                    ...state.branchMetadata[currentConversationId],
+                    [currentBranchId]: {
+                      ...(state.branchMetadata[currentConversationId]?.[currentBranchId] || {}),
+                      messageCount: newMessages.length,
+                      lastActive: lastMessageForPersist ? new Date(lastMessageForPersist.timestamp).toISOString() : new Date().toISOString(),
+                      createdAt: state.branchMetadata[currentConversationId]?.[currentBranchId]?.createdAt || (firstMessageForPersist ? new Date(firstMessageForPersist.timestamp).toISOString() : new Date().toISOString()),
+                      preview: lastMessageForPersist ? lastMessageForPersist.content.slice(0, 50) + (lastMessageForPersist.content.length > 50 ? '...' : '') : state.branchMetadata[currentConversationId]?.[currentBranchId]?.preview
+                    }
+                  }
+                )
               )
             };
             autoSaveConversation(hydratedConv);
@@ -463,20 +546,56 @@ export const useChatStore = create<ChatStore>()(
             }
           }
 
+          const conversationMetadata = state.branchMetadata[currentConversationId] || {};
+          const branchMeta = conversationMetadata[currentBranchId] || {};
+          const lastMessage = newMessages[newMessages.length - 1];
+          const firstBranchMessage = newMessages[0];
+
           return { 
             conversationMessages: updatedConversationMessages,
             conversations: updatedConversations,
             messageNodes: { ...state.messageNodes, [currentConversationId]: convNodes },
             branchTimelines: { ...state.branchTimelines, [currentConversationId]: { ...convTimelines, [currentBranchId]: timeline } },
-            branchHeads: { ...state.branchHeads, [currentConversationId]: { ...convHeads, [currentBranchId]: heads } }
+            branchHeads: { ...state.branchHeads, [currentConversationId]: { ...convHeads, [currentBranchId]: heads } },
+            branchMetadata: {
+              ...state.branchMetadata,
+              [currentConversationId]: {
+                ...conversationMetadata,
+                [currentBranchId]: {
+                  ...branchMeta,
+                  messageCount: newMessages.length,
+                  createdAt: branchMeta.createdAt || (firstBranchMessage ? new Date(firstBranchMessage.timestamp).toISOString() : new Date().toISOString()),
+                  lastActive: lastMessage ? new Date(lastMessage.timestamp).toISOString() : new Date().toISOString(),
+                  preview: lastMessage ? lastMessage.content.slice(0, 50) + (lastMessage.content.length > 50 ? '...' : '') : branchMeta.preview
+                }
+              }
+            },
+            branchState: {
+              ...state.branchState,
+              [currentConversationId]: {
+                ...(state.branchState[currentConversationId] || {}),
+                [currentBranchId]: {
+                  timeline,
+                  heads,
+                  metadata: {
+                    ...(state.branchState[currentConversationId]?.[currentBranchId]?.metadata || {}),
+                    messageCount: newMessages.length,
+                    createdAt: state.branchState[currentConversationId]?.[currentBranchId]?.metadata?.createdAt || (firstBranchMessage ? new Date(firstBranchMessage.timestamp).toISOString() : new Date().toISOString()),
+                    lastActive: lastMessage ? new Date(lastMessage.timestamp).toISOString() : new Date().toISOString(),
+                    preview: lastMessage ? lastMessage.content.slice(0, 50) + (lastMessage.content.length > 50 ? '...' : '') : state.branchState[currentConversationId]?.[currentBranchId]?.metadata?.preview,
+                    name: state.branchState[currentConversationId]?.[currentBranchId]?.metadata?.name,
+                    parentId: state.branchState[currentConversationId]?.[currentBranchId]?.metadata?.parentId
+                  }
+                }
+              }
+            }
           };
         }),
 
       setMessages: (conversationId: string, branchId: string, messages: Message[]) =>
         set((state) => {
           const { conversationMessages } = state;
-          
-          // Update the conversation message store
+
           const updatedConversationMessages = {
             ...conversationMessages,
             [conversationId]: {
@@ -484,13 +603,12 @@ export const useChatStore = create<ChatStore>()(
               [branchId]: messages
             }
           };
-          
-          // Phase A: rebuild node/versions only if we don't already have a timeline for this branch.
-          // This prevents clobbering local committed versions after a backend refresh.
+
           let convNodes = state.messageNodes[conversationId] || {} as { [id: string]: MessageNode };
           let convTimelines = state.branchTimelines[conversationId] || {} as { [b: string]: string[] };
           let convHeads = state.branchHeads[conversationId] || {} as { [b: string]: { [n: string]: string } };
           const hasExistingTimeline = Array.isArray(convTimelines[branchId]) && convTimelines[branchId].length > 0;
+
           if (!hasExistingTimeline) {
             const newTimeline: string[] = [];
             const newHeads: { [id: string]: string } = {};
@@ -498,9 +616,15 @@ export const useChatStore = create<ChatStore>()(
             messages.forEach((msg, i) => {
               const base = (msg && (msg as any).id != null) ? String((msg as any).id) : 'auto';
               const nodeId = `node-${conversationId}-${branchId}-${i}-${base}`;
-              // Prefer backend id for version id if available; ensures id-based mapping works
               const verId = (msg && (msg as any).id != null) ? String((msg as any).id) : `ver-${i}-${Date.now()}-${Math.random().toString(36).slice(2,6)}`;
-              const ver: MessageVersion = { id: verId, role: msg.role, content: msg.content, timestamp: msg.timestamp, attachments: msg.attachments, meta: (msg as any).meta };
+              const ver: MessageVersion = {
+                id: verId,
+                role: msg.role,
+                content: msg.content,
+                timestamp: msg.timestamp,
+                attachments: msg.attachments,
+                meta: (msg as any).meta
+              };
               newNodes[nodeId] = { id: nodeId, versions: [ver] };
               newTimeline.push(nodeId);
               newHeads[nodeId] = ver.id;
@@ -509,7 +633,6 @@ export const useChatStore = create<ChatStore>()(
             convTimelines = { ...convTimelines, [branchId]: newTimeline };
             convHeads = { ...convHeads, [branchId]: newHeads };
           } else {
-            // Sync existing node graph heads with backend content by index
             const timeline = convTimelines[branchId] || [];
             const headsForBranch = { ...(convHeads[branchId] || {}) } as { [id: string]: string };
             const nodesForConv = { ...convNodes } as { [id: string]: MessageNode };
@@ -524,6 +647,7 @@ export const useChatStore = create<ChatStore>()(
               const backendText = backendMsg?.content ?? '';
               const currentText = head?.content ?? '';
               const backendVerId = (backendMsg && (backendMsg as any).id != null) ? String((backendMsg as any).id) : undefined;
+
               if (backendText !== currentText) {
                 const newVerId = backendVerId || `ver-sync-${i}-${Date.now()}-${Math.random().toString(36).slice(2,6)}`;
                 const newVer: MessageVersion = {
@@ -537,21 +661,20 @@ export const useChatStore = create<ChatStore>()(
                 nodesForConv[nodeId] = { id: nodeId, versions: [...node.versions, newVer] };
                 headsForBranch[nodeId] = newVerId;
               } else {
-                // If content matches but backend supplied a different canonical id,
-                // do NOT create a new version. Switch head to the backend id and retag
-                // the current head version id to the canonical id.
                 let newNode = node;
                 if (backendVerId && headId !== backendVerId && head) {
                   const newVersions = node.versions.map(v => (v.id === head.id ? { ...v, id: backendVerId } : v));
                   newNode = { ...node, versions: newVersions };
                   headsForBranch[nodeId] = backendVerId;
                 }
-                // Merge backend meta into the head version if provided
                 const bMeta = (backendMsg as any)?.meta;
                 if (bMeta && head) {
                   const headIndex = newNode.versions.findIndex(v => v.id === (backendVerId || headId));
                   if (headIndex >= 0) {
-                    const updatedHead: MessageVersion = { ...newNode.versions[headIndex], meta: { ...(newNode.versions[headIndex] as any).meta, ...bMeta } };
+                    const updatedHead: MessageVersion = {
+                      ...newNode.versions[headIndex],
+                      meta: { ...(newNode.versions[headIndex] as any).meta, ...bMeta }
+                    };
                     const newVersions = [...newNode.versions];
                     newVersions[headIndex] = updatedHead;
                     newNode = { ...newNode, versions: newVersions };
@@ -564,61 +687,82 @@ export const useChatStore = create<ChatStore>()(
             convHeads = { ...convHeads, [branchId]: headsForBranch };
           }
 
-          // Update branch details if this branch exists in state
-          // Get branches using the getBranches selector instead of accessing state.branches directly
-          const branches = getBranchMetadata(
-            conversationId,
-            conversationMessages,
-            branchId
-          );
-          const updatedBranches = branches.map((branch) => {
-            if (branch.id === branchId) {
-              // Get the last message for the preview if available
-              const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
-              
-              return {
-                ...branch,
-                messageCount: messages.length,
-                lastActive: new Date().toISOString(),
-                preview: lastMessage ? (lastMessage.content.slice(0, 50) + (lastMessage.content.length > 50 ? '...' : '')) : branch.preview
-              };
+          const now = new Date().toISOString();
+          const firstMessage = messages[0];
+          const lastMessage = messages[messages.length - 1];
+          const conversationMetadata = state.branchMetadata[conversationId] || {};
+          const branchMeta = conversationMetadata[branchId] || {};
+          const updatedBranchMetadataForConv = {
+            ...conversationMetadata,
+            [branchId]: {
+              ...branchMeta,
+              messageCount: messages.length,
+              lastActive: lastMessage ? new Date(lastMessage.timestamp).toISOString() : (branchMeta.lastActive || now),
+              createdAt: branchMeta.createdAt || (firstMessage ? new Date(firstMessage.timestamp).toISOString() : now),
+              preview: branchMeta.preview || (lastMessage ? lastMessage.content.slice(0, 50) + (lastMessage.content.length > 50 ? '...' : '') : undefined)
             }
-            return branch;
-          });
-          
-          // Update the conversation object - do not store messages in conversation.branches
-          // We'll hydrate them on demand when needed for persistence
+          };
+
           const currentTime = new Date().toISOString();
           const updatedConversations = state.conversations.map((conv) =>
             conv.id === conversationId
-              ? { 
-                  ...conv, 
+              ? {
+                  ...conv,
                   updatedAt: currentTime
                 }
               : conv
           );
-          
-          // Auto-save updated conversation to backend
+
           const updatedConv = updatedConversations.find(c => c.id === conversationId);
           if (updatedConv) {
-            // Hydrate the conversation with branch messages from conversationMessages
-            // before sending to persistence layer
             const hydratedConv = {
               ...updatedConv,
               branches: buildBranchStructure(
                 conversationId,
-                updatedConversationMessages
+                updatedConversationMessages,
+                getBranchMetadata(
+                  conversationId,
+                  updatedConversationMessages,
+                  state.currentBranchId,
+                  {
+                    ...state.branchMetadata[conversationId],
+                    [branchId]: updatedBranchMetadataForConv[branchId]
+                  }
+                )
               )
             };
             autoSaveConversation(hydratedConv);
           }
-          
+
           return {
             conversationMessages: updatedConversationMessages,
             conversations: updatedConversations,
             messageNodes: { ...state.messageNodes, [conversationId]: convNodes },
             branchTimelines: { ...state.branchTimelines, [conversationId]: convTimelines },
-            branchHeads: { ...state.branchHeads, [conversationId]: convHeads }
+            branchHeads: { ...state.branchHeads, [conversationId]: convHeads },
+            branchMetadata: {
+              ...state.branchMetadata,
+              [conversationId]: updatedBranchMetadataForConv
+            },
+            branchState: {
+              ...state.branchState,
+              [conversationId]: {
+                ...(state.branchState[conversationId] || {}),
+                [branchId]: {
+                  timeline: convTimelines[branchId] || [],
+                  heads: convHeads[branchId] || {},
+                  metadata: {
+                    ...(state.branchState[conversationId]?.[branchId]?.metadata || {}),
+                    messageCount: messages.length,
+                    createdAt: state.branchState[conversationId]?.[branchId]?.metadata?.createdAt || (firstMessage ? new Date(firstMessage.timestamp).toISOString() : now),
+                    lastActive: lastMessage ? new Date(lastMessage.timestamp).toISOString() : (state.branchState[conversationId]?.[branchId]?.metadata?.lastActive || now),
+                    preview: lastMessage ? lastMessage.content.slice(0, 50) + (lastMessage.content.length > 50 ? '...' : '') : state.branchState[conversationId]?.[branchId]?.metadata?.preview,
+                    name: state.branchState[conversationId]?.[branchId]?.metadata?.name,
+                    parentId: state.branchState[conversationId]?.[branchId]?.metadata?.parentId
+                  }
+                }
+              }
+            }
           };
         }),
 
@@ -743,23 +887,49 @@ export const useChatStore = create<ChatStore>()(
           // Auto-save updated conversation to backend
           const updatedConv = updatedConversations.find(c => c.id === conversationId);
           if (updatedConv) {
-            // Hydrate the conversation with branch messages from conversationMessages
-            // before sending to persistence layer
             const hydratedConv = {
               ...updatedConv,
               branches: buildBranchStructure(
                 conversationId,
-                updatedConversationMessages
+                updatedConversationMessages,
+                getBranchMetadata(
+                  conversationId,
+                  updatedConversationMessages,
+                  state.currentBranchId,
+                  {
+                    ...state.branchMetadata[conversationId]
+                  }
+                )
               )
             };
             autoSaveConversation(hydratedConv);
           }
-          
-          return { 
-            conversationMessages: updatedConversationMessages, 
+
+          const existingBranchState = state.branchState[conversationId]?.[branchId];
+          const updatedHeads = _nextHeadsForBranch || existingBranchState?.heads || state.branchHeads[conversationId]?.[branchId] || {};
+          const existingTimeline = existingBranchState?.timeline || state.branchTimelines[conversationId]?.[branchId] || [];
+
+          return {
+            conversationMessages: updatedConversationMessages,
             conversations: updatedConversations,
             ...( _nextNodesForConv ? { messageNodes: { ...state.messageNodes, [conversationId]: _nextNodesForConv } } : {}),
-            ...( _nextHeadsForBranch ? { branchHeads: { ...state.branchHeads, [conversationId]: { ...(state.branchHeads[conversationId] || {}), [branchId]: _nextHeadsForBranch } } } : {})
+            ...( _nextHeadsForBranch ? { branchHeads: { ...state.branchHeads, [conversationId]: { ...(state.branchHeads[conversationId] || {}), [branchId]: _nextHeadsForBranch } } } : {}),
+            branchState: {
+              ...state.branchState,
+              [conversationId]: {
+                ...(state.branchState[conversationId] || {}),
+                [branchId]: {
+                  timeline: existingTimeline,
+                  heads: updatedHeads,
+                  metadata: {
+                    ...(existingBranchState?.metadata || {}),
+                    lastActive: new Date().toISOString(),
+                    messageCount: newMessages.length,
+                    preview: existingBranchState?.metadata?.preview
+                  }
+                }
+              }
+            }
           } as any;
         }),
 
@@ -837,10 +1007,29 @@ export const useChatStore = create<ChatStore>()(
             updatedTombs = { ...state.branchTombstones, [conversationId]: { ...convTombs, [branchId]: branchTombs } };
           }
 
-          return { 
+          const branchStateEntry = state.branchState[conversationId]?.[branchId];
+          const previewMessage = newMessages[newMessages.length - 1];
+
+          return {
             conversationMessages: updatedConversationMessages,
             conversations: updatedConversations,
-            branchTombstones: updatedTombs
+            branchTombstones: updatedTombs,
+            branchState: {
+              ...state.branchState,
+              [conversationId]: {
+                ...(state.branchState[conversationId] || {}),
+                [branchId]: {
+                  timeline: branchStateEntry?.timeline || state.branchTimelines[conversationId]?.[branchId] || [],
+                  heads: branchStateEntry?.heads || state.branchHeads[conversationId]?.[branchId] || {},
+                  metadata: {
+                    ...(branchStateEntry?.metadata || {}),
+                    messageCount: newMessages.length,
+                    lastActive: new Date().toISOString(),
+                    preview: previewMessage ? previewMessage.content.slice(0, 50) + (previewMessage.content.length > 50 ? '...' : '') : branchStateEntry?.metadata?.preview
+                  }
+                }
+              }
+            }
           };
         }),
 
@@ -873,23 +1062,26 @@ export const useChatStore = create<ChatStore>()(
             
             // Auto-save updated conversation to backend
             const updatedConv = updatedConversations.find(c => c.id === conversationId);
+            const branchMetaMap = {
+              ...state.branchMetadata[conversationId],
+              [branchId]: {
+                ...(state.branchMetadata[conversationId]?.[branchId] || {}),
+                name: name || `Branch ${branchId}`,
+                parentId,
+                createdAt: now,
+                lastActive: now,
+                messageCount: 0
+              }
+            };
+
             if (updatedConv) {
-              // Generate branch metadata for saving
               const branchMetadata = getBranchMetadata(
                 conversationId,
                 updatedConversationMessages,
                 state.currentBranchId,
-                { 
-                  [branchId]: {
-                    name: name || `Branch ${branchId}`,
-                    parentId,
-                    createdAt: now
-                  }
-                }
+                branchMetaMap
               );
-              
-              // Hydrate the conversation with branch messages from conversationMessages
-              // before sending to persistence layer
+
               const hydratedConv = {
                 ...updatedConv,
                 branches: buildBranchStructure(
@@ -903,7 +1095,30 @@ export const useChatStore = create<ChatStore>()(
             
             return {
               conversationMessages: updatedConversationMessages,
-              conversations: updatedConversations
+              conversations: updatedConversations,
+              branchMetadata: {
+                ...state.branchMetadata,
+                [conversationId]: branchMetaMap
+              },
+              branchState: {
+                ...state.branchState,
+                [conversationId]: {
+                  ...(state.branchState[conversationId] || {}),
+                  [branchId]: {
+                    timeline: [],
+                    heads: {},
+                    metadata: {
+                      ...(state.branchState[conversationId]?.[branchId]?.metadata || {}),
+                      name: name || `Branch ${branchId}`,
+                      parentId,
+                      createdAt: now,
+                      lastActive: now,
+                      messageCount: 0,
+                      preview: state.branchState[conversationId]?.[branchId]?.metadata?.preview
+                    }
+                  }
+                }
+              }
             };
           }
           
@@ -945,6 +1160,26 @@ export const useChatStore = create<ChatStore>()(
               }
               updatedConversationMessages = state.conversationMessages; // preserve reference
             }
+
+            const updatedTimelinesForConv = { ...(state.branchTimelines[conversationId] || {}) };
+            if (updatedTimelinesForConv[branchId]) {
+              delete updatedTimelinesForConv[branchId];
+            }
+
+            const updatedHeadsForConv = { ...(state.branchHeads[conversationId] || {}) };
+            if (updatedHeadsForConv[branchId]) {
+              delete updatedHeadsForConv[branchId];
+            }
+
+            const updatedBranchMetadataForConv = { ...(state.branchMetadata[conversationId] || {}) };
+            if (updatedBranchMetadataForConv[branchId]) {
+              delete updatedBranchMetadataForConv[branchId];
+            }
+
+            const updatedBranchStateForConv = { ...(state.branchState[conversationId] || {}) };
+            if (updatedBranchStateForConv[branchId]) {
+              delete updatedBranchStateForConv[branchId];
+            }
             
             // Update the conversation object with new timestamp
             updatedConversations = state.conversations.map((conv) => 
@@ -959,15 +1194,13 @@ export const useChatStore = create<ChatStore>()(
             // Auto-save updated conversation to backend
             const updatedConv = updatedConversations.find(c => c.id === conversationId);
             if (updatedConv) {
-              // Generate branch metadata for saving
               const branchMetadata = getBranchMetadata(
                 conversationId,
                 updatedConversationMessages,
-                updatedCurrentBranchId
+                updatedCurrentBranchId,
+                updatedBranchMetadataForConv
               );
-              
-              // Hydrate the conversation with branch messages from conversationMessages
-              // before sending to persistence layer
+
               const hydratedConv = {
                 ...updatedConv,
                 branches: buildBranchStructure(
@@ -978,8 +1211,30 @@ export const useChatStore = create<ChatStore>()(
               };
               autoSaveConversation(hydratedConv);
             }
+
+            return {
+              currentBranchId: updatedCurrentBranchId,
+              conversationMessages: updatedConversationMessages,
+              conversations: updatedConversations,
+              branchMetadata: {
+                ...state.branchMetadata,
+                [conversationId]: updatedBranchMetadataForConv
+              },
+              branchState: {
+                ...state.branchState,
+                [conversationId]: updatedBranchStateForConv
+              },
+              branchTimelines: {
+                ...state.branchTimelines,
+                [conversationId]: updatedTimelinesForConv
+              },
+              branchHeads: {
+                ...state.branchHeads,
+                [conversationId]: updatedHeadsForConv
+              }
+            };
           }
-          
+
           return {
             currentBranchId: updatedCurrentBranchId,
             conversationMessages: updatedConversationMessages,
@@ -1006,6 +1261,84 @@ export const useChatStore = create<ChatStore>()(
           return { currentBranchId: branchId };
         }),
 
+      mergeBranchMetadata: (conversationId: string, branches: Array<Partial<ConversationBranch> & { id: string }>) =>
+        set((state) => {
+          if (!conversationId || branches.length === 0) return state;
+
+          const existingMetadata = state.branchMetadata[conversationId] || {};
+          const existingBranchState = state.branchState[conversationId] || {};
+          const updatedMetadata = { ...existingMetadata };
+          const updatedBranchState = { ...existingBranchState };
+          const now = new Date().toISOString();
+
+          for (const branch of branches) {
+            const branchId = branch.id;
+            if (!branchId) continue;
+
+            const priorMeta = updatedMetadata[branchId] || {};
+            const priorStateMeta = existingBranchState[branchId]?.metadata || {};
+            const timeline = updatedBranchState[branchId]?.timeline || state.branchTimelines[conversationId]?.[branchId] || [];
+            const heads = updatedBranchState[branchId]?.heads || state.branchHeads[conversationId]?.[branchId] || {};
+            const messageCount = branch.messageCount ?? priorMeta.messageCount ?? priorStateMeta.messageCount ?? timeline.length;
+
+            const metadata: Partial<ConversationBranch> = {
+              ...priorMeta,
+              name: branch.name || priorMeta.name || priorStateMeta.name || (branchId === 'main' ? 'Main' : `Branch ${branchId}`),
+              parentId: branch.parentId ?? (branch as any).parent ?? priorMeta.parentId ?? priorStateMeta.parentId,
+              messageCount,
+              createdAt: branch.createdAt || priorMeta.createdAt || priorStateMeta.createdAt || now,
+              lastActive: branch.lastActive || priorMeta.lastActive || priorStateMeta.lastActive || now,
+              preview: branch.preview || priorMeta.preview || priorStateMeta.preview
+            };
+
+            updatedMetadata[branchId] = metadata;
+            updatedBranchState[branchId] = {
+              timeline,
+              heads,
+              metadata
+            };
+          }
+
+          return {
+            branchMetadata: {
+              ...state.branchMetadata,
+              [conversationId]: updatedMetadata
+            },
+            branchState: {
+              ...state.branchState,
+              [conversationId]: updatedBranchState
+            }
+          };
+        }),
+
+      removeBranchMetadata: (conversationId: string, branchId: string) =>
+        set((state) => {
+          const existingMetadata = state.branchMetadata[conversationId];
+          const existingBranchState = state.branchState[conversationId];
+          if (!existingMetadata || !existingMetadata[branchId]) {
+            if (!existingBranchState || !existingBranchState[branchId]) {
+              return state;
+            }
+          }
+
+          const updatedMetadata = existingMetadata ? { ...existingMetadata } : {};
+          delete updatedMetadata[branchId];
+
+          const updatedBranchState = existingBranchState ? { ...existingBranchState } : {};
+          delete updatedBranchState[branchId];
+
+          return {
+            branchMetadata: {
+              ...state.branchMetadata,
+              [conversationId]: updatedMetadata
+            },
+            branchState: {
+              ...state.branchState,
+              [conversationId]: updatedBranchState
+            }
+          };
+        }),
+
       // Conversation actions
       addConversation: (conversation: Conversation) =>
         set((state) => {
@@ -1029,11 +1362,40 @@ export const useChatStore = create<ChatStore>()(
           const sessionId = SessionManager.getCurrentSessionId();
           const sessionConversations = [...(state.conversationsBySession[sessionId] || []), conversation.id];
           
-          // Mutate conversationMessages in place so existing references remain valid in tests
-          state.conversationMessages[conversation.id] = branchMessages;
+         // Mutate conversationMessages in place so existing references remain valid in tests
+         state.conversationMessages[conversation.id] = branchMessages;
+          const branchStateForConv: {
+            [branchId: string]: {
+              timeline: string[];
+              heads: { [nodeId: string]: string };
+              metadata: Partial<ConversationBranch>;
+            }
+          } = { ...(state.branchState[conversation.id] || {}) };
+
+          Object.entries(branchMessages).forEach(([branchId, msgs]) => {
+            const previewMsg = msgs[msgs.length - 1];
+            branchStateForConv[branchId] = {
+              timeline: state.branchTimelines[conversation.id]?.[branchId] || [],
+              heads: state.branchHeads[conversation.id]?.[branchId] || {},
+              metadata: {
+                ...(branchStateForConv[branchId]?.metadata || {}),
+                name: branchStateForConv[branchId]?.metadata?.name || (branchId === 'main' ? 'Main' : `Branch ${branchId}`),
+                createdAt: branchStateForConv[branchId]?.metadata?.createdAt || conversation.createdAt,
+                lastActive: branchStateForConv[branchId]?.metadata?.lastActive || conversation.updatedAt,
+                parentId: branchStateForConv[branchId]?.metadata?.parentId,
+                messageCount: msgs.length,
+                preview: previewMsg ? previewMsg.content.slice(0, 50) + (previewMsg.content.length > 50 ? '...' : '') : branchStateForConv[branchId]?.metadata?.preview
+              }
+            };
+          });
+
           return {
             conversations: [...state.conversations, conversation],
             conversationMessages: state.conversationMessages,
+            branchState: {
+              ...state.branchState,
+              [conversation.id]: branchStateForConv
+            },
             conversationsBySession: {
               ...state.conversationsBySession,
               [sessionId]: sessionConversations
@@ -1066,11 +1428,23 @@ export const useChatStore = create<ChatStore>()(
           
           // Remove the conversation from storage
           const { [conversationId]: removed, ...remainingConversations } = state.conversationMessages;
+          const { [conversationId]: removedNodes, ...remainingNodes } = state.messageNodes;
+          const { [conversationId]: removedTimelines, ...remainingTimelines } = state.branchTimelines;
+          const { [conversationId]: removedHeads, ...remainingHeads } = state.branchHeads;
+          const { [conversationId]: removedTombs, ...remainingTombs } = state.branchTombstones;
+          const { [conversationId]: removedBranchMeta, ...remainingBranchMeta } = state.branchMetadata;
+          const { [conversationId]: removedBranchState, ...remainingBranchState } = state.branchState;
           
           return {
             conversations: state.conversations.filter((conv) => conv.id !== conversationId),
             currentConversationId: state.currentConversationId === conversationId ? null : state.currentConversationId,
             conversationMessages: remainingConversations,
+            messageNodes: remainingNodes,
+            branchTimelines: remainingTimelines,
+            branchHeads: remainingHeads,
+            branchTombstones: remainingTombs,
+            branchMetadata: remainingBranchMeta,
+            branchState: remainingBranchState,
             conversationsBySession: updatedConversationsBySession
           };
         }),
@@ -1230,6 +1604,8 @@ export const useChatStore = create<ChatStore>()(
           }
           
           // Update the store with current branch and conversation
+          const previewMsg = branchMessages[branchMessages.length - 1];
+          const now = new Date().toISOString();
           set({
             currentConversationId: conversationId,
             currentBranchId: targetBranchId,
@@ -1239,9 +1615,41 @@ export const useChatStore = create<ChatStore>()(
                 ...(state.conversationMessages[conversationId] || {}),
                 [targetBranchId]: branchMessages
               }
+            },
+            branchMetadata: {
+              ...state.branchMetadata,
+              [conversationId]: {
+                ...(state.branchMetadata[conversationId] || {}),
+                [targetBranchId]: {
+                  ...(state.branchMetadata[conversationId]?.[targetBranchId] || {}),
+                  messageCount: branchMessages.length,
+                  lastActive: previewMsg ? new Date(previewMsg.timestamp).toISOString() : now,
+                  createdAt: state.branchMetadata[conversationId]?.[targetBranchId]?.createdAt || now,
+                  preview: previewMsg ? previewMsg.content.slice(0, 50) + (previewMsg.content.length > 50 ? '...' : '') : state.branchMetadata[conversationId]?.[targetBranchId]?.preview
+                }
+              }
+            },
+            branchState: {
+              ...state.branchState,
+              [conversationId]: {
+                ...(state.branchState[conversationId] || {}),
+                [targetBranchId]: {
+                  timeline: state.branchState[conversationId]?.[targetBranchId]?.timeline || state.branchTimelines[conversationId]?.[targetBranchId] || [],
+                  heads: state.branchState[conversationId]?.[targetBranchId]?.heads || state.branchHeads[conversationId]?.[targetBranchId] || {},
+                  metadata: {
+                    ...(state.branchState[conversationId]?.[targetBranchId]?.metadata || {}),
+                    messageCount: branchMessages.length,
+                    lastActive: previewMsg ? new Date(previewMsg.timestamp).toISOString() : (state.branchState[conversationId]?.[targetBranchId]?.metadata?.lastActive || now),
+                    createdAt: state.branchState[conversationId]?.[targetBranchId]?.metadata?.createdAt || now,
+                    preview: previewMsg ? previewMsg.content.slice(0, 50) + (previewMsg.content.length > 50 ? '...' : '') : state.branchState[conversationId]?.[targetBranchId]?.metadata?.preview,
+                    name: state.branchState[conversationId]?.[targetBranchId]?.metadata?.name,
+                    parentId: state.branchState[conversationId]?.[targetBranchId]?.metadata?.parentId
+                  }
+                }
+              }
             }
           });
-          
+
           return conversation;
         }
         
@@ -1263,19 +1671,37 @@ export const useChatStore = create<ChatStore>()(
           const nextHeads = { ...(state.branchHeads[conversationId] || {}), ...(nodeGraph.heads || {}) };
           const nextTombs = { ...(state.branchTombstones[conversationId] || {}), ...(nodeGraph.tombstones || {}) };
           const nextMerges = [ ...(state.merges[conversationId] || []), ...((nodeGraph.merges || []) as MergeRecord[]) ];
+          const nextBranchState = { ...(state.branchState[conversationId] || {}) };
+          Object.keys(nextTimelines).forEach(branchId => {
+            const existingMeta = nextBranchState[branchId]?.metadata || {};
+            nextBranchState[branchId] = {
+              timeline: nextTimelines[branchId] || [],
+              heads: nextHeads[branchId] || nextBranchState[branchId]?.heads || {},
+              metadata: {
+                ...existingMeta,
+                messageCount: existingMeta.messageCount ?? (nextTimelines[branchId]?.length || 0)
+              }
+            };
+          });
           return {
             messageNodes: { ...state.messageNodes, [conversationId]: nextNodes },
             branchTimelines: { ...state.branchTimelines, [conversationId]: nextTimelines },
             branchHeads: { ...state.branchHeads, [conversationId]: nextHeads },
             branchTombstones: { ...state.branchTombstones, [conversationId]: nextTombs },
             merges: { ...state.merges, [conversationId]: nextMerges },
+            branchState: {
+              ...state.branchState,
+              [conversationId]: nextBranchState
+            }
           };
         }),
 
       getMessageNodeInfo: (conversationId: string, branchId: string, messageId: string, byIndex?: number) => {
-        const nodes = get().messageNodes[conversationId] || {};
-        const timeline = get().branchTimelines[conversationId]?.[branchId] || [];
-        const heads = get().branchHeads[conversationId]?.[branchId] || {};
+        const state = get();
+        const nodes = state.messageNodes[conversationId] || {};
+        const branchStateEntry = state.branchState[conversationId]?.[branchId];
+        const timeline = branchStateEntry?.timeline || state.branchTimelines[conversationId]?.[branchId] || [];
+        const heads = branchStateEntry?.heads || state.branchHeads[conversationId]?.[branchId] || {};
         let nodeId: string | undefined;
         for (const nid of timeline) {
           if (heads[nid] === messageId) { nodeId = nid; break; }
@@ -1299,7 +1725,8 @@ export const useChatStore = create<ChatStore>()(
           if (!nodes) return state;
           const node = nodes[nodeId];
           if (!node || node.versions.length <= 1) return state;
-          const heads = { ...(state.branchHeads[conversationId]?.[branchId] || {}) } as { [id: string]: string };
+          const existingHeads = state.branchState[conversationId]?.[branchId]?.heads || state.branchHeads[conversationId]?.[branchId] || {};
+          const heads = { ...existingHeads } as { [id: string]: string };
           const currentId = heads[nodeId] || node.versions[node.versions.length - 1].id;
           const idx = node.versions.findIndex(v => v.id === currentId);
           const nextIdx = Math.min(Math.max(idx + delta, 0), node.versions.length - 1);
@@ -1308,6 +1735,17 @@ export const useChatStore = create<ChatStore>()(
             branchHeads: {
               ...state.branchHeads,
               [conversationId]: { ...(state.branchHeads[conversationId] || {}), [branchId]: heads }
+            },
+            branchState: {
+              ...state.branchState,
+              [conversationId]: {
+                ...(state.branchState[conversationId] || {}),
+                [branchId]: {
+                  timeline: state.branchState[conversationId]?.[branchId]?.timeline || state.branchTimelines[conversationId]?.[branchId] || [],
+                  heads,
+                  metadata: state.branchState[conversationId]?.[branchId]?.metadata || {}
+                }
+              }
             }
           };
         }),

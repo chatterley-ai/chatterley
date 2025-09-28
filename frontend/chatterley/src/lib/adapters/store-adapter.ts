@@ -196,43 +196,44 @@ export function getBranchMetadata(
   currentBranchId: string = 'main',
   existingBranchMetadata?: { [branchId: string]: Partial<ConversationBranch> }
 ): ConversationBranch[] {
-  if (!normalizedMessages[conversationId]) {
-    return [
-      {
-        id: 'main',
-        name: 'Main',
-        isActive: true,
-        messageCount: 0,
-        createdAt: new Date().toISOString(),
-        lastActive: new Date().toISOString()
-      }
-    ];
+  const normalized = normalizedMessages[conversationId] || {};
+  const metadataMap = existingBranchMetadata || {};
+
+  const branchIdSet = new Set<string>([
+    ...Object.keys(normalized),
+    ...Object.keys(metadataMap)
+  ]);
+
+  if (branchIdSet.size === 0) {
+    branchIdSet.add('main');
   }
-  
-  const branchIds = Object.keys(normalizedMessages[conversationId]);
-  return branchIds.map(branchId => {
-    const messages = normalizedMessages[conversationId][branchId];
+
+  return Array.from(branchIdSet).map((branchId) => {
+    const messages = normalized[branchId] || [];
     const firstMessage = messages.length > 0 ? messages[0] : null;
     const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
-    
-    // Use existing metadata if available
-    const existingMetadata = existingBranchMetadata?.[branchId] || {};
-    
+    const metadata = metadataMap[branchId] || {};
+
+    const createdAt = metadata.createdAt ||
+      (firstMessage ? new Date(firstMessage.timestamp).toISOString() : new Date().toISOString());
+    const lastActive = metadata.lastActive ||
+      (lastMessage ? new Date(lastMessage.timestamp).toISOString() : createdAt);
+
+    const previewFromMessages = lastMessage
+      ? lastMessage.content.slice(0, 50) + (lastMessage.content.length > 50 ? '...' : '')
+      : undefined;
+
     return {
       id: branchId,
-      // Use existing name if available, otherwise use default naming
-      name: existingMetadata.name || (branchId === 'main' ? 'Main' : `Branch ${branchId}`),
+      name: metadata.name || (branchId === 'main' ? 'Main' : `Branch ${branchId}`),
       isActive: branchId === currentBranchId,
-      messageCount: messages.length,
-      // Use first message for createdAt, or existing metadata, or current time
-      createdAt: existingMetadata.createdAt || 
-                (firstMessage ? new Date(firstMessage.timestamp).toISOString() : new Date().toISOString()),
-      // Use last message for lastActive, or existing metadata, or current time                
-      lastActive: lastMessage ? new Date(lastMessage.timestamp).toISOString() : new Date().toISOString(),
-      // Keep existing parentId if available
-      parentId: existingMetadata.parentId,
-      // Use last message for preview
-      preview: lastMessage ? lastMessage.content.slice(0, 50) + (lastMessage.content.length > 50 ? '...' : '') : undefined
+      messageCount: typeof metadata.messageCount === 'number'
+        ? metadata.messageCount
+        : messages.length,
+      createdAt,
+      lastActive,
+      parentId: metadata.parentId,
+      preview: metadata.preview || previewFromMessages
     };
   });
 }
