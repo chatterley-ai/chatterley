@@ -18,6 +18,67 @@ import {
   ChatHistory
 } from './types';
 
+type SessionContext = {
+  sessionId?: string;
+  branchId?: string;
+};
+
+type SessionResolver = () => SessionContext;
+type StoreStateResolver = () => Record<string, unknown> | undefined;
+
+const DEFAULT_CURRENT_BRANCH = 'main';
+
+const normalizeSession = (value?: string | null): string | undefined => {
+  if (!value || typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+};
+
+const normalizeBranch = (value?: string | null): string | undefined => {
+  if (!value || typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+};
+
+const warnUnsafeBranch = (source: string, context?: Record<string, unknown>) => {
+  const stack = new Error().stack?.split('\n').slice(2, 6).map(line => line.trim());
+  console.warn(`[WARN] UnifiedApi falling back to default branch (${source})`, {
+    ...context,
+    source,
+    timestamp: new Date().toISOString(),
+    stack,
+  });
+};
+
+let sessionResolver: SessionResolver | null = null;
+let storeStateResolver: StoreStateResolver | null = null;
+
+export const setUnifiedApiSessionResolver = (resolver: SessionResolver | null) => {
+  sessionResolver = resolver;
+};
+
+export const setUnifiedApiStoreStateResolver = (resolver: StoreStateResolver | null) => {
+  storeStateResolver = resolver;
+};
+
+const resolveSessionContext = (): SessionContext => {
+  try {
+    return sessionResolver ? sessionResolver() : {};
+  } catch (error) {
+    console.warn('[UnifiedApi] sessionResolver failed:', error);
+    return {};
+  }
+};
+
+const resolveStoreState = (): Record<string, unknown> | undefined => {
+  try {
+    return storeStateResolver ? storeStateResolver() : undefined;
+  } catch (error) {
+    console.warn('[UnifiedApi] storeStateResolver failed:', error);
+    return undefined;
+  }
+};
+
 const debugLog = (...args: unknown[]) => {
   if (process.env.NODE_ENV !== 'production') {
     console.debug(...args);
@@ -204,17 +265,17 @@ class UnifiedApiClient {
   }
 
   async regenNode(params: { assistantId?: string; userMessageId?: string; prompt?: string; sessionId?: string; branchId?: string; historyMode?: 'none'|'last_user'|'full' }): Promise<ApiResponse<{ assistant: { id: string; content: string } }>> {
-    // Fill session/branch if missing
-    let sessionId = params.sessionId;
-    let branchId = params.branchId;
-    try {
-      if (!sessionId || !branchId) {
-        const storeMod = await import('./store') as { useChatStore?: { getState?: () => { getCurrentSessionId?: () => string; currentSessionId?: string; currentBranchId?: string } } };
-        const st = storeMod.useChatStore?.getState?.();
-        sessionId = sessionId || st?.getCurrentSessionId?.() || st?.currentSessionId;
-        branchId = branchId || st?.currentBranchId || 'main';
-      }
-    } catch {}
+    const ctx = resolveSessionContext();
+    const sessionId = normalizeSession(params.sessionId ?? ctx.sessionId);
+    const resolvedBranch = normalizeBranch(params.branchId ?? ctx.branchId);
+    const branchId = resolvedBranch ?? DEFAULT_CURRENT_BRANCH;
+    if (!resolvedBranch) {
+      warnUnsafeBranch('regenNode', {
+        providedBranch: params.branchId,
+        contextBranch: ctx.branchId,
+        sessionId,
+      });
+    }
 
     const payload = {
       assistantId: params.assistantId,
@@ -225,7 +286,7 @@ class UnifiedApiClient {
       historyMode: params.historyMode || 'last_user',
     };
 
-    const client = this.getClient() as { regenNode?: (payload: unknown) => Promise<ApiResponse<unknown>> };
+    const client = this.getClient() as { regenNode?: (payload: unknown) => Promise<ApiResponse<{ assistant: { id: string; content: string } }>> };
     if (typeof client.regenNode === 'function') {
       return client.regenNode(payload);
     }
@@ -248,10 +309,11 @@ class UnifiedApiClient {
 
       // Normalize and sort by last modified (newest first)
       const normalized = Array.isArray(conversations) ? conversations : [];
-      normalized.sort((a, b) =>
-        new Date(b.lastModified || b.updatedAt || 0).getTime() -
-        new Date(a.lastModified || a.updatedAt || 0).getTime()
-      );
+      normalized.sort((a, b) => {
+        const bDate = new Date(b.lastModified as string || b.updatedAt as string || 0).getTime();
+        const aDate = new Date(a.lastModified as string || a.updatedAt as string || 0).getTime();
+        return bDate - aDate;
+      });
 
       return { success: true, data: { conversations: normalized } };
     } catch (error) {
@@ -285,7 +347,7 @@ class UnifiedApiClient {
         // Add sessionId to each conversation and add to master list
         if (Array.isArray(conversations)) {
           const conversationsWithSession = conversations.map(conv => ({
-            ...conv,
+            ...conv as Record<string, unknown>,
             sessionId: sessionId // Add sessionId to each conversation
           }));
           allConversations.push(...conversationsWithSession);
@@ -293,15 +355,16 @@ class UnifiedApiClient {
       }
       
       // Sort all conversations by lastModified (newest first)
-      allConversations.sort((a, b) =>
-        new Date(b.lastModified || b.updatedAt || 0).getTime() -
-        new Date(a.lastModified || a.updatedAt || 0).getTime()
-      );
+      allConversations.sort((a, b) => {
+        const bDate = new Date(b.lastModified as string || b.updatedAt as string || 0).getTime();
+        const aDate = new Date(a.lastModified as string || a.updatedAt as string || 0).getTime();
+        return bDate - aDate;
+      });
       
       return { 
         success: true, 
         data: { 
-          conversations: allConversations 
+          conversations: allConversations as Record<string, unknown>[] 
         } 
       };
     } catch (error) {
@@ -370,7 +433,7 @@ class UnifiedApiClient {
         }
       }
       // Sort by lastActive desc, keeping current order for ties
-      nodes.sort((a, b) => new Date(b.lastActive || 0).getTime() - new Date(a.lastActive || 0).getTime());
+      nodes.sort((a, b) => new Date(b.lastActive as string || 0).getTime() - new Date(a.lastActive as string || 0).getTime());
       return { success: true, data: { nodes } };
     } catch (error) {
       console.error('Error listing session nodes:', error);
@@ -397,9 +460,15 @@ class UnifiedApiClient {
           };
         }
 
-        const messages = conversationData.messages || conversationData.conversation || [];
-        const nodeGraph = conversationData.nodeGraph || undefined;
-        const currentBranchId = conversationData.currentBranchId || conversationData.current_branch || undefined;
+        const messages = (conversationData && typeof conversationData === 'object') ? 
+          ((Array.isArray(conversationData.messages) ? conversationData.messages : []) || 
+          (Array.isArray(conversationData.conversation) ? conversationData.conversation : [])) : [];
+        const nodeGraph = (conversationData && typeof conversationData === 'object') ? 
+          (conversationData.nodeGraph as Record<string, unknown> || undefined) : undefined;
+        const currentBranchId = (conversationData && typeof conversationData === 'object') ?
+          (conversationData.currentBranchId as string || 
+           conversationData.current_branch as string || 
+           undefined) : undefined;
 
         // If targetBranchId is provided, we would normally load into that branch
         // For now, just return the messages
@@ -428,9 +497,15 @@ class UnifiedApiClient {
         }
 
         const conversationData = JSON.parse(storedConversation);
-        const messages = conversationData.messages || conversationData.conversation || [];
-        const nodeGraph = conversationData.nodeGraph || undefined;
-        const currentBranchId = conversationData.currentBranchId || conversationData.current_branch || undefined;
+        const messages = (conversationData && typeof conversationData === 'object') ? 
+          ((Array.isArray(conversationData.messages) ? conversationData.messages : []) || 
+          (Array.isArray(conversationData.conversation) ? conversationData.conversation : [])) : [];
+        const nodeGraph = (conversationData && typeof conversationData === 'object') ? 
+          (conversationData.nodeGraph as Record<string, unknown> || undefined) : undefined;
+        const currentBranchId = (conversationData && typeof conversationData === 'object') ?
+          (conversationData.currentBranchId as string || 
+           conversationData.current_branch as string || 
+           undefined) : undefined;
 
         // If targetBranchId is provided, we would normally load into that branch
         // For now, just return the messages
@@ -462,7 +537,7 @@ class UnifiedApiClient {
         await this.deleteStorageItem(conversationKey);
         
         // Update the conversations list
-        const storedConversations = await this.getStorageItem(conversationsKey, []);
+        const storedConversations = await this.getStorageItem<Record<string, unknown>[]>(conversationsKey, []);
         const updatedConversations = storedConversations.filter((conv: Record<string, unknown>) => conv.id !== conversationId);
         await this.setStorageItem(conversationsKey, updatedConversations);
         
@@ -519,20 +594,22 @@ class UnifiedApiClient {
   // Command execution
   async executeCommand(
     command: string,
-    args: string[] = []
+    args: string[] = [],
+    sessionId?: string,
+    branchId?: string
   ): Promise<ApiResponse> {
-    // Attach session + branch automatically when available
-    let sessionId: string | undefined;
-    let branchId: string | undefined;
-    try {
-      const storeMod = await import('./store') as { useChatStore?: { getState?: () => { getCurrentSessionId?: () => string; currentSessionId?: string; currentBranchId?: string } } };
-      const st = storeMod.useChatStore?.getState?.();
-      if (st) {
-        sessionId = st.getCurrentSessionId?.() || st.currentSessionId;
-        branchId = st.currentBranchId || 'main';
-      }
-    } catch {}
-    return this.getClient().executeCommand(command, args, sessionId, branchId);
+    const ctx = resolveSessionContext();
+    const effectiveSession = normalizeSession(sessionId ?? ctx.sessionId);
+    const resolvedBranch = normalizeBranch(branchId ?? ctx.branchId);
+    const effectiveBranch = resolvedBranch ?? DEFAULT_CURRENT_BRANCH;
+    if (!resolvedBranch) {
+      warnUnsafeBranch('executeCommand', {
+        providedBranch: branchId,
+        contextBranch: ctx.branchId,
+        sessionId: effectiveSession,
+      });
+    }
+    return this.getClient().executeCommand(command, args, effectiveSession, effectiveBranch);
   }
 
   async executeCommandAdvanced(
@@ -540,30 +617,30 @@ class UnifiedApiClient {
     args: string[] = [],
     extras?: { sessionId?: string; branchId?: string; messageId?: string; index?: number; payload?: string }
   ): Promise<ApiResponse> {
-    // Auto-fill session/branch if not provided
-    let sessionId = extras?.sessionId;
-    let branchId = extras?.branchId;
-    try {
-      if (!sessionId || !branchId) {
-        const storeMod = await import('./store') as { useChatStore?: { getState?: () => { getCurrentSessionId?: () => string; currentSessionId?: string; currentBranchId?: string } } };
-        const st = storeMod.useChatStore?.getState?.();
-        sessionId = sessionId || st?.getCurrentSessionId?.() || st?.currentSessionId;
-        branchId = branchId || st?.currentBranchId || 'main';
-      }
-    } catch {}
+    const ctx = resolveSessionContext();
+    const payloadSession = normalizeSession(extras?.sessionId ?? ctx.sessionId);
+    const resolvedBranch = normalizeBranch(extras?.branchId ?? ctx.branchId);
+    const payloadBranch = resolvedBranch ?? DEFAULT_CURRENT_BRANCH;
+    if (!resolvedBranch) {
+      warnUnsafeBranch('executeCommandAdvanced', {
+        providedBranch: extras?.branchId,
+        contextBranch: ctx.branchId,
+        sessionId: payloadSession,
+      });
+    }
     const payload = {
-      sessionId,
-      branchId,
+      sessionId: payloadSession,
+      branchId: payloadBranch,
       messageId: extras?.messageId,
       index: extras?.index,
       payload: extras?.payload,
     };
-    const client = this.getClient() as { regenNode?: (payload: unknown) => Promise<ApiResponse<unknown>> };
+    const client = this.getClient() as { executeCommandAdvanced?: (command: string, args: string[], extras?: Record<string, unknown>) => Promise<ApiResponse>; executeCommand: (command: string, args: string[], sessionId?: string, branchId?: string) => Promise<ApiResponse> };
     if (typeof client.executeCommandAdvanced === 'function') {
       return client.executeCommandAdvanced(command, args, payload);
     }
     // Fallback to basic executeCommand if advanced not available
-    return client.executeCommand(command, args, sessionId, branchId);
+    return client.executeCommand(command, args, payload.sessionId, payload.branchId);
   }
 
   // System monitoring
@@ -575,15 +652,9 @@ class UnifiedApiClient {
     return this.getClient().getModelStats();
   }
 
-  async clearModel(): Promise<ApiResponse> {
-    // Always hit HTTP endpoint so we can include session_id consistently
-    let sessionId: string | undefined;
-    try {
-      const storeMod = await import('./store') as { useChatStore?: { getState?: () => { getCurrentSessionId?: () => string; currentSessionId?: string; currentBranchId?: string } } };
-      const st = storeMod.useChatStore?.getState?.();
-      sessionId = st?.getCurrentSessionId?.() || st?.currentSessionId;
-    } catch {}
-    return this.webClient.clearModel(sessionId);
+  async clearModel(sessionId?: string): Promise<ApiResponse> {
+    const ctx = resolveSessionContext();
+    return this.webClient.clearModel(sessionId ?? ctx.sessionId);
   }
 
   // File operations (Electron-specific, with fallbacks)
@@ -819,23 +890,23 @@ class UnifiedApiClient {
       // Save individual conversation (attach node graph if available from store)
       const conversationKey = `conversation_${sessionId}_${conversationId}`;
       let payload = conversationData;
-      try {
-        const storeMod = await import('./store') as { useChatStore?: { getState?: () => { getCurrentSessionId?: () => string; currentSessionId?: string; currentBranchId?: string } } };
-        const storeState = storeMod.useChatStore?.getState?.();
-        if (storeState) {
-          const nodeGraph = {
-            nodes: storeState.messageNodes?.[conversationId] || {},
-            timelines: storeState.branchTimelines?.[conversationId] || {},
-            heads: storeState.branchHeads?.[conversationId] || {},
-            tombstones: storeState.branchTombstones?.[conversationId] || {},
-            merges: storeState.merges?.[conversationId] || [],
-          };
-          if (Object.keys(nodeGraph.nodes).length > 0) {
-            payload = { ...conversationData, nodeGraph };
-          }
+      const storeState = resolveStoreState();
+      if (storeState) {
+        const msgNodes = (storeState.messageNodes as Record<string, Record<string, unknown>> | undefined) ?? {};
+        const branchTimelines = (storeState.branchTimelines as Record<string, Record<string, string[]>> | undefined) ?? {};
+        const branchHeads = (storeState.branchHeads as Record<string, Record<string, Record<string, string>>> | undefined) ?? {};
+        const branchTombstones = (storeState.branchTombstones as Record<string, Record<string, Record<string, boolean>>> | undefined) ?? {};
+        const merges = (storeState.merges as Record<string, unknown[]> | undefined) ?? {};
+        const nodeGraph: Record<string, unknown> = {
+          nodes: msgNodes[conversationId] || {},
+          timelines: branchTimelines[conversationId] || {},
+          heads: branchHeads[conversationId] || {},
+          tombstones: branchTombstones[conversationId] || {},
+          merges: merges[conversationId] || [],
+        };
+        if (Object.keys(nodeGraph.nodes).length > 0) {
+          payload = { ...conversationData, nodeGraph };
         }
-      } catch (e) {
-        console.debug('saveConversation: nodeGraph not attached', e?.toString?.());
       }
       await this.setStorageItem(conversationKey, payload);
       
@@ -857,7 +928,8 @@ class UnifiedApiClient {
         parentId?: string;
       }> = [];
       
-      if (conversationData?.branches && typeof conversationData.branches === 'object') {
+      if (conversationData && typeof conversationData === 'object' && 
+          conversationData.branches && typeof conversationData.branches === 'object') {
         let latestMsg: { timestamp?: number; content?: string } | null = null;
         let total = 0;
         for (const [branchId, branch] of Object.entries(conversationData.branches) as [string, { messages?: unknown[]; metadata?: Record<string, unknown> }][]) {
@@ -903,7 +975,11 @@ class UnifiedApiClient {
       }
 
       // Try to get current branch id for pinning/highlighting
-      let currentBranchId: string | undefined = conversationData?.currentBranchId || conversationData?.current_branch;
+      let currentBranchId: string | undefined = 
+        ((conversationData && typeof conversationData === 'object') ? 
+          (conversationData.currentBranchId as string || undefined) : undefined) || 
+        ((conversationData && typeof conversationData === 'object') ? 
+          (conversationData.current_branch as string || undefined) : undefined);
       if (!currentBranchId) {
         try {
           const branchesResp = await this.getBranches(sessionId) as ApiResponse<{ current_branch?: string }>;
@@ -915,8 +991,10 @@ class UnifiedApiClient {
 
       const conversationEntry: Record<string, unknown> = {
         id: conversationId,
-        name: conversationData.title || 'Untitled Conversation',
-        lastModified: conversationData.updatedAt || new Date().toISOString(),
+        name: (conversationData && typeof conversationData === 'object') ? 
+          (conversationData.title as string || 'Untitled Conversation') : 'Untitled Conversation',
+        lastModified: (conversationData && typeof conversationData === 'object') ? 
+          (conversationData.updatedAt as string || new Date().toISOString()) : new Date().toISOString(),
         messageCount,
         preview,
         filename: conversationId

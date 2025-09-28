@@ -38,7 +38,7 @@ export default function AppLayout() {
   const [isResetting, setIsResetting] = React.useState(false);
   const [resetProgress, setResetProgress] = React.useState<string[]>([]);
   const [resetSuccess, setResetSuccess] = React.useState<string | undefined>(undefined);
-  const { clearMessages, currentBranchId, generationParams, setCurrentBranch, setMessages, getCurrentSessionId } = useChatStore();
+  const { clearMessages, currentBranchId, currentConversationId, generationParams, setCurrentBranch, setMessages, getCurrentSessionId } = useChatStore();
   // Note: setBranches is no longer needed as branches are derived on demand
   const { executeCommand, isExecuting } = useConversationCommand();
   const chatInterfaceRef = React.useRef<ChatInterfaceRef | null>(null);
@@ -73,6 +73,58 @@ export default function AppLayout() {
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [showSettings, showSearchHistory]);
+
+React.useEffect(() => {
+    const handler = (event: ErrorEvent) => {
+      if (!event?.error) return;
+      console.error(`[GLOBAL ERROR] ${JSON.stringify({
+        message: event.message,
+        stack: event.error?.stack,
+        filename: event.filename,
+        lineno: event.lineno,
+        colno: event.colno,
+        timestamp: new Date().toISOString(),
+      })}`);
+    };
+    const rejectionHandler = (event: PromiseRejectionEvent) => {
+      console.error(`[UNHANDLED REJECTION] ${JSON.stringify({
+        reason: event.reason,
+        stack: (event.reason as Error)?.stack,
+        timestamp: new Date().toISOString(),
+      })}`);
+    };
+    window.addEventListener('error', handler);
+    window.addEventListener('unhandledrejection', rejectionHandler);
+    return () => {
+      window.removeEventListener('error', handler);
+      window.removeEventListener('unhandledrejection', rejectionHandler);
+    };
+  }, []);
+
+  React.useEffect(() => {
+    const originalError = window.console.error.bind(window.console);
+    const patchedError = (...args: unknown[]) => {
+      try {
+        const [first] = args;
+        if (first instanceof Error || (typeof first === 'string' && first.toLowerCase().includes('referenceerror'))) {
+          const payload = {
+            message: first instanceof Error ? first.message : first,
+            stack: first instanceof Error ? first.stack : undefined,
+            timestamp: new Date().toISOString(),
+            args,
+          };
+          originalError(`[CONSOLE ERROR INTERCEPT] ${JSON.stringify(payload, null, 2)}`);
+        }
+      } catch (e) {
+        originalError('[CONSOLE ERROR PATCH FAILED]', e);
+      }
+      originalError(...args);
+    };
+    window.console.error = patchedError;
+    return () => {
+      window.console.error = originalError;
+    };
+  }, []);
 
   // Handle React ready state and menu messages from Electron
   React.useEffect(() => {
@@ -209,30 +261,66 @@ export default function AppLayout() {
         // Load branches to get the current branch
         const sessionId = getCurrentSessionId();
         const branchesResponse = await apiClient.getBranches(sessionId);
+        let currentBranchFromBackend: string | undefined;
         if (branchesResponse.success && branchesResponse.data) {
-          const { branches, current_branch } = branchesResponse.data;
-          
+          const backendBranches = Array.isArray(branchesResponse.data.branches)
+            ? branchesResponse.data.branches
+            : [];
+          const rawCurrentBranch = branchesResponse.data.current_branch;
+          if (!(typeof rawCurrentBranch === 'string' && rawCurrentBranch.trim().length > 0)) {
+            console.warn('[WARN] AppLayout received unsafe current_branch from backend', {
+              rawValue: rawCurrentBranch,
+              sessionId,
+              branchCount: backendBranches.length,
+              timestamp: new Date().toISOString(),
+            });
+          }
+          currentBranchFromBackend = typeof rawCurrentBranch === 'string' && rawCurrentBranch.trim().length > 0
+            ? rawCurrentBranch.trim()
+            : 'main';
+
           // Transform backend branches to frontend format
-          const transformedBranches = branches.map((branch: any) => ({
+          const transformedBranches = backendBranches.map((branch: any) => ({
             id: branch.id,
             name: branch.name,
-            isActive: branch.id === current_branch,
+            isActive: branch.id === currentBranchFromBackend,
             messageCount: branch.message_count || 0,
             createdAt: branch.created_at,
             lastActive: branch.last_active || branch.created_at,
             preview: branch.message_count > 0 ? `${branch.message_count} messages` : 'Empty branch'
           }));
-          
-          console.log(`📋 Loaded ${transformedBranches.length} branches, current: ${current_branch}`);
+
+          console.log(`📋 Loaded ${transformedBranches.length} branches, current: ${currentBranchFromBackend}`);
           // Note: setBranches is no longer needed since branches are derived on demand
           // The branches will be available via getBranches()
-          if (current_branch && current_branch !== currentBranchId) {
-            setCurrentBranch(current_branch);
+          if (currentBranchFromBackend && currentBranchFromBackend !== currentBranchId) {
+            setCurrentBranch(currentBranchFromBackend);
           }
         }
-        
+
         setIsInitialized(true);
         console.log('✅ App state initialized');
+
+        const initSnapshot = {
+          timestamp: new Date().toISOString(),
+          currentBranchId: currentBranchFromBackend || currentBranchId,
+          currentConversationId,
+        };
+        console.log('[DEBUG] AppLayout post-init snapshot', JSON.stringify(initSnapshot));
+
+        queueMicrotask(() => {
+          console.log('[DEBUG] AppLayout post-init microtask', JSON.stringify({
+            ...initSnapshot,
+            microtaskTs: new Date().toISOString(),
+          }));
+        });
+
+        setTimeout(() => {
+          console.log('[DEBUG] AppLayout post-init timeout', JSON.stringify({
+            ...initSnapshot,
+            timeoutTs: new Date().toISOString(),
+          }));
+        }, 0);
       } catch (error) {
         console.error('❌ Failed to initialize app state:', error);
         // Still mark as initialized to prevent infinite loading

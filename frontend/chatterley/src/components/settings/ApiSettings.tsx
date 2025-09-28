@@ -59,14 +59,15 @@ function ApiKeyInput({ provider, existingKey, onSave, onCancel, onRemove }: ApiK
           // Validate with Oumi
           const oumiResult = await apiClient.validateApiKeyWithOumi(provider.id);
           if (oumiResult.success && oumiResult.data) {
+            const data = oumiResult.data as Record<string, unknown>;
             return {
-              isValid: oumiResult.data.isValid,
-              error: oumiResult.data.error,
-              details: {
+              isValid: data.isValid as boolean,
+              error: data.error as string,
+              details: data.details ? {
                 ...basicResult.details,
-                ...oumiResult.data.details,
+                ...(data.details as Record<string, unknown>),
                 validatedWith: 'Oumi + Direct API'
-              }
+              } : basicResult.details
             };
           }
         } catch (oumiError) {
@@ -462,9 +463,10 @@ export default function ApiSettings({ onClose }: ApiSettingsProps) {
             try {
               const oumiResult = await apiClient.validateApiKeyWithOumi(providerId);
               if (oumiResult.success && oumiResult.data) {
+                const data = oumiResult.data as Record<string, unknown>;
                 results[providerId] = {
-                  isValid: oumiResult.data.isValid,
-                  error: oumiResult.data.error
+                  isValid: data.isValid as boolean,
+                  error: data.error as string
                 };
               } else {
                 results[providerId] = { isValid: false, error: oumiResult.error || 'Validation failed' };

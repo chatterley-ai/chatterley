@@ -128,7 +128,7 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
           
           // CRITICAL FIX: Extract and cache config metadata from server
           if (model.config_metadata) {
-            setCurrentModelConfigMetadata(model.config_metadata);
+            setCurrentModelConfigMetadata(model.config_metadata as unknown as ModelConfigMetadata);
             debugLog('🎯 Current model with metadata:', model.id, model.config_metadata);
           } else {
             setCurrentModelConfigMetadata(null);
@@ -259,7 +259,7 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
             
             // Extract and cache updated config metadata after swap
             if (model.config_metadata) {
-              setCurrentModelConfigMetadata(model.config_metadata);
+              setCurrentModelConfigMetadata(model.config_metadata as unknown as ModelConfigMetadata);
               debugLog('🔄 Updated model with metadata:', model.id, model.config_metadata);
             } else {
               setCurrentModelConfigMetadata(null);

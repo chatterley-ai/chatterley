@@ -94,7 +94,7 @@ export const transformBackendMessages = (
     const nodeMeta = (() => {
       if (!options.conversationId || !options.branchId) return undefined;
       try {
-        const info = storeState.getMessageNodeInfo(options.conversationId, options.branchId, String(backendMsg?.id ?? ''), index);
+        const info = storeState.getMessageNodeInfo(options.conversationId, options.branchId, String(backendMsg?.id || ''), index);
         if (!info.nodeId) return undefined;
         const node = storeState.messageNodes[options.conversationId]?.[info.nodeId];
         const version = node?.versions?.[info.activeIndex];
@@ -155,18 +155,18 @@ export const transformBackendMessages = (
         : 'system';
 
     const assistantAuthorName = coalesce<string>(
-      rawMeta?.author_name,
-      rawMeta?.authorName,
+      rawMeta?.author_name as string | null | undefined,
+      rawMeta?.authorName as string | null | undefined,
       derivedModelName,
-      existingMeta?.authorName,
+      existingMeta?.authorName as string | null | undefined,
       'AI'
     );
 
     const userAuthorName = coalesce<string>(
-      rawMeta?.author_name,
-      rawMeta?.authorName,
+      rawMeta?.author_name as string | null | undefined,
+      rawMeta?.authorName as string | null | undefined,
       options.settings.user?.displayName,
-      existingMeta?.authorName,
+      existingMeta?.authorName as string | null | undefined,
       'You'
     );
 
@@ -201,7 +201,7 @@ export const transformBackendMessages = (
           const branchStateEntry = state.branchState[options.conversationId]?.[options.branchId];
           const timeline = branchStateEntry?.timeline || state.branchTimelines[options.conversationId]?.[options.branchId] || [];
           const heads = branchStateEntry?.heads || state.branchHeads[options.conversationId]?.[options.branchId] || {};
-          const info = state.getMessageNodeInfo(options.conversationId, options.branchId, String(backendMsg?.id ?? ''), index);
+          const info = state.getMessageNodeInfo(options.conversationId, options.branchId, String(backendMsg?.id || ''), index);
           return {
             nodeId: info.nodeId,
             versions: info.versions?.length ?? 0,

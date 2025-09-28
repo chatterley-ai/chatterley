@@ -24,7 +24,7 @@ class UnifiedConfigPathResolver implements ConfigPathResolver {
     logger.debug('ConfigPathResolver', `loadStaticConfigs called, cached: ${!!this.staticConfigs}`);
     
     if (this.staticConfigs) {
-      logger.debug('ConfigPathResolver', `Returning cached configs (${this.staticConfigs.configs?.length || 0} configs)`);
+      logger.debug('ConfigPathResolver', `Returning cached configs (${Array.isArray(this.staticConfigs.configs) ? this.staticConfigs.configs.length : 0} configs)`);
       return this.staticConfigs;
     }
 
@@ -57,7 +57,7 @@ class UnifiedConfigPathResolver implements ConfigPathResolver {
             this.staticConfigs = loaded;
             logger.info(
               'ConfigPathResolver',
-              `Successfully loaded ${this.staticConfigs.configs?.length || 0} configs from: ${location}`
+              `Successfully loaded ${Array.isArray(this.staticConfigs.configs) ? this.staticConfigs.configs.length : 0} configs from: ${location}`
             );
             return this.staticConfigs;
           } else {
@@ -85,14 +85,15 @@ class UnifiedConfigPathResolver implements ConfigPathResolver {
   public async getConfigById(configId: string): Promise<{ config: Record<string, unknown>; configPath: string } | null> {
     try {
       const staticConfigs = await this.loadStaticConfigs();
-      const config = (staticConfigs.configs as Record<string, unknown>[] | undefined)?.find((cfg: Record<string, unknown>) => cfg.id === configId);
+      const configs = Array.isArray(staticConfigs.configs) ? staticConfigs.configs as Record<string, unknown>[] : undefined;
+      const config = configs?.find((cfg: Record<string, unknown>) => cfg.id === configId);
       
       if (!config) {
         logger.warn('ConfigPathResolver', `Config not found: ${configId}`);
         return null;
       }
 
-      const originalPath = config.config_path || config.relative_path;
+      const originalPath = (config.config_path as string) || (config.relative_path as string) || '';
       
       logger.debug('ConfigPathResolver', `Found config ${configId}`, {
         configPath: originalPath,

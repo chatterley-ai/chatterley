@@ -723,9 +723,9 @@ const loadConversationPreview = async (conversationId: string) => {
                   const groups: Record<string, Record<string, unknown>[]> = {};
                   const convNames: Record<string, string> = {};
                   for (const n of filtered) {
-                    groups[n.conversationId] = groups[n.conversationId] || [];
-                    groups[n.conversationId].push(n);
-                    if (n.isRoot) convNames[n.conversationId] = n.name;
+                    groups[n.conversationId as string] = groups[n.conversationId as string] || [];
+                    groups[n.conversationId as string].push(n);
+                    if (n.isRoot) convNames[n.conversationId as string] = n.name as string;
                   }
                   const convIds = Object.keys(groups);
                   return convIds.length === 0 ? (
@@ -737,15 +737,15 @@ const loadConversationPreview = async (conversationId: string) => {
                         {groups[cid].filter(n => !n.isRoot).map(n => (
                           <button
                             key={`${n.conversationId}:${n.branchId}`}
-                            onClick={() => handleSwitchBranch(n.branchId)}
+                            onClick={() => handleSwitchBranch(n.branchId as string)}
                             className={`w-full text-left p-2 rounded hover:bg-muted transition-colors ${n.branchId === currentBranchId && cid === currentConversationId ? 'bg-primary/10 border border-primary/20' : 'border border-transparent'}`}
                           >
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-2">
                                 <GitBranch size={12} className={n.branchId === currentBranchId && cid === currentConversationId ? 'text-primary' : 'text-muted-foreground'} />
-                                <span className="text-sm text-foreground truncate">{n.name || n.branchId}</span>
+                                <span className="text-sm text-foreground truncate">{(n.name as string) || (n.branchId as string)}</span>
                               </div>
-                              <span className="text-xs text-muted-foreground">{n.messageCount} msg</span>
+                              <span className="text-xs text-muted-foreground">{n.messageCount as number} msg</span>
                             </div>
                             {n.preview && <div className="text-xs text-muted-foreground truncate mt-0.5">{String(n.preview).slice(0, 100)}</div>}
                           </button>
@@ -758,15 +758,15 @@ const loadConversationPreview = async (conversationId: string) => {
                 return filtered.map(n => (
                   <button
                     key={`${n.conversationId}:${n.branchId}`}
-                    onClick={() => handleSwitchBranch(n.branchId)}
+                    onClick={() => handleSwitchBranch(n.branchId as string)}
                     className={`w-full text-left p-2 rounded hover:bg-muted transition-colors ${n.branchId === currentBranchId && n.conversationId === currentConversationId ? 'bg-primary/10 border border-primary/20' : 'border border-transparent'}`}
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <GitBranch size={12} className={n.branchId === currentBranchId && n.conversationId === currentConversationId ? 'text-primary' : 'text-muted-foreground'} />
-                        <span className="text-sm text-foreground truncate">{n.name || n.branchId}</span>
+                        <span className="text-sm text-foreground truncate">{(n.name as string) || (n.branchId as string)}</span>
                       </div>
-                      <span className="text-xs text-muted-foreground">{n.messageCount} msg</span>
+                      <span className="text-xs text-muted-foreground">{n.messageCount as number} msg</span>
                     </div>
                     {n.preview && <div className="text-xs text-muted-foreground truncate mt-0.5">{String(n.preview).slice(0, 100)}</div>}
                   </button>

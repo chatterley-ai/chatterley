@@ -8,7 +8,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { Message, MessageNode, MessageVersion, MergeRecord, ConversationBranch, Conversation, GenerationParams, AppSettings, ApiKeyConfig, /* ApiProvider, */ ApiUsageStats, Session } from './types';
 import { generateDisplayName } from './nameGen';
-import apiClient from './unified-api';
+import apiClient, { setUnifiedApiSessionResolver, setUnifiedApiStoreStateResolver } from './unified-api';
 import { 
   adaptLegacyConversation, 
   // flattenBranchMessages, 
@@ -2503,3 +2503,26 @@ if (process.env.NODE_ENV === 'development') {
     }
   )
 );
+
+// Provide session context to unified API without creating circular runtime evaluation
+setUnifiedApiSessionResolver(() => {
+  const state = useChatStore.getState();
+  let sessionId: string | undefined;
+  try {
+    sessionId = state.getCurrentSessionId?.();
+  } catch {
+    sessionId = undefined;
+  }
+  return {
+    sessionId: sessionId || state.currentSessionId,
+    branchId: state.currentBranchId,
+  };
+});
+
+setUnifiedApiStoreStateResolver(() => {
+  try {
+    return useChatStore.getState();
+  } catch {
+    return undefined;
+  }
+});

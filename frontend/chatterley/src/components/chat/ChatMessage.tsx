@@ -319,17 +319,17 @@ export default function ChatMessage({ message, isLatest = false, messageIndex }:
         {attachmentsArray.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-3">
             {attachmentsArray.map((attachment: Record<string, unknown>, index: number) => {
-              const displayName: string = attachment?.name || attachment?.filename || attachment?.fileName || 'Attachment';
-              const sizeBytes: number | undefined = attachment?.size ?? attachment?.file_size ?? attachment?.filesize;
+              const displayName: string = (attachment?.name as string) || (attachment?.filename as string) || (attachment?.fileName as string) || 'Attachment';
+              const sizeBytes: number | undefined = (attachment?.size as number) ?? (attachment?.file_size as number) ?? (attachment?.filesize as number);
               const sizeLabel = typeof sizeBytes === 'number' && Number.isFinite(sizeBytes)
                 ? `${(sizeBytes / 1024).toFixed(1)} KB`
                 : undefined;
-              const mimeType: string | undefined = attachment?.mimeType || attachment?.content_type || attachment?.mimetype;
+              const mimeType: string | undefined = (attachment?.mimeType as string) || (attachment?.content_type as string) || (attachment?.mimetype as string);
               const base64: string | undefined = attachment?.dataUrl
                 ? undefined
-                : attachment?.base64 || attachment?.data || attachment?.image_base64;
-              const dataUrl = attachment?.dataUrl || (base64 && mimeType ? `data:${mimeType};base64,${base64}` : undefined);
-              const explicitType: string | undefined = attachment?.type;
+                : (attachment?.base64 as string) || (attachment?.data as string) || (attachment?.image_base64 as string);
+              const dataUrl = (attachment?.dataUrl as string) || (base64 && mimeType ? `data:${mimeType};base64,${base64}` : undefined);
+              const explicitType: string | undefined = attachment?.type as string;
               const inferredType = explicitType || (mimeType?.startsWith('image/') ? 'image' : undefined);
               const imagePreviewSrc = inferredType === 'image' && dataUrl ? dataUrl : undefined;
 
@@ -352,13 +352,13 @@ export default function ChatMessage({ message, isLatest = false, messageIndex }:
 
               return (
                 <div
-                  key={attachment?.id || `${displayName}-${index}`}
+                  key={(attachment?.id as string) || `${displayName}-${index}`}
                   className="overflow-hidden rounded-lg border border-border bg-muted/60"
                 >
                   {imagePreviewSrc ? (
                     <div className="max-w-sm">
                       <img
-                        src={imagePreviewSrc}
+                        src={imagePreviewSrc || ''}
                         alt={`Attachment ${displayName}`}
                         className="max-h-60 w-full object-contain bg-background"
                       />
@@ -396,7 +396,7 @@ export default function ChatMessage({ message, isLatest = false, messageIndex }:
                 <span title="Engine">{String(message.meta?.engine)}</span>
               </>
             )}
-            {typeof (message.meta as Record<string, unknown>)?.durationMs === 'number' && (message.meta as Record<string, unknown>)?.durationMs >= 0 && (
+            {typeof (message.meta as Record<string, unknown> | undefined)?.durationMs === 'number' && ((message.meta as Record<string, unknown>)?.durationMs as number) >= 0 && (
               <>
                 <span className="opacity-50">•</span>
                 <span title="Generation time">

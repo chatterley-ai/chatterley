@@ -110,8 +110,8 @@ export class HuggingFaceService {
     // Get unique model names to minimize API calls, filtering out API-only models
     const uniqueModels = new Set<string>();
     configs.forEach(config => {
-      if (config.model_name && this.isHuggingFaceModel(config.model_name)) {
-        uniqueModels.add(config.model_name);
+      if (config.model_name && this.isHuggingFaceModel(config.model_name as string)) {
+        uniqueModels.add(config.model_name as string);
       }
     });
 
@@ -138,7 +138,7 @@ export class HuggingFaceService {
 
     // Enhance configs with fetched metadata
     return configs.map(config => {
-      const metadata = metadataMap.get(config.model_name);
+      const metadata = metadataMap.get(config.model_name as string);
       
       // Update config with metadata if available
       if (metadata && metadata.parameterCount > 0) {

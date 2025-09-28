@@ -355,7 +355,7 @@ export default function WelcomeScreen({ onConfigSelected, systemCapabilities }: 
               console.log('Enhancing configs with authenticated HuggingFace metadata...');
               transformedConfigs = await HuggingFaceService.enhanceConfigsWithMetadata(
                 transformedConfigs,
-                settings.huggingFace
+                settings.huggingFace as { username: string; token: string }
               );
             }
             
@@ -390,7 +390,7 @@ export default function WelcomeScreen({ onConfigSelected, systemCapabilities }: 
           console.log('Enhancing configs with authenticated HuggingFace metadata...');
           configs = await HuggingFaceService.enhanceConfigsWithMetadata(
             configs,
-            settings.huggingFace!
+            settings.huggingFace as { username: string; token: string }
           );
         }
         

@@ -273,7 +273,7 @@ export async function autoSaveConversation(conversation: Conversation): Promise<
       await unifiedApiClient.saveConversation(
         SessionManager.getCurrentSessionId(),
         conversationId,
-        conversation
+        conversation as unknown as Record<string, unknown>
       );
       
       // Remove the timeout ID from the map after saving
@@ -289,14 +289,35 @@ export async function autoSaveConversation(conversation: Conversation): Promise<
 // ----- ChatHistory build/hydrate -----
 
 export function buildChatHistoryForCurrentSession(): ChatHistory {
+  interface ChatStoreState {
+    conversations?: Conversation[];
+    conversationMessages?: Record<string, Record<string, Message[]>>;
+    messageNodes?: Record<string, Record<string, MessageNode>>;
+    branchTimelines?: Record<string, Record<string, string[]>>;
+    branchHeads?: Record<string, Record<string, Record<string, string>>>;
+    branchTombstones?: Record<string, Record<string, Record<string, boolean>>>;
+    merges?: Record<string, unknown[]>;
+    currentConversationId?: string | null;
+    currentBranchId?: string | null;
+    settings?: {
+      selectedModel?: string;
+      selectedProvider?: string;
+      user?: {
+        displayName?: string;
+      };
+    };
+    generationParams?: {
+      contextLength?: number;
+    };
+  }
   // Lazy import store to avoid cycles
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const storeMod = require('../store') as Record<string, unknown>;
-  const state = (storeMod.useChatStore as {getState: () => unknown}).getState();
+  const state = (storeMod.useChatStore as {getState: () => unknown}).getState() as ChatStoreState;
 
   const sessionId = SessionManager.getCurrentSessionId();
   const conversations: ChatHistory['conversations'] = (state.conversations || []).map((conv: Conversation) => {
-    const branches = buildBranchStructure(conv.id, state.conversationMessages);
+    const branches = buildBranchStructure(conv.id, state.conversationMessages || {});
     const nodeGraph = {
       nodes: state.messageNodes?.[conv.id] || {},
       timelines: state.branchTimelines?.[conv.id] || {},
@@ -309,7 +330,7 @@ export function buildChatHistoryForCurrentSession(): ChatHistory {
       title: conv.title,
       updatedAt: conv.updatedAt,
       branches,
-      nodeGraph,
+      nodeGraph: nodeGraph as unknown as ChatHistory['conversations'][0]['nodeGraph'],
     };
   });
 
@@ -332,7 +353,7 @@ export function buildChatHistoryForCurrentSession(): ChatHistory {
 export function hydrateStoreFromChatHistory(artifact: ChatHistory): void {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const storeMod = require('../store') as Record<string, unknown>;
-  const state = (storeMod.useChatStore as {getState: () => unknown}).getState(); // eslint-disable-line @typescript-eslint/no-unused-vars
+  const state = (storeMod.useChatStore as {getState: () => unknown}).getState() as unknown as ChatStoreState; // eslint-disable-line @typescript-eslint/no-unused-vars
   const setState = (storeMod.useChatStore as {setState: (state: Record<string, unknown>) => void}).setState;
 
   // Build normalized maps
@@ -340,7 +361,7 @@ export function hydrateStoreFromChatHistory(artifact: ChatHistory): void {
   const messageNodes: Record<string, Record<string, MessageNode>> = {};
   const branchTimelines: Record<string, Record<string, string[]>> = {};
   const branchHeads: Record<string, Record<string, Record<string, string>>> = {};
-  const branchTombstones: Record<string, Record<string, boolean>> = {};
+  const branchTombstones: Record<string, Record<string, Record<string, boolean> | boolean>> = {};
   const merges: Record<string, unknown[]> = {};
 
   const conversations: Conversation[] = artifact.conversations.map((c) => ({

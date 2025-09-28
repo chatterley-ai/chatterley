@@ -48,7 +48,17 @@ interface ExtendedSystemInfo extends SystemCapabilities {
 }
 
 // Function to get additional browser/frontend system information
-function getBrowserSystemInfo() {
+function getBrowserSystemInfo(): {
+    nodeVersion: string;
+    electronVersion: string | undefined;
+    userAgent: string;
+    language: string;
+    timezone: string;
+    screenResolution: string;
+    browserCores: number;
+    estimatedMemoryGB: number | undefined;
+    platform?: string;
+  } {
   const getNodeVersion = (): string => {
     // Try to get from process if available (Electron context)
     if (typeof process !== 'undefined' && process.versions) {
@@ -107,9 +117,16 @@ async function getCombinedSystemInfo(): Promise<ExtendedSystemInfo | null> {
       
       if (backendSystemInfo) {
         // Combine backend and frontend information
+        // Ensure all required properties from ExtendedSystemInfo are included
         return {
           ...backendSystemInfo,
           ...browserInfo,
+          // Default any missing required properties
+          platform: backendSystemInfo.platform || (browserInfo as any).platform || 'Unknown',
+          architecture: backendSystemInfo.architecture || 'Unknown',
+          totalRAM: backendSystemInfo.totalRAM || browserInfo.estimatedMemoryGB || 0,
+          cudaAvailable: backendSystemInfo.cudaAvailable || false,
+          cudaDevices: backendSystemInfo.cudaDevices || [] as {vram: number}[],
         };
       }
     }

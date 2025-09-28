@@ -173,7 +173,7 @@ class ElectronApiClient {
 
       return {
         success: true,
-        data: { configs: staticConfigs.configs || [] }
+        data: { configs: staticConfigs.configs as ConfigOption[] || [] }
       };
     } catch (error) {
       console.error('UnifiedConfigPathResolver failed:', error);
