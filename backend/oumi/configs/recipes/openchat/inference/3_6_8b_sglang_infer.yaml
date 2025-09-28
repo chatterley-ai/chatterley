@@ -1,0 +1,11 @@
+# SGLang Inference config for OpenChat 3.6 8B.
+
+model:
+  model_name: "openchat/openchat-3.6-8b-20240522"
+  trust_remote_code: true
+
+remote_params:
+  api_url: "http://127.0.0.1:6864/generate"
+
+engine: SGLANG
+

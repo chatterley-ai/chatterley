@@ -1,0 +1,11 @@
+# SGLang Inference config for GLM-4 9B Chat.
+
+model:
+  model_name: "THUDM/glm-4-9b-chat"
+  trust_remote_code: true
+
+remote_params:
+  api_url: "http://127.0.0.1:6864/generate"
+
+engine: SGLANG
+

@@ -1,0 +1,11 @@
+# SGLang Inference config for DeepSeek-R1-Distill-Qwen-32B.
+
+model:
+  model_name: "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B"
+  trust_remote_code: true
+
+remote_params:
+  api_url: "http://127.0.0.1:6864/generate"
+
+engine: SGLANG
+

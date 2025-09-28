@@ -1,0 +1,11 @@
+# SGLang Inference config for gpt-oss-20b.
+
+model:
+  model_name: "openai/gpt-oss-20b"
+  trust_remote_code: true
+
+remote_params:
+  api_url: "http://127.0.0.1:6864/generate"
+
+engine: SGLANG
+

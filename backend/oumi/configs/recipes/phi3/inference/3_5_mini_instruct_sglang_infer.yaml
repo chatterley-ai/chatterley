@@ -1,0 +1,11 @@
+# SGLang Inference config for Phi-3.5-mini-instruct.
+
+model:
+  model_name: "microsoft/Phi-3.5-mini-instruct"
+  trust_remote_code: true
+
+remote_params:
+  api_url: "http://127.0.0.1:6864/generate"
+
+engine: SGLANG
+

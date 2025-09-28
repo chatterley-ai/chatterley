@@ -1,0 +1,18 @@
+# SGLang Inference config for Meta-Llama-3-8B-Instruct.
+#
+# Requirements:
+#   - Install SGLang server (Docker recommended): https://docs.sglang.ai/start/install.html
+#   - Start a local SGLang server or point api_url to a remote server
+#
+# Usage:
+#   oumi infer -i -c configs/recipes/llama3/inference/8b_instruct_sglang_infer.yaml
+
+model:
+  model_name: "meta-llama/Meta-Llama-3-8B-Instruct"
+  trust_remote_code: true
+
+remote_params:
+  api_url: "http://127.0.0.1:6864/generate"
+
+engine: SGLANG
+

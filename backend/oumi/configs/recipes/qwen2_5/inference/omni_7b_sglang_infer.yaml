@@ -1,0 +1,11 @@
+# SGLang Inference config for Qwen2.5-Omni-7B.
+
+model:
+  model_name: "Qwen/Qwen2.5-Omni-7B"
+  trust_remote_code: true
+
+remote_params:
+  api_url: "http://127.0.0.1:6864/generate"
+
+engine: SGLANG
+

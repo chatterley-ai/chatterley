@@ -1,0 +1,11 @@
+# SGLang Inference config for Mistral-Nemo-Instruct-2407.
+
+model:
+  model_name: "mistralai/Mistral-Nemo-Instruct-2407"
+  trust_remote_code: true
+
+remote_params:
+  api_url: "http://127.0.0.1:6864/generate"
+
+engine: SGLANG
+

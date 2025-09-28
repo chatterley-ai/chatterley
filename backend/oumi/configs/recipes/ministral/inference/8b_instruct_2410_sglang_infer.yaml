@@ -1,0 +1,11 @@
+# SGLang Inference config for Ministral-8B-Instruct-2410.
+
+model:
+  model_name: "mistralai/Ministral-8B-Instruct-2410"
+  trust_remote_code: true
+
+remote_params:
+  api_url: "http://127.0.0.1:6864/generate"
+
+engine: SGLANG
+

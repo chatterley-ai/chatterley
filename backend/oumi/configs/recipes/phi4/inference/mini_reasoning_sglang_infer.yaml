@@ -1,0 +1,11 @@
+# SGLang Inference config for Phi-4-mini-reasoning.
+
+model:
+  model_name: "microsoft/Phi-4-mini-reasoning"
+  trust_remote_code: true
+
+remote_params:
+  api_url: "http://127.0.0.1:6864/generate"
+
+engine: SGLANG
+

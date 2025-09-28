@@ -1,0 +1,11 @@
+# SGLang Inference config for SmolLM3-3B.
+
+model:
+  model_name: "HuggingFaceTB/SmolLM3-3B"
+  trust_remote_code: true
+
+remote_params:
+  api_url: "http://127.0.0.1:6864/generate"
+
+engine: SGLANG
+

@@ -1,0 +1,23 @@
+{
+  "engine": "DIFFUSERS_IMAGE",
+  "model": {
+    "model_name": "stabilityai/stable-diffusion-xl-base-1.0",
+    "torch_dtype_str": "float16",
+    "trust_remote_code": false,
+    "model_kwargs": {
+      "variant": "fp16",
+      "use_safetensors": true
+    }
+  },
+  "image_generation": {
+    "width": 1024,
+    "height": 1024,
+    "num_inference_steps": 30,
+    "guidance_scale": 7.0,
+    "negative_prompt": "blurry, distorted, watermark",
+    "num_images": 1,
+    "seed": 1234
+  },
+  "image_output_dir": "data/gen_img",
+  "input_path": "data/prompts/night_sky_prompt.jsonl"
+}

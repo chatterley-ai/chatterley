@@ -1,0 +1,11 @@
+# SGLang Inference config for Phi-4 14B.
+
+model:
+  model_name: "microsoft/phi-4"
+  trust_remote_code: true
+
+remote_params:
+  api_url: "http://127.0.0.1:6864/generate"
+
+engine: SGLANG
+

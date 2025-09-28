@@ -1,0 +1,11 @@
+# SGLang Inference config for gemma-3n-E4B-it.
+
+model:
+  model_name: "google/gemma-3n-E4B-it"
+  trust_remote_code: true
+
+remote_params:
+  api_url: "http://127.0.0.1:6864/generate"
+
+engine: SGLANG
+

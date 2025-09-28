@@ -1,0 +1,11 @@
+# SGLang Inference config for Llama 4 Scout Instruct.
+
+model:
+  model_name: "meta-llama/Llama-4-Scout-17B-16E-Instruct"
+  trust_remote_code: true
+
+remote_params:
+  api_url: "http://127.0.0.1:6864/generate"
+
+engine: SGLANG
+

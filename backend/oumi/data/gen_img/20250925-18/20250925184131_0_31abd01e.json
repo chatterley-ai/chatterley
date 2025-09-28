@@ -1,0 +1,13 @@
+{
+  "prompt": "A cozy alpine cabin with warm lights glowing under a clear, star-filled night sky, painted in cinematic detail.",
+  "negative_prompt": "blurry, distorted, watermark",
+  "seed": 1234,
+  "width": 1024,
+  "height": 1024,
+  "num_inference_steps": 30,
+  "guidance_scale": 7.0,
+  "model_name": "stabilityai/stable-diffusion-xl-base-1.0",
+  "scheduler": null,
+  "num_images": 1,
+  "created_at": "2025-09-25T18:41:31.446351+00:00"
+}

@@ -1,0 +1,11 @@
+# SGLang Inference config for Llama-3.2-11B-Vision-Instruct.
+
+model:
+  model_name: "meta-llama/Llama-3.2-11B-Vision-Instruct"
+  trust_remote_code: true
+
+remote_params:
+  api_url: "http://127.0.0.1:6864/generate"
+
+engine: SGLANG
+

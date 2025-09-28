@@ -1,0 +1,11 @@
+# SGLang Inference config for Llama-3.3-Nemotron-Super-49B-v1.
+
+model:
+  model_name: "nvidia/Llama-3.3-Nemotron-Super-49B-v1"
+  trust_remote_code: true
+
+remote_params:
+  api_url: "http://127.0.0.1:6864/generate"
+
+engine: SGLANG
+
