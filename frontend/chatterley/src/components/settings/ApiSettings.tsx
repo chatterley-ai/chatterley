@@ -220,7 +220,8 @@ interface ProviderCardProps {
   apiKey?: ApiKeyConfig;
   onAddKey: () => void;
   onEditKey: () => void;
-  onRemoveKey: () => void; // Used in component, ESLint incorrectly flags this
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  onRemoveKey: () => void;
   onToggleActive: (isActive: boolean) => void;
 }
 
@@ -229,6 +230,7 @@ function ProviderCard({
   apiKey, 
   onAddKey, 
   onEditKey, 
+  /* eslint-disable-next-line @typescript-eslint/no-unused-vars */
   onRemoveKey, 
   onToggleActive 
 }: ProviderCardProps) {

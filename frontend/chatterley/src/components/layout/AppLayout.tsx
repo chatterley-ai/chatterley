@@ -518,7 +518,7 @@ React.useEffect(() => {
               setCurrentBranch(current_branch);
             }
           }
-        } catch (_err) {
+        } catch {
           // Non-fatal; continue with main branch implied
           setResetProgress(prev => [...prev, `Warning: Could not get branch information. Using main branch.`]);
         }

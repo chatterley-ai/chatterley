@@ -12,10 +12,6 @@ import {
   Sliders,
   Monitor,
   Bell,
-  Shield,
-  Database,
-  Download,
-  Palette,
   HelpCircle,
   Eye,
   EyeOff,
@@ -88,7 +84,7 @@ function getBrowserSystemInfo(): {
   };
 
   const getEstimatedMemoryGB = (): number | undefined => {
-    // @ts-ignore - navigator.deviceMemory is experimental
+    // @ts-expect-error - navigator.deviceMemory is experimental
     const deviceMemory = navigator.deviceMemory;
     return deviceMemory;
   };
@@ -200,7 +196,7 @@ function TabButton({ id, icon, label, description, isActive, onClick, badge }: T
 function SystemSettings() {
   const { settings, updateSettings } = useChatStore();
   const [showHfToken, setShowHfToken] = useState(false);
-  const { isAutoSaveEnabled, autoSaveInterval, lastSaved, isSaving } = useAutoSave();
+  const { autoSaveInterval, lastSaved, isSaving } = useAutoSave();
   const [tempName, setTempName] = useState(settings.user?.displayName || '');
   const mediaSettings = useMemo(() => settings.media ?? {
     resizeImages: true,
