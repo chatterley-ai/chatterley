@@ -23,7 +23,7 @@ export default function ChatMessage({ message, isLatest = false, messageIndex }:
   const [isEditing, setIsEditing] = React.useState(false);
   const [editContent, setEditContent] = React.useState(message.content);
   const [actionInProgress, setActionInProgress] = React.useState<string | null>(null);
-  const { /* updateMessage, deleteMessage, addMessage, */ getBranches, currentConversationId, currentBranchId } = useChatStore();
+  const { updateMessage, /* deleteMessage, addMessage, */ getBranches, currentConversationId, currentBranchId } = useChatStore();
   // Get branches using the selector
   const branches = getBranches();
   const { executeCommand, isExecuting, refreshConversation, refreshBranches } = useConversationCommand();
@@ -91,8 +91,14 @@ export default function ChatMessage({ message, isLatest = false, messageIndex }:
       if (!resp.success) {
         alert(resp.message || 'Failed to regenerate');
       } else {
-        // Refresh conversation to pick up regenerated assistant message
-        await refreshConversation();
+        // Apply only the node update locally; do not refresh entire conversation
+        const newContent = (resp.data as any)?.assistant?.content as string | undefined;
+        if (newContent && currentConversationId) {
+          updateMessage(currentConversationId, currentBranchId || 'main', message.id, {
+            content: newContent,
+            timestamp: Date.now(),
+          });
+        }
       }
     } catch (e) {
       console.error('Error regenerating message:', e);

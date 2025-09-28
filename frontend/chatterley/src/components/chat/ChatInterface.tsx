@@ -210,9 +210,14 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
       if (!resp.success) {
         throw new Error(resp.message || 'Regen failed');
       }
-      // Reload conversation to reflect regenerated assistant
-      await loadConversation();
-      await refreshBranches();
+      // Apply only the node update locally; do not refresh entire conversation
+      const newContent = (resp.data as any)?.assistant?.content as string | undefined;
+      if (newContent && currentConversationId && lastAssistant) {
+        updateMessage(currentConversationId, currentBranchId, lastAssistant.id, {
+          content: newContent,
+          timestamp: Date.now(),
+        });
+      }
     } catch (e) {
       console.error('regenNode failed:', e);
       const errorMessage: Message = {
@@ -226,7 +231,7 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
       setLoading(false);
       setTyping(false);
     }
-  }, [isLoading, isTyping, messages, addMessage, getCurrentSessionId, currentBranchId, loadConversation, refreshBranches, setLoading, setTyping]);
+  }, [isLoading, isTyping, messages, addMessage, getCurrentSessionId, currentBranchId, setLoading, setTyping, currentConversationId, updateMessage]);
 
   // Only load conversation history when switching between existing branches/conversations
   // For fresh sessions, we start with empty messages (as configured in store.ts)
