@@ -78,36 +78,41 @@ export default function BranchTree({ className = '' }: BranchTreeProps) {
   // Load branches helper (memoized for stable reference in effects)
   const loadBranches = React.useCallback(async () => {
     try {
-      const sessionId = useChatStore.getState().getCurrentSessionId();
-      const response = await apiClient.getBranches(sessionId);
+      const store = useChatStore.getState();
+      const response = await apiClient.getBranches(store.getCurrentSessionId());
       if (response.success && response.data) {
-        const formattedBranches: ConversationBranch[] = response.data.branches.map((branch: BackendBranch) => {
-          const isActive = branch.id === response.data?.current_branch;
-          const realTimeMessageCount = isActive ? messages.length : (branch.message_count || 0);
+        const rawBranches = Array.isArray(response.data.branches)
+          ? (response.data.branches as unknown[])
+          : [];
+        const backendBranches = rawBranches as BackendBranch[];
+        const formattedBranches: ConversationBranch[] = backendBranches.map((branch) => {
+          const messageCount = branch.message_count ?? 0;
           return {
             id: branch.id,
             name: branch.name,
-            isActive,
-            messageCount: realTimeMessageCount,
+            isActive: branch.id === response.data?.current_branch,
+            messageCount,
             createdAt: branch.created_at,
-            lastActive: branch.last_active,
-            preview: realTimeMessageCount > 0
-              ? `${realTimeMessageCount} message${realTimeMessageCount !== 1 ? 's' : ''}`
+            lastActive: branch.last_active || branch.created_at,
+            preview: messageCount > 0
+              ? `${messageCount} message${messageCount !== 1 ? 's' : ''}`
               : 'Empty branch',
             parentId: branch.parent,
           };
         });
-        const { mergeBranchMetadata, currentConversationId } = useChatStore.getState();
-        if (currentConversationId) {
-          mergeBranchMetadata(currentConversationId, formattedBranches);
+        if (store.currentConversationId) {
+          store.mergeBranchMetadata(store.currentConversationId, formattedBranches);
         }
-        setCurrentBranch(response.data?.current_branch || 'main');
+        const serverBranchId = response.data?.current_branch || 'main';
+        if (serverBranchId !== store.currentBranchId) {
+          store.setCurrentBranch(serverBranchId);
+        }
         debugLog('🌿 BranchTree: fetched branches from backend', formattedBranches.length);
       }
     } catch (error) {
       console.warn('Backend connection failed:', error);
     }
-  }, [messages, setCurrentBranch]);
+  }, []);
 
   // Load branches on component mount with retry mechanism
   React.useEffect(() => {

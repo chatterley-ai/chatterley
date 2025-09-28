@@ -514,7 +514,7 @@ export default function AppLayout() {
                 }}
               />
               <h1 className="text-xl font-semibold text-foreground">
-                Chatterley: Powered by Oumi
+                Chatterley
               </h1>
               <div className="text-sm text-muted-foreground">
                 Branch: {currentBranchId}

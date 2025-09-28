@@ -62,6 +62,8 @@ export function useConversationCommand() {
           existingMessages,
           fallbackModel: settings.selectedModel,
           fallbackEngine: settings.selectedProvider,
+          conversationId: currentConversationId,
+          branchId: currentBranchId || 'main',
         });
         if (mapped.length > 0) {
           const last = mapped[mapped.length - 1];
@@ -226,6 +228,8 @@ export function useConversationCommand() {
             existingMessages,
             fallbackModel: response?.data?.model_info?.name || settings.selectedModel,
             fallbackEngine: response?.data?.model_info?.engine || settings.selectedProvider,
+            conversationId: targetConvId,
+            branchId: targetBranchId,
           });
           // If backend provided canonical conversation id, align the store selection
           if (snapConvId && currentConversationId !== snapConvId) {

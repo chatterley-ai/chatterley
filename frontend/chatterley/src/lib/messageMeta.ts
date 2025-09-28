@@ -1,4 +1,5 @@
 import type { AppSettings, Message } from '@/lib/types';
+import { useChatStore } from '@/lib/store';
 
 interface BackendMessage {
   id?: string;
@@ -15,6 +16,8 @@ interface TransformOptions {
   existingMessages?: Message[];
   fallbackModel?: string;
   fallbackEngine?: string;
+  conversationId?: string;
+  branchId?: string;
 }
 
 const isRecord = (value: unknown): value is Record<string, any> =>
@@ -64,6 +67,7 @@ export const transformBackendMessages = (
   }
 
   const existingMessages = options.existingMessages ?? [];
+  const storeState = useChatStore.getState();
   const existingMetaById = new Map<string, Record<string, any>>();
   const existingMetaByIndex = new Map<number, Record<string, any>>();
 
@@ -87,6 +91,20 @@ export const transformBackendMessages = (
       return isRecord(resolved) ? { ...resolved } : undefined;
     })();
 
+    const nodeMeta = (() => {
+      if (!options.conversationId || !options.branchId) return undefined;
+      try {
+        const info = storeState.getMessageNodeInfo(options.conversationId, options.branchId, String(backendMsg?.id ?? ''), index);
+        if (!info.nodeId) return undefined;
+        const node = storeState.messageNodes[options.conversationId]?.[info.nodeId];
+        const version = node?.versions?.[info.activeIndex];
+        const meta = version && isRecord((version as any).meta) ? (version as any).meta : undefined;
+        return meta ? { ...meta } : undefined;
+      } catch {
+        return undefined;
+      }
+    })();
+
     const rawMetaSource = isRecord(backendMsg?.metadata)
       ? backendMsg.metadata
       : isRecord(backendMsg?.meta)
@@ -99,6 +117,7 @@ export const transformBackendMessages = (
       rawMeta?.modelName,
       rawMeta?.model,
       existingMeta?.modelName,
+      nodeMeta?.modelName,
       backendMsg.role === 'assistant' ? options.fallbackModel : undefined,
       backendMsg.role === 'assistant' ? options.settings.selectedModel : undefined
     );
@@ -107,6 +126,7 @@ export const transformBackendMessages = (
       rawMeta?.engine,
       rawMeta?.provider,
       existingMeta?.engine,
+      nodeMeta?.engine,
       backendMsg.role === 'assistant' ? options.fallbackEngine : undefined,
       backendMsg.role === 'assistant' ? options.settings.selectedProvider : undefined
     );
@@ -119,7 +139,7 @@ export const transformBackendMessages = (
     );
     const durationMs = toNumber(durationCandidate);
 
-    const meta: Record<string, any> = existingMeta ? { ...existingMeta } : {};
+    const meta: Record<string, any> = existingMeta ? { ...existingMeta } : (nodeMeta ? { ...nodeMeta } : {});
     if (rawMeta) {
       for (const [key, value] of Object.entries(rawMeta)) {
         if (value !== undefined) {

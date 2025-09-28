@@ -377,7 +377,7 @@ function showAboutDialog(mainWindow: BrowserWindow): void {
     type: 'info',
     title: 'About Chatterley',
     message: 'Chatterley',
-    detail: `Version: ${app.getVersion()}\n\nA cross-platform desktop application for conversing with AI models.\n\nBuilt with Electron and powered by the Oumi AI platform.`,
+    detail: `Version: ${app.getVersion()}\n\nA cross-platform desktop application for conversing with AI models.\n\nBuilt with Electron for local-first AI workflows.`,
     buttons: ['OK']
   });
 }

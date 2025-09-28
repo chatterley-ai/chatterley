@@ -108,22 +108,7 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
       if (response.success && response.data) {
         const { branches } = response.data;
         
-        // Transform backend branches to frontend format - no longer needed, removing the unused variable
-        branches.map((branch: {
-          id: string;
-          name: string;
-          message_count?: number;
-          created_at: string;
-          last_active?: string;
-        }) => ({
-          id: branch.id,
-          name: branch.name,
-          isActive: branch.id === currentBranchId,
-          messageCount: branch.message_count || 0,
-          createdAt: branch.created_at,
-          lastActive: branch.last_active || branch.created_at,
-          preview: branch.message_count > 0 ? `${branch.message_count} messages` : 'Empty branch'
-        }));
+        // Branch metadata is derived via store; no transform needed here.
         
         // Note: setBranches is no longer needed since branches are derived on demand
         console.log('Branches updated successfully (will be available via getBranches)');
@@ -142,11 +127,13 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
         const existingMessages = currentConversationId
           ? getBranchMessages(currentConversationId, currentBranchId)
           : [];
-        const transformedMessages: Message[] = transformBackendMessages(response.data?.conversation as Array<Record<string, unknown>>, {
+        const transformedMessages: Message[] = transformBackendMessages(response.data?.conversation as any[], {
           settings,
           existingMessages,
           fallbackModel: settings.selectedModel,
           fallbackEngine: settings.selectedProvider,
+          conversationId: currentConversationId || undefined,
+          branchId: currentBranchId,
         });
         if (transformedMessages.length > 0) {
           const last = transformedMessages[transformedMessages.length - 1];

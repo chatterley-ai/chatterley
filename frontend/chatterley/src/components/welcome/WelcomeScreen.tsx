@@ -927,15 +927,7 @@ export default function WelcomeScreen({ onConfigSelected, systemCapabilities }: 
           {/* Footer */}
           <div className="text-center mt-8 pt-6 border-t border-border">
             <p className="text-sm text-muted-foreground">
-              Powered by{' '}
-              <a 
-                href="https://github.com/oumi-ai/oumi" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="text-primary hover:underline font-medium"
-              >
-                Oumi.AI
-              </a>
+              Chatterley is a local-first AI chat workspace.
             </p>
           </div>
         </div>
@@ -1159,15 +1151,7 @@ export default function WelcomeScreen({ onConfigSelected, systemCapabilities }: 
         {/* Footer */}
         <div className="text-center mt-8 pt-6 border-t border-border">
           <p className="text-sm text-muted-foreground">
-            Powered by{' '}
-            <a 
-              href="https://github.com/oumi-ai/oumi" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="text-primary hover:underline font-medium"
-            >
-              Oumi.AI
-            </a>
+            Chatterley is a local-first AI chat workspace.
           </p>
         </div>
       </div>

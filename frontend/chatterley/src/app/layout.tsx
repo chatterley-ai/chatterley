@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
+/* eslint-disable @next/next/no-sync-scripts */
 import "./globals.css";
-import Script from "next/script";
 
 export const metadata: Metadata = {
-  title: "Chatterley: Powered by Oumi",
+  title: "Chatterley",
   description: "Advanced AI chat interface with conversation branching",
 };
 
@@ -15,8 +15,8 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        {/* CRITICAL: This script MUST load synchronously before webpack chunks */}
-        <Script src="/global-polyfill.js" strategy="beforeInteractive" />
+        {/* CRITICAL: This script MUST load synchronously before webpack chunks (Electron file:// export) */}
+        <script src="./global-polyfill.js"></script>
         <style dangerouslySetInnerHTML={{
           __html: `
             #electron-loading-screen {
@@ -100,7 +100,7 @@ export default function RootLayout({
         <div id="electron-loading-screen">
           <div className="loading-logo">💬</div>
           <div className="loading-title">Chatterley</div>
-          <div className="loading-subtitle">Powered by Oumi AI</div>
+          <div className="loading-subtitle">Preparing your workspace</div>
           <div className="loading-spinner"></div>
           <div className="loading-message">Loading chat interface...</div>
           <div className="loading-tip">

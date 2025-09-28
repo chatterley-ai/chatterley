@@ -254,7 +254,7 @@ class ChatterleyApp {
         allowRunningInsecureContent: false,
         experimentalFeatures: false
       },
-      titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+      titleBarStyle: 'default',
       show: false, // Don't show until ready
       icon: this.getAppIcon()
     });
@@ -450,7 +450,7 @@ class ChatterleyApp {
         preload: path.join(__dirname, 'preload.js'),
         webSecurity: !this.isDevelopment
       },
-      titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+      titleBarStyle: 'default',
       icon: this.getAppIcon()
     });
 

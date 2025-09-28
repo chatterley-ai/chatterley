@@ -1,7 +1,7 @@
 {
   "name": "chatterley",
   "version": "0.1.0",
-  "description": "Chatterley - A cross-platform desktop application for conversing with AI models, powered by the Oumi AI platform",
+  "description": "Chatterley - A cross-platform desktop application for conversing with AI models",
   "author": {
     "name": "Benjamin Feuer",
     "email": "penfever@gmail.com"
@@ -17,6 +17,7 @@
     "start": "next start",
     "lint": "next lint",
     "type-check": "tsc --noEmit",
+    "compile": "npm run type-check && npm run electron:compile",
     "generate-configs": "node scripts/generate-configs.js",
     "download-python": "node scripts/download-python.js",
     "prepare-python": "npm run download-python",
