@@ -61,26 +61,7 @@ export default function BranchInheritanceView({
       return path;
     };
 
-    // Get all descendants
-    const getDescendants = (branchId: string): string[] => {
-      const descendants: string[] = [];
-      const queue = [branchId];
-      
-      while (queue.length > 0) {
-        const currentId = queue.shift()!;
-        const children = allBranches.filter(b => b.parentId === currentId);
-        
-        children.forEach(child => {
-          descendants.push(child.id);
-          queue.push(child.id);
-        });
-      }
-      
-      return descendants;
-    };
-
     const ancestryPath = getAncestryPath(currentBranch.id);
-    const descendants = getDescendants(currentBranch.id);
 
     // Create nodes for ancestry path
     ancestryPath.forEach((branchId, index) => {

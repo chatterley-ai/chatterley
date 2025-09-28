@@ -14,11 +14,7 @@ import { setupIpcHandlers } from './ipc-handlers';
 type WindowBounds = { width: number; height: number };
 
 function getDefaultWindowBounds(): WindowBounds {
-  if (process.platform === 'win32') {
-    // Provide a larger default viewport on Windows where the app launched smaller than macOS
-    return { width: 1600, height: 960 };
-  }
-
+  // Use a consistent fallback resolution across platforms for predictable layout
   return { width: 1400, height: 900 };
 }
 

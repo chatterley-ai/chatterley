@@ -44,10 +44,6 @@ export default function BranchMergeDialog({
     }
   }, [isOpen]);
 
-  if (!isOpen || !sourceBranch || !targetBranch) {
-    return null;
-  }
-
   // Analyze merge conflicts and preview
   const mergeAnalysis = React.useMemo(() => {
     const conflicts: string[] = [];
@@ -89,6 +85,10 @@ export default function BranchMergeDialog({
 
     return { conflicts, warnings };
   }, [sourceMessages, targetMessages]);
+
+  if (!isOpen || !sourceBranch || !targetBranch) {
+    return null;
+  }
 
   const handleMerge = async () => {
     if (!sourceBranch || !targetBranch) return;
@@ -144,7 +144,7 @@ export default function BranchMergeDialog({
                 Merge Branches
               </h2>
               <p className="text-sm text-gray-600">
-                Merge "{sourceBranch.name}" into "{targetBranch.name}"
+                Merge &quot;{sourceBranch.name}&quot; into &quot;{targetBranch.name}&quot;
               </p>
             </div>
           </div>

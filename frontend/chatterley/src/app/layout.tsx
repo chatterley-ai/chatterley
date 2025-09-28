@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import Script from "next/script";
 
 export const metadata: Metadata = {
   title: "Chatterley: Powered by Oumi",
@@ -15,7 +16,7 @@ export default function RootLayout({
     <html lang="en">
       <head>
         {/* CRITICAL: This script MUST load synchronously before webpack chunks */}
-        <script src="./global-polyfill.js"></script>
+        <Script src="/global-polyfill.js" strategy="beforeInteractive" />
         <style dangerouslySetInnerHTML={{
           __html: `
             #electron-loading-screen {

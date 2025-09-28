@@ -6,6 +6,7 @@
 import { useState } from 'react';
 import apiClient from '@/lib/unified-api';
 import { useChatStore } from '@/lib/store';
+import { transformBackendMessages } from '@/lib/messageMeta';
 
 interface CommandOptions {
   /** Wait time after command execution before refreshing (for async operations like regen) */
@@ -49,42 +50,23 @@ export function useConversationCommand() {
         currentConversationId,
         currentBranchId,
         settings,
+        getBranchMessages,
       } = useChatStore.getState();
 
       // Fetch messages for the CURRENT branch, not always 'main'
       const conversationResponse = await apiClient.getConversation(getCurrentSessionId(), currentBranchId || 'main');
       if (conversationResponse.success && conversationResponse.data?.conversation && currentConversationId) {
-        // Normalize messages: fix timestamps and merge backend metadata
-        const normalizeTs = (t: any): number => {
-          if (typeof t === 'number') return t < 1e11 ? Math.round(t * 1000) : Math.round(t);
-          if (typeof t === 'string') { const f = parseFloat(t); if (!isNaN(f)) return f < 1e11 ? Math.round(f * 1000) : Math.round(f); }
-          return Date.now();
-        };
-        const convLen = Array.isArray(conversationResponse.data?.conversation) ? (conversationResponse.data!.conversation as any[]).length : 0;
-        const mapped = (conversationResponse.data?.conversation as any[]).map((m, i) => {
-          const ts = normalizeTs(m.timestamp);
-          const md = (m.metadata || m.meta || {}) as any;
-          const modelName = md.model_name ?? md.modelName ?? (m.role === 'assistant' ? settings.selectedModel : undefined);
-          const engine = md.engine ?? (m.role === 'assistant' ? settings.selectedProvider : undefined);
-          const durationMs = md.duration_ms ?? md.durationMs;
-          if (convLen > 0 && i === convLen - 1) {
-            console.log('[CHAT_REFRESH] last msg meta', md, 'mapped', { modelName, engine, durationMs });
-          }
-          return {
-            id: m.id,
-            role: m.role,
-            content: m.content,
-            timestamp: ts,
-            meta: {
-              authorType: m.role === 'assistant' ? 'ai' : (m.role === 'user' ? 'user' : 'system'),
-              authorName: m.role === 'assistant' ? (modelName || 'AI') : (settings.user?.displayName || 'You'),
-              modelName,
-              engine,
-              createdAt: ts,
-              ...(typeof durationMs === 'number' ? { durationMs } : {}),
-            }
-          };
+        const existingMessages = getBranchMessages(currentConversationId, currentBranchId || 'main');
+        const mapped = transformBackendMessages(conversationResponse.data?.conversation as any[], {
+          settings,
+          existingMessages,
+          fallbackModel: settings.selectedModel,
+          fallbackEngine: settings.selectedProvider,
         });
+        if (mapped.length > 0) {
+          const last = mapped[mapped.length - 1];
+          console.log('[CHAT_REFRESH] last msg meta', last.meta, 'id', last.id);
+        }
         setMessages(currentConversationId, currentBranchId || 'main', mapped as any);
         console.log('[CHAT_REFRESH] setMessages with', mapped.length, 'messages for', currentConversationId, currentBranchId);
         console.log(`🔄 Conversation refreshed for branch '${currentBranchId || 'main'}' with ${conversationResponse.data.conversation.length} messages`);
@@ -229,41 +211,21 @@ export function useConversationCommand() {
 
       // If backend returned an updated conversation snapshot, apply it immediately
       try {
-        const { currentConversationId, currentBranchId, setMessages, setCurrentConversationId, settings } = useChatStore.getState();
+        const { currentConversationId, currentBranchId, setMessages, setCurrentConversationId, settings, getBranchMessages } = useChatStore.getState();
         const snap = response?.data?.conversation as any[] | undefined;
         const snapConvId: string | undefined = response?.data?.conversation_id;
         const snapBranchId: string | undefined = response?.data?.branch_id || response?.data?.current_branch;
         const targetConvId = snapConvId || currentConversationId;
         const targetBranchId = snapBranchId || currentBranchId || 'main';
         if (targetConvId && snap && Array.isArray(snap)) {
-          const normalizeTs = (t: any): number => {
-            if (typeof t === 'number') return t < 1e11 ? Math.round(t * 1000) : Math.round(t);
-            if (typeof t === 'string') {
-              const f = parseFloat(t); if (!isNaN(f)) return f < 1e11 ? Math.round(f * 1000) : Math.round(f);
-            }
-            return Date.now();
-          };
-          // Map snapshot to include minimal metadata so UI stays consistent
-          const mapped = snap.map((m: any) => {
-            const ts = normalizeTs(m.timestamp);
-            const md = (m.metadata || m.meta || {}) as any;
-            const modelName = md.model_name ?? md.modelName ?? (m.role === 'assistant' ? (response?.data?.model_info?.name || settings.selectedModel) : undefined);
-            const engine = md.engine ?? (m.role === 'assistant' ? (response?.data?.model_info?.engine || settings.selectedProvider) : undefined);
-            const durationMs = md.duration_ms ?? md.durationMs;
-            return {
-              id: m.id,
-              role: m.role,
-              content: m.content,
-              timestamp: ts,
-              meta: {
-                authorType: m.role === 'assistant' ? 'ai' : (m.role === 'user' ? 'user' : 'system'),
-                authorName: m.role === 'assistant' ? (modelName || 'AI') : (settings.user?.displayName || 'You'),
-                modelName,
-                engine,
-                createdAt: ts,
-                ...(typeof durationMs === 'number' ? { durationMs } : {}),
-              }
-            };
+          const existingMessages = targetConvId
+            ? getBranchMessages(targetConvId, targetBranchId)
+            : [];
+          const mapped = transformBackendMessages(snap as any[], {
+            settings,
+            existingMessages,
+            fallbackModel: response?.data?.model_info?.name || settings.selectedModel,
+            fallbackEngine: response?.data?.model_info?.engine || settings.selectedProvider,
           });
           // If backend provided canonical conversation id, align the store selection
           if (snapConvId && currentConversationId !== snapConvId) {

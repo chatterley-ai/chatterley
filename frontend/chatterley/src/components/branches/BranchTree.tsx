@@ -6,8 +6,8 @@
 
 import React from 'react';
 import { useChatStore } from '@/lib/store';
-import { ConversationBranch, Message } from '@/lib/types';
-import { Plus, GitBranch, Trash2, TreePine, List, MoreVertical, Shuffle, GitMerge } from 'lucide-react';
+import { ConversationBranch } from '@/lib/types';
+import { Plus, GitBranch, Trash2, TreePine, List, MoreVertical, Shuffle } from 'lucide-react';
 import apiClient from '@/lib/unified-api';
 import BranchTreeVisualization from './BranchTreeVisualization';
 import BranchInheritanceView from './BranchInheritanceView';
@@ -32,9 +32,9 @@ export default function BranchTree({ className = '' }: BranchTreeProps) {
     setCurrentBranch,
     addBranch,
     deleteBranch,
-    setMessages,
+    // setMessages,
     getCurrentMessages,
-    getBranchMessages,
+    // getBranchMessages,
     getBranches,
     loadConversation
   } = useChatStore();
@@ -65,6 +65,50 @@ export default function BranchTree({ className = '' }: BranchTreeProps) {
   } | null>(null);
   // Removed save/load action busy state per request
 
+  // Typed shape for backend branch objects
+  type BackendBranch = {
+    id: string;
+    name: string;
+    message_count?: number;
+    created_at: string;
+    last_active?: string;
+    parent?: string;
+  };
+
+  // Load branches helper (memoized for stable reference in effects)
+  const loadBranches = React.useCallback(async () => {
+    try {
+      const sessionId = useChatStore.getState().getCurrentSessionId();
+      const response = await apiClient.getBranches(sessionId);
+      if (response.success && response.data) {
+        const formattedBranches: ConversationBranch[] = response.data.branches.map((branch: BackendBranch) => {
+          const isActive = branch.id === response.data?.current_branch;
+          const realTimeMessageCount = isActive ? messages.length : (branch.message_count || 0);
+          return {
+            id: branch.id,
+            name: branch.name,
+            isActive,
+            messageCount: realTimeMessageCount,
+            createdAt: branch.created_at,
+            lastActive: branch.last_active,
+            preview: realTimeMessageCount > 0
+              ? `${realTimeMessageCount} message${realTimeMessageCount !== 1 ? 's' : ''}`
+              : 'Empty branch',
+            parentId: branch.parent,
+          };
+        });
+        const { mergeBranchMetadata, currentConversationId } = useChatStore.getState();
+        if (currentConversationId) {
+          mergeBranchMetadata(currentConversationId, formattedBranches);
+        }
+        setCurrentBranch(response.data?.current_branch || 'main');
+        debugLog('🌿 BranchTree: fetched branches from backend', formattedBranches.length);
+      }
+    } catch (error) {
+      console.warn('Backend connection failed:', error);
+    }
+  }, [messages, setCurrentBranch]);
+
   // Load branches on component mount with retry mechanism
   React.useEffect(() => {
     let retryTimeout: NodeJS.Timeout;
@@ -88,43 +132,7 @@ export default function BranchTree({ className = '' }: BranchTreeProps) {
         clearTimeout(retryTimeout);
       }
     };
-  }, []);
-
-  const loadBranches = async () => {
-    try {
-      const sessionId = useChatStore.getState().getCurrentSessionId();
-      const response = await apiClient.getBranches(sessionId);
-      if (response.success && response.data) {
-        const formattedBranches: ConversationBranch[] = response.data.branches.map((branch: any) => {
-          // Use real-time message count from store for the active branch
-          const isActive = branch.id === response.data?.current_branch;
-          const realTimeMessageCount = isActive ? messages.length : (branch.message_count || 0);
-          
-          return {
-            id: branch.id,
-            name: branch.name,
-            isActive: isActive,
-            messageCount: realTimeMessageCount,
-            createdAt: branch.created_at,
-            lastActive: branch.last_active,
-            preview: realTimeMessageCount > 0 
-              ? `${realTimeMessageCount} message${realTimeMessageCount !== 1 ? 's' : ''}`
-              : 'Empty branch',
-            parentId: branch.parent,
-          };
-        });
-        // Branches are now derived on demand, no need to set them manually
-        const { mergeBranchMetadata, currentConversationId } = useChatStore.getState();
-        if (currentConversationId) {
-          mergeBranchMetadata(currentConversationId, formattedBranches);
-        }
-        setCurrentBranch(response.data?.current_branch || 'main');
-        debugLog('🌿 BranchTree: fetched branches from backend', formattedBranches.length);
-      }
-    } catch (error) {
-      console.warn('Backend connection failed:', error);
-    }
-  };
+  }, [loadBranches]);
 
   const handleCreateBranch = async (branchName?: string, fromBranchId?: string) => {
     // Check branch limit (currently limited to 5 branches total)

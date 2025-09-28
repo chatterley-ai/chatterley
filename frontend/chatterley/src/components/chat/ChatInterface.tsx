@@ -12,12 +12,17 @@ import { useChatStore } from '@/lib/store';
 import { useAutoSave } from '@/hooks/useAutoSave';
 import { Message, ChatCompletionRequest } from '@/lib/types';
 import apiClient from '@/lib/unified-api';
+import { transformBackendMessages } from '@/lib/messageMeta';
 import { isValidCommand, parseCommand } from '@/lib/constants';
 import ChatHistory from './ChatHistory';
 import MessageInput, { PreparedAttachment } from './MessageInput';
 
 const deriveOmniCapability = (
-  metadata: any,
+  metadata: {
+    model_name?: string;
+    is_omni_capable?: boolean;
+    [key: string]: unknown;
+  } | null | undefined,
   modelId?: string | null
 ): boolean | undefined => {
   if (metadata && typeof metadata.is_omni_capable === 'boolean') {
@@ -56,6 +61,7 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
     updateMessage,
     getCurrentSessionId,
     getCurrentMessages,
+    getBranchMessages,
   } = useChatStore();
   
   // Note: setBranches is no longer needed as branches are derived on demand from state
@@ -73,6 +79,7 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
   const currentStreamingMessageId = React.useRef<string | null>(null);
 
   // Expose methods to parent via onRef callback
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   React.useEffect(() => {
     if (onRef) {
       onRef({
@@ -85,6 +92,7 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
 
   // Only load conversation history when switching between existing branches/conversations
   // For fresh sessions, we start with empty messages (as configured in store.ts)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   React.useEffect(() => {
     // Only load conversation if we have an active conversation ID AND
     // the current messages array is empty (meaning we're switching TO a conversation)
@@ -100,8 +108,14 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
       if (response.success && response.data) {
         const { branches } = response.data;
         
-        // Transform backend branches to frontend format
-        const transformedBranches = branches.map((branch: any) => ({
+        // Transform backend branches to frontend format - no longer needed, removing the unused variable
+        branches.map((branch: {
+          id: string;
+          name: string;
+          message_count?: number;
+          created_at: string;
+          last_active?: string;
+        }) => ({
           id: branch.id,
           name: branch.name,
           isActive: branch.id === currentBranchId,
@@ -125,44 +139,19 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
       const response = await apiClient.getConversation(getCurrentSessionId(), currentBranchId);
       
       if (response.success && response.data) {
-        const normalizeTs = (t: any): number => {
-          if (typeof t === 'number') {
-            // If seconds (10 digits), convert to ms
-            return t < 1e11 ? Math.round(t * 1000) : Math.round(t);
-          }
-          if (typeof t === 'string') {
-            const f = parseFloat(t);
-            if (!isNaN(f)) return f < 1e11 ? Math.round(f * 1000) : Math.round(f);
-          }
-          return Date.now();
-        };
-        // Transform backend messages to frontend format with minimal metadata
-        const convLen = Array.isArray(response.data?.conversation) ? (response.data!.conversation as any[]).length : 0;
-        const transformedMessages: Message[] = (response.data?.conversation as any[]).map((msg: any, i: number) => {
-          const ts = normalizeTs(msg.timestamp);
-          const md = (msg.metadata || msg.meta || {}) as any;
-          const modelName = md.model_name ?? md.modelName ?? (msg.role === 'assistant' ? settings.selectedModel : undefined);
-          const engine = md.engine ?? (msg.role === 'assistant' ? settings.selectedProvider : undefined);
-          const durationMs = md.duration_ms ?? md.durationMs;
-          if (convLen > 0 && i === convLen - 1) {
-            console.log('[CHAT_LOAD] last msg meta', md, 'mapped', { modelName, engine, durationMs });
-          }
-          return {
-            id: msg.id || `${msg.role}-${Date.now()}-${Math.random()}`,
-            role: msg.role,
-            content: msg.content,
-            timestamp: ts,
-            attachments: msg.attachments,
-            meta: {
-              authorType: msg.role === 'assistant' ? 'ai' : (msg.role === 'user' ? 'user' : 'system'),
-              authorName: msg.role === 'assistant' ? (modelName || 'AI') : (settings.user?.displayName || 'You'),
-              modelName,
-              engine,
-              createdAt: ts,
-              ...(typeof durationMs === 'number' ? { durationMs } : {}),
-            }
-          };
+        const existingMessages = currentConversationId
+          ? getBranchMessages(currentConversationId, currentBranchId)
+          : [];
+        const transformedMessages: Message[] = transformBackendMessages(response.data?.conversation as Array<Record<string, unknown>>, {
+          settings,
+          existingMessages,
+          fallbackModel: settings.selectedModel,
+          fallbackEngine: settings.selectedProvider,
         });
+        if (transformedMessages.length > 0) {
+          const last = transformedMessages[transformedMessages.length - 1];
+          console.log('[CHAT_LOAD] last msg meta', last.meta, 'id', last.id);
+        }
         
         // Use the branch-specific setMessages
         // The setMessages function now requires 3 parameters
@@ -277,6 +266,7 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
   };
 
   // Internal method for UI elements to execute commands (bypasses user input blocking)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const executeCommand = async (command: string) => {
     setLoading(true);
     
@@ -327,7 +317,11 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
       if (modelResponse.success && modelResponse.data?.data?.[0]) {
         try {
           const modelEntry = modelResponse.data.data[0];
-          const md: any = modelEntry.config_metadata;
+          const md: {
+            model_name?: string;
+            is_omni_capable?: boolean;
+            [key: string]: unknown;
+          } | null | undefined = modelEntry.config_metadata;
           console.log('[ChatInterface] config metadata from getModels:', md);
           const derived = deriveOmniCapability(md, modelEntry.id);
           if (typeof derived === 'boolean') {
@@ -366,7 +360,11 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
       if (recheckResponse.success && recheckResponse.data?.data?.[0]) {
         try {
           const modelEntry = recheckResponse.data.data[0];
-          const md: any = modelEntry.config_metadata;
+          const md: {
+            model_name?: string;
+            is_omni_capable?: boolean;
+            [key: string]: unknown;
+          } | null | undefined = modelEntry.config_metadata;
           console.log('[ChatInterface] config metadata from recheck:', md);
           const derived = deriveOmniCapability(md, modelEntry.id);
           if (typeof derived === 'boolean') {
@@ -409,7 +407,10 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
       return text; // plain string
     }
     const map = new Map(attachments.map(a => [a.id, a] as const));
-    const parts: Array<any> = [];
+    const parts: Array<{
+      type: string;
+      content: string;
+    }> = [];
     const re = /(\[attachment:[^\]]+\])/g;
     const tokens = text.split(re).filter(Boolean);
     for (const token of tokens) {
@@ -437,16 +438,16 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
   // Error dialog state for actionable errors
   const { currentError, showError, clearError } = useErrorHandler();
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   React.useEffect(() => {
     void ensureModelLoaded();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   React.useEffect(() => {
     if (settings.selectedModel) {
       void ensureModelLoaded();
     }
-  // eslint-disable-next-line react-hooks-exhaustive-deps
   }, [settings.selectedModel]);
 
   // Helper: wait for backend health up to a cap
@@ -491,12 +492,18 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
         .filter(msg => msg.role !== 'system') // Exclude system messages from API
         .map(msg => ({
           role: (msg.role as 'user' | 'assistant' | 'system'),
-          content: (msg.content as any),
+          content: msg.content,
         }));
 
       // Add the current user message (possibly multimodal)
       const contentOrParts = isOmniCapable ? buildContentParts(content, attachments) : content;
-      apiMessages.push({ role: 'user', content: contentOrParts as any });
+      apiMessages.push({
+        role: 'user', 
+        content: contentOrParts as string | Array<{
+          type: string;
+          content: string;
+        }>
+      });
 
       // Auto-reload model if needed before attempting chat
       await ensureModelLoaded();
@@ -566,7 +573,7 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
           currentConversationId || '',
           currentBranchId,
           assistantMessageId,
-          { meta: { ...(assistantMessage.meta || {}), durationMs } } as any
+          { meta: { ...(assistantMessage.meta || {}), durationMs } }
         );
         
       } else {

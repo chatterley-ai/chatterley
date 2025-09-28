@@ -5,7 +5,7 @@
 "use client";
 
 import React from 'react';
-import { MoreVertical, GitBranch, Copy, Trash2, Edit2, ArrowRight } from 'lucide-react';
+import { GitBranch, Copy, Trash2, Edit2, ArrowRight } from 'lucide-react';
 import { ConversationBranch } from '@/lib/types';
 
 interface BranchContextMenuProps {
