@@ -15,7 +15,12 @@ import { useConversationCommand, COMMAND_CONFIGS } from '@/hooks/useConversation
 import { Maximize2, Minimize2, Settings, RotateCcw, PanelLeft, PanelLeftClose, X, Search, History, ChevronDown, ChevronRight } from 'lucide-react';
 import ConfirmationDialog from '@/components/ui/ConfirmationDialog';
 import SettingsScreen from '@/components/settings/SettingsScreen';
-import ChatHistorySidebar from '@/components/history/ChatHistorySidebar';
+import dynamic from 'next/dynamic';
+// Defer ChatHistorySidebar to avoid early module evaluation during bootstrap
+const ChatHistorySidebar = dynamic(() => import('@/components/history/ChatHistorySidebar'), {
+  ssr: false,
+  loading: () => null,
+});
 import SearchHistoryWindow from '@/components/search/SearchHistoryWindow';
 import { ChatInterfaceRef } from '@/components/chat/ChatInterface';
 import ToastContainer from '@/components/ui/ToastContainer';

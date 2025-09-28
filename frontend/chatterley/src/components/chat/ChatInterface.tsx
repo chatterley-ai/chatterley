@@ -71,23 +71,68 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
   
   // Initialize auto-save functionality
   useAutoSave();
+  
+  // State for omni capability
+  const [isOmniCapable, setIsOmniCapable] = React.useState(false);
 
   // State for stopping generation
   const [shouldStop, setShouldStop] = React.useState(false);
   
   // Ref to track current streaming message ID
   const currentStreamingMessageId = React.useRef<string | null>(null);
+  
+  // Forward declaration for functions used in useEffect
+  const handleStopGeneration = React.useCallback(() => {
+    setShouldStop(true);
+    setLoading(false);
+    setTyping(false);
+    
+    // Clear streaming state
+    currentStreamingMessageId.current = null;
+  }, [setShouldStop, setLoading, setTyping]);
 
-  // Expose methods to parent via onRef callback
-  React.useEffect(() => {
-    if (onRef) {
-      onRef({
-        regenerateLastResponse: handleRegenerateLastResponse,
-        stopGeneration: handleStopGeneration,
-        sendMessage: handleSendMessage,
-      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const handleSendMessage = React.useCallback(async (content: string, attachments?: PreparedAttachment[]) => {
+    // Check if it's a valid command and block it
+    if (isValidCommand(content)) {
+      const errorMessage: Message = {
+        id: `error-${Date.now()}`,
+        role: 'assistant',
+        content: `❌ Commands cannot be executed through the chat input. Please use the UI controls and buttons instead.`,
+        timestamp: Date.now(),
+      };
+      addMessage(errorMessage);
+      return;
     }
-  }, [onRef, handleRegenerateLastResponse, handleStopGeneration, handleSendMessage]);
+
+    // Create user message
+    const displayName = settings.user?.displayName || generateDisplayName();
+    const createdAt = Date.now();
+    const userMessage: Message = {
+      id: `user-${Date.now()}`,
+      role: 'user',
+      content,
+      timestamp: createdAt,
+      attachments: attachments as unknown as Record<string, unknown>[] | undefined,
+      meta: {
+        authorName: displayName,
+        authorType: 'user',
+        createdAt,
+      }
+    };
+
+    // Add user message to store immediately
+    addMessage(userMessage);
+
+    // Use requestAnimationFrame to ensure the UI has rendered the user message
+    // before starting API processing. This prevents timing issues where the 
+    // user message might not appear in the chat history.
+    requestAnimationFrame(async () => {
+      // Handle regular chat message (no command handling anymore)
+      await handleChatMessage(content, attachments);
+    });
+  }, [addMessage, settings]);
+
 
   // Only load conversation history when switching between existing branches/conversations
   // For fresh sessions, we start with empty messages (as configured in store.ts)
@@ -96,23 +141,10 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
     // the current messages array is empty (meaning we're switching TO a conversation)
     // This prevents loading when we're actively adding messages to the current conversation
     if (currentConversationId && messages.length === 0) {
-      loadConversation();
+      void loadConversation();
     }
   }, [currentBranchId, currentConversationId, loadConversation, messages.length]);
-
-  const refreshBranches = React.useCallback(async () => {
-    try {
-      const response = await apiClient.getBranches(getCurrentSessionId());
-      if (response.success && response.data) {
-        // Branch metadata is derived via store; no transform needed here.
-        // Note: setBranches is no longer needed since branches are derived on demand
-        console.log('Branches updated successfully (will be available via getBranches)');
-      }
-    } catch (error) {
-      console.error('Failed to refresh branches:', error);
-    }
-  }, [getCurrentSessionId]);
-
+  
   const loadConversation = React.useCallback(async () => {
     try {
       setLoading(true);
@@ -122,7 +154,7 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
         const existingMessages = currentConversationId
           ? getBranchMessages(currentConversationId, currentBranchId)
           : [];
-        const transformedMessages: Message[] = transformBackendMessages(response.data?.conversation as Record<string, unknown>[], {
+        const transformedMessages: Message[] = transformBackendMessages(response.data?.conversation as unknown as Message[], {
           settings,
           existingMessages,
           fallbackModel: settings.selectedModel,
@@ -194,17 +226,68 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
       setLoading(false);
       setTyping(false);
     }
-  }, [isLoading, isTyping, messages, refreshBranches, addMessage, getCurrentSessionId, currentBranchId, loadConversation, setLoading, setTyping]);
+  }, [isLoading, isTyping, messages, addMessage, getCurrentSessionId, currentBranchId, loadConversation, setLoading, setTyping]);
 
-  // Handler for stopping generation
-  const handleStopGeneration = React.useCallback(() => {
-    setShouldStop(true);
-    setLoading(false);
-    setTyping(false);
-    
-    // Clear streaming state
-    currentStreamingMessageId.current = null;
-  }, [setShouldStop, setLoading, setTyping]);
+  const refreshBranches = React.useCallback(async () => {
+    try {
+      const response = await apiClient.getBranches(getCurrentSessionId());
+      if (response.success && response.data) {
+        // Branch metadata is derived via store; no transform needed here.
+        // Note: setBranches is no longer needed since branches are derived on demand
+        console.log('Branches updated successfully (will be available via getBranches)');
+      }
+    } catch (error) {
+      console.error('Failed to refresh branches:', error);
+    }
+  }, [getCurrentSessionId]);
+
+  const loadConversation = React.useCallback(async () => {
+    try {
+      setLoading(true);
+      const response = await apiClient.getConversation(getCurrentSessionId(), currentBranchId);
+      
+      if (response.success && response.data) {
+        const existingMessages = currentConversationId
+          ? getBranchMessages(currentConversationId, currentBranchId)
+          : [];
+        const transformedMessages: Message[] = transformBackendMessages(response.data?.conversation as Record<string, unknown>[], {
+          settings,
+          existingMessages,
+          fallbackModel: settings.selectedModel,
+          fallbackEngine: settings.selectedProvider,
+          conversationId: currentConversationId || undefined,
+          branchId: currentBranchId,
+        });
+        if (transformedMessages.length > 0) {
+          const last = transformedMessages[transformedMessages.length - 1];
+          console.log('[CHAT_LOAD] last msg meta', last.meta, 'id', last.id);
+        }
+        
+        // Use the branch-specific setMessages
+        // The setMessages function now requires 3 parameters
+        setMessages(currentConversationId || '', currentBranchId, transformedMessages);
+        console.log('[CHAT_LOAD] setMessages with', transformedMessages.length, 'messages for', currentConversationId, currentBranchId);
+      }
+    } catch (error) {
+      console.error('Failed to load conversation:', error);
+      // Don't show error for empty conversations
+      if (error instanceof Error && !error.message.includes('not found')) {
+        const errorMessage: Message = {
+          id: `error-${Date.now()}`,
+          role: 'assistant',
+          content: `❌ Failed to load conversation: ${error.message}`,
+          timestamp: Date.now(),
+        };
+        // Use the branch-specific setMessages
+        // The setMessages function now requires 3 parameters
+        setMessages(currentConversationId || '', currentBranchId, [errorMessage]);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [getCurrentSessionId, currentBranchId, setLoading, setMessages, settings, currentConversationId, getBranchMessages]);
+
+
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const handleSendMessage = React.useCallback(async (content: string, attachments?: PreparedAttachment[]) => {
@@ -419,7 +502,6 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
     return parts.length > 0 ? parts : text;
   };
 
-  const [isOmniCapable, setIsOmniCapable] = React.useState(false);
   // Error dialog state for actionable errors
   const { currentError, showError, clearError } = useErrorHandler();
 
