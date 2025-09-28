@@ -205,13 +205,14 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
         userMessageId: lastAssistant ? undefined : lastUser?.id,
         sessionId: getCurrentSessionId(),
         branchId: currentBranchId || 'main',
-        historyMode: 'last_user',
+        historyMode: 'full',
       });
       if (!resp.success) {
         throw new Error(resp.message || 'Regen failed');
       }
       // Apply only the node update locally; do not refresh entire conversation
       const newContent = (resp.data as any)?.assistant?.content as string | undefined;
+      const modelInfo = (resp.data as any)?.assistant?.metadata as { model_name?: string; engine?: string; duration_ms?: number } | undefined;
       if (newContent && currentConversationId && lastAssistant) {
         updateMessage(
           currentConversationId,
@@ -221,6 +222,7 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
             content: newContent,
             timestamp: Date.now(),
             __commit: true,
+            meta: modelInfo ? { modelName: modelInfo.model_name, engine: modelInfo.engine, durationMs: modelInfo.duration_ms } as any : undefined,
           } as any
         );
         try { console.log(`🔄 Regenerated last assistant message applied locally: ${lastAssistant.id}`); } catch {}

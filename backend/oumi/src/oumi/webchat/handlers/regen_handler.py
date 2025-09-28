@@ -191,7 +191,9 @@ class RegenHandler:
 
         # Inference
         try:
+            _t0 = time.time()
             model_response = session_engine.infer(input=[full_conversation], inference_config=session_config)
+            _elapsed = max(0.0, time.time() - _t0)
         except Exception as e:
             logger.error(f"regen_node: inference error: {e}")
             return web.json_response({"error": f"Inference failed: {e}"}, status=500)
@@ -206,6 +208,25 @@ class RegenHandler:
         if not response_content:
             response_content = "No response generated"
 
+        # Collect model metadata for UI
+        model_name = None
+        engine_name = None
+        try:
+            model_name = getattr(session_config.model, 'model_name', None)
+        except Exception:
+            pass
+        try:
+            engine_name = str(getattr(session_config, 'engine', None)) if getattr(session_config, 'engine', None) else None
+        except Exception:
+            pass
+        duration_ms = int((_elapsed if '_elapsed' in locals() else 0.0) * 1000)
+        try:
+            # We logged elapsed earlier around inference; recompute lightweight if needed
+            # Not tracking start separately here; omit if unavailable
+            pass
+        except Exception:
+            pass
+
         # Update targeted assistant message in-place; do not mutate other nodes
         updated_id: Optional[str] = None
         if target_assistant_index is not None and 0 <= target_assistant_index < len(session.conversation_history):
@@ -213,6 +234,18 @@ class RegenHandler:
                 target_msg = session.conversation_history[target_assistant_index]
                 target_msg["content"] = response_content
                 target_msg["timestamp"] = time.time()
+                # Update metadata if present
+                try:
+                    md = target_msg.get("metadata") or {}
+                    if model_name:
+                        md["model_name"] = model_name
+                    if engine_name:
+                        md["engine"] = engine_name
+                    if duration_ms is not None:
+                        md["duration_ms"] = duration_ms
+                    target_msg["metadata"] = md
+                except Exception:
+                    pass
                 updated_id = target_msg.get("id")
                 logger.debug(f"regen_node: updated assistant at index {target_assistant_index} (id={updated_id})")
             except Exception:
@@ -308,7 +341,7 @@ class RegenHandler:
         return web.json_response(
             {
                 "success": True,
-                "assistant": {"id": new_id, "content": response_content},
+                "assistant": {"id": new_id, "content": response_content, "metadata": {"model_name": model_name, "engine": engine_name, "duration_ms": duration_ms}},
                 "target": {
                     "assistant_id": assistant_id,
                     "user_message_id": user_message_id,

@@ -87,12 +87,13 @@ export default function ChatMessage({ message, isLatest = false, messageIndex }:
     setActionInProgress('regen');
     try {
       const { getCurrentSessionId, currentBranchId } = useChatStore.getState();
-      const resp = await apiClient.regenNode({ assistantId: message.id, sessionId: getCurrentSessionId(), branchId: currentBranchId || 'main' });
+      const resp = await apiClient.regenNode({ assistantId: message.id, sessionId: getCurrentSessionId(), branchId: currentBranchId || 'main', historyMode: 'full' });
       if (!resp.success) {
         alert(resp.message || 'Failed to regenerate');
       } else {
         // Apply only the node update locally; do not refresh entire conversation
         const newContent = (resp.data as any)?.assistant?.content as string | undefined;
+        const modelInfo = (resp.data as any)?.assistant?.metadata as { model_name?: string; engine?: string; duration_ms?: number } | undefined;
         if (newContent && currentConversationId) {
           updateMessage(
             currentConversationId,
@@ -102,6 +103,7 @@ export default function ChatMessage({ message, isLatest = false, messageIndex }:
               content: newContent,
               timestamp: Date.now(),
               __commit: true,
+              meta: modelInfo ? { modelName: modelInfo.model_name, engine: modelInfo.engine, durationMs: modelInfo.duration_ms } as any : undefined,
             } as any
           );
           try { console.log(`🔄 Regenerated assistant message applied locally: ${message.id}`); } catch {}
@@ -136,7 +138,17 @@ export default function ChatMessage({ message, isLatest = false, messageIndex }:
         });
         
         if (result.success) {
-          // Avoid local commit/version bump; refresh authoritative state instead
+          // Create a local version for the edit so version UI reflects immediately
+          if (currentConversationId) {
+            const baseMeta = !isUser ? { modelName: (message as any)?.meta?.modelName, engine: (message as any)?.meta?.engine } : undefined;
+            updateMessage(currentConversationId, currentBranchId || 'main', message.id, {
+              content: editContent.trim(),
+              timestamp: Date.now(),
+              __commit: true,
+              ...(baseMeta ? { meta: baseMeta as any } : {}),
+            } as any);
+          }
+          // Also refresh authoritative state to align with backend
           await refreshConversation();
           await refreshBranches();
           setIsEditing(false);

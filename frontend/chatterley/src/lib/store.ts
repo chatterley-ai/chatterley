@@ -837,18 +837,24 @@ export const useChatStore = create<ChatStore>()(
             if (targetNodeId) {
               const node = convNodes[targetNodeId];
               const newVersionId = `v-${Date.now()}-${Math.random().toString(36).slice(2,6)}`;
+              const prevHeadId = heads[targetNodeId] || (node.versions.length ? node.versions[node.versions.length - 1].id : undefined);
+              const prev = prevHeadId ? node.versions.find(v => v.id === prevHeadId) : (node.versions.length ? node.versions[node.versions.length - 1] : undefined);
+              const providedMeta = (updates as any)?.meta && typeof (updates as any).meta === 'object' ? { ...(updates as any).meta as Record<string, unknown> } : undefined;
+              const mergedMeta: Record<string, unknown> = {
+                ...(prev && typeof (prev as any).meta === 'object' ? (prev as any).meta : {}),
+                ...(providedMeta || {}),
+                editor: 'user',
+                authorType: 'user',
+                authorName: (get().settings.user?.displayName) || 'You',
+                createdAt: Date.now(),
+              };
               const newVersion: MessageVersion = {
                 id: newVersionId,
                 role: (updates as any).role || (node.versions[node.versions.length - 1]?.role ?? 'assistant'),
                 content: updates.content!,
                 timestamp: Date.now(),
                 attachments: (updates as any).attachments,
-                meta: {
-                  editor: 'user',
-                  authorType: 'user',
-                  authorName: (get().settings.user?.displayName) || 'You',
-                  createdAt: Date.now(),
-                }
+                meta: mergedMeta,
               };
               const newNode: MessageNode = { id: targetNodeId, versions: [...node.versions, newVersion] };
               _nextNodesForConv = { ...convNodes, [targetNodeId]: newNode };
