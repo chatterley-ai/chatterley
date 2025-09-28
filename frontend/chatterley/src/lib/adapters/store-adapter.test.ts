@@ -35,7 +35,7 @@ describe('Store Adapter', () => {
   describe('adaptLegacyConversation', () => {
     it('should convert legacy conversation to branch-aware format', () => {
       // Create a legacy format conversation
-      const legacyConversation: any = {
+      const legacyConversation = {
         id: 'conv1',
         title: 'Test Conversation',
         messages: [mockMessage1, mockMessage2],

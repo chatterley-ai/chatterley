@@ -32,7 +32,7 @@ interface CommandOptions {
 interface CommandResult {
   success: boolean;
   message?: string;
-  data?: any;
+  data?: Record<string, unknown>;
 }
 
 export function useConversationCommand() {
@@ -57,7 +57,7 @@ export function useConversationCommand() {
       const conversationResponse = await apiClient.getConversation(getCurrentSessionId(), currentBranchId || 'main');
       if (conversationResponse.success && conversationResponse.data?.conversation && currentConversationId) {
         const existingMessages = getBranchMessages(currentConversationId, currentBranchId || 'main');
-        const mapped = transformBackendMessages(conversationResponse.data?.conversation as any[], {
+        const mapped = transformBackendMessages(conversationResponse.data?.conversation as Record<string, unknown>[], {
           settings,
           existingMessages,
           fallbackModel: settings.selectedModel,
@@ -69,7 +69,7 @@ export function useConversationCommand() {
           const last = mapped[mapped.length - 1];
           console.log('[CHAT_REFRESH] last msg meta', last.meta, 'id', last.id);
         }
-        setMessages(currentConversationId, currentBranchId || 'main', mapped as any);
+        setMessages(currentConversationId, currentBranchId || 'main', mapped);
         console.log('[CHAT_REFRESH] setMessages with', mapped.length, 'messages for', currentConversationId, currentBranchId);
         console.log(`🔄 Conversation refreshed for branch '${currentBranchId || 'main'}' with ${conversationResponse.data.conversation.length} messages`);
         return true;
@@ -92,8 +92,8 @@ export function useConversationCommand() {
         const { branches, current_branch } = branchesResponse.data;
         
         // Transform backend branches to frontend format
-        const { currentBranchId, getCurrentMessages } = useChatStore.getState();
-        const transformedBranches = branches.map((branch: any) => {
+        const { getCurrentMessages } = useChatStore.getState();
+        const transformedBranches = branches.map((branch: Record<string, unknown>) => {
           const isActive = branch.id === current_branch;
           const messageCount = isActive
             ? getCurrentMessages().length
@@ -164,11 +164,11 @@ export function useConversationCommand() {
         currentConversationId,
         currentBranchId || 'main',
         messages[idx].id,
-        { content: newText, __commit: true } as any
+        { content: newText, __commit: true } as Record<string, unknown>
       );
       return { success: true, message: 'Regenerated locally' };
-    } catch (e) {
-      console.error('Local regen error:', e);
+    } catch (error) {
+      console.error('Local regen error:', error);
       return { success: false, message: 'Local regen error' };
     }
   };
@@ -214,7 +214,7 @@ export function useConversationCommand() {
       // If backend returned an updated conversation snapshot, apply it immediately
       try {
         const { currentConversationId, currentBranchId, setMessages, setCurrentConversationId, settings, getBranchMessages } = useChatStore.getState();
-        const snap = response?.data?.conversation as any[] | undefined;
+        const snap = response?.data?.conversation as Record<string, unknown>[] | undefined;
         const snapConvId: string | undefined = response?.data?.conversation_id;
         const snapBranchId: string | undefined = response?.data?.branch_id || response?.data?.current_branch;
         const targetConvId = snapConvId || currentConversationId;
@@ -223,7 +223,7 @@ export function useConversationCommand() {
           const existingMessages = targetConvId
             ? getBranchMessages(targetConvId, targetBranchId)
             : [];
-          const mapped = transformBackendMessages(snap as any[], {
+          const mapped = transformBackendMessages(snap, {
             settings,
             existingMessages,
             fallbackModel: response?.data?.model_info?.name || settings.selectedModel,
@@ -235,10 +235,10 @@ export function useConversationCommand() {
           if (snapConvId && currentConversationId !== snapConvId) {
             try { setCurrentConversationId(snapConvId); } catch {}
           }
-          setMessages(targetConvId, targetBranchId, mapped as any);
+          setMessages(targetConvId, targetBranchId, mapped);
           console.log(`🔄 Applied snapshot from command response: ${mapped.length} messages (conv=${targetConvId}, branch=${targetBranchId})`);
         }
-      } catch (e) {
+      } catch {
         // Non-fatal; fall back to standard refresh path
       }
 
@@ -285,10 +285,10 @@ export function useConversationCommand() {
             errorMessage.includes('out of range')) {
           console.warn('❌ Index out of sync with backend - refreshing to sync state');
           try {
-            const convOk = await refreshConversation();
-            const branchesOk = await refreshBranches();
+            await refreshConversation();
+            await refreshBranches();
             return { success: false, message: 'Synced with backend. Please retry.' };
-          } catch (_) {
+          } catch {  // Fall through to reload
             if (fallbackToReload) {
               setTimeout(() => window.location.reload(), 1000);
               return { success: false, message: 'Refreshing page to sync state...' };
@@ -311,7 +311,7 @@ export function useConversationCommand() {
       // Surface id/index resolution mismatches as a small toast
       try {
         const backend = options.backend;
-        const target = (response.data && (response.data as any).target) || undefined;
+        const target = (response.data && (response.data as Record<string, unknown>).target) || undefined;
         if (backend && target) {
           const requestedId = backend.messageId;
           const requestedIndex = backend.index;

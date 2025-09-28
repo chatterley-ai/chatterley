@@ -5,7 +5,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { Plus, History, Settings, ChevronDown, Check, Edit, Trash2, Calendar, MessageSquare } from 'lucide-react';
+import { Plus, History, ChevronDown, Check, Edit, Trash2, Calendar, MessageSquare } from 'lucide-react';
 import { useChatStore } from '@/lib/store';
 import { Session } from '@/lib/types';
 
@@ -50,7 +50,7 @@ export default function SessionSwitcher({ className = '' }: SessionSwitcherProps
   };
 
   const handleCreateSession = () => {
-    const newSessionId = startNewSession();
+    startNewSession();
     setIsOpen(false);
   };
   

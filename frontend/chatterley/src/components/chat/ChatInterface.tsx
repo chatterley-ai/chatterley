@@ -79,7 +79,6 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
   const currentStreamingMessageId = React.useRef<string | null>(null);
 
   // Expose methods to parent via onRef callback
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   React.useEffect(() => {
     if (onRef) {
       onRef({
@@ -88,11 +87,10 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
         sendMessage: handleSendMessage,
       });
     }
-  }, [onRef]);
+  }, [onRef, handleRegenerateLastResponse, handleStopGeneration, handleSendMessage]);
 
   // Only load conversation history when switching between existing branches/conversations
   // For fresh sessions, we start with empty messages (as configured in store.ts)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   React.useEffect(() => {
     // Only load conversation if we have an active conversation ID AND
     // the current messages array is empty (meaning we're switching TO a conversation)
@@ -100,25 +98,22 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
     if (currentConversationId && messages.length === 0) {
       loadConversation();
     }
-  }, [currentBranchId, currentConversationId]);
+  }, [currentBranchId, currentConversationId, loadConversation, messages.length]);
 
-  const refreshBranches = async () => {
+  const refreshBranches = React.useCallback(async () => {
     try {
       const response = await apiClient.getBranches(getCurrentSessionId());
       if (response.success && response.data) {
-        const { branches } = response.data;
-        
         // Branch metadata is derived via store; no transform needed here.
-        
         // Note: setBranches is no longer needed since branches are derived on demand
         console.log('Branches updated successfully (will be available via getBranches)');
       }
     } catch (error) {
       console.error('Failed to refresh branches:', error);
     }
-  };
+  }, [getCurrentSessionId]);
 
-  const loadConversation = async () => {
+  const loadConversation = React.useCallback(async () => {
     try {
       setLoading(true);
       const response = await apiClient.getConversation(getCurrentSessionId(), currentBranchId);
@@ -127,7 +122,7 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
         const existingMessages = currentConversationId
           ? getBranchMessages(currentConversationId, currentBranchId)
           : [];
-        const transformedMessages: Message[] = transformBackendMessages(response.data?.conversation as any[], {
+        const transformedMessages: Message[] = transformBackendMessages(response.data?.conversation as Record<string, unknown>[], {
           settings,
           existingMessages,
           fallbackModel: settings.selectedModel,
@@ -162,10 +157,10 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
     } finally {
       setLoading(false);
     }
-  };
+  }, [getCurrentSessionId, currentBranchId, setLoading, setMessages, settings, currentConversationId, getBranchMessages]);
 
   // Handler for regenerating the last response (id-first, backend regen_node)
-  const handleRegenerateLastResponse = async () => {
+  const handleRegenerateLastResponse = React.useCallback(async () => {
     if (isLoading || isTyping) return;
     const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant');
     const lastUser = [...messages].reverse().find(m => m.role === 'user');
@@ -199,19 +194,20 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
       setLoading(false);
       setTyping(false);
     }
-  };
+  }, [isLoading, isTyping, messages, refreshBranches, addMessage, getCurrentSessionId, currentBranchId, loadConversation, setLoading, setTyping]);
 
   // Handler for stopping generation
-  const handleStopGeneration = () => {
+  const handleStopGeneration = React.useCallback(() => {
     setShouldStop(true);
     setLoading(false);
     setTyping(false);
     
     // Clear streaming state
     currentStreamingMessageId.current = null;
-  };
+  }, [setShouldStop, setLoading, setTyping]);
 
-  const handleSendMessage = async (content: string, attachments?: PreparedAttachment[]) => {
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const handleSendMessage = React.useCallback(async (content: string, attachments?: PreparedAttachment[]) => {
     // Check if it's a valid command and block it
     if (isValidCommand(content)) {
       const errorMessage: Message = {
@@ -232,7 +228,7 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
       role: 'user',
       content,
       timestamp: createdAt,
-      attachments,
+      attachments: attachments as unknown as Record<string, unknown>[] | undefined,
       meta: {
         authorName: displayName,
         authorType: 'user',
@@ -250,7 +246,7 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
       // Handle regular chat message (no command handling anymore)
       await handleChatMessage(content, attachments);
     });
-  };
+  }, [addMessage, settings]);
 
   // Internal method for UI elements to execute commands (bypasses user input blocking)
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -274,7 +270,9 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
         const resultMessage: Message = {
           id: `system-${Date.now()}`,
           role: 'assistant',
-          content: response.data.message || 'Command executed successfully',
+          content:
+            ((response.data as Record<string, unknown> | undefined)?.message as string | undefined) ||
+            'Command executed successfully',
           timestamp: Date.now(),
         };
         addMessage(resultMessage);
@@ -296,7 +294,7 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
   };
 
   // Ensure model is loaded, attempt auto-reload if not
-  const ensureModelLoaded = async () => {
+  const ensureModelLoaded = React.useCallback(async () => {
     try {
       // Check if model is currently loaded
       const modelResponse = await apiClient.getModels();
@@ -387,7 +385,7 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
       
       throw new Error('Model not available');
     }
-  };
+  }, [addMessage, setIsOmniCapable]);
 
   const buildContentParts = (text: string, attachments?: PreparedAttachment[]) => {
     if (!attachments || attachments.length === 0) {
@@ -425,17 +423,15 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
   // Error dialog state for actionable errors
   const { currentError, showError, clearError } = useErrorHandler();
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   React.useEffect(() => {
     void ensureModelLoaded();
-  }, []);
+  }, [ensureModelLoaded]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   React.useEffect(() => {
     if (settings.selectedModel) {
       void ensureModelLoaded();
     }
-  }, [settings.selectedModel]);
+  }, [settings.selectedModel, ensureModelLoaded]);
 
   // Helper: wait for backend health up to a cap
   const waitForHealthy = async (maxWaitMs = 30000) => {
@@ -469,7 +465,8 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
     }
   };
 
-  const handleChatMessage = async (content: string, attachments?: PreparedAttachment[], allowRetry: boolean = true) => {
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const handleChatMessage = React.useCallback(async (content: string, attachments?: PreparedAttachment[], allowRetry: boolean = true) => {
     setTyping(true);
     setShouldStop(false);
     
@@ -652,7 +649,7 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
     } finally {
       setTyping(false);
     }
-  };
+  }, [setTyping, setShouldStop, messages, isOmniCapable, buildContentParts, ensureModelLoaded, generationParams, getCurrentSessionId, currentBranchId, settings, addMessage, currentConversationId, updateMessage, showError, refreshBranches, clearError, reloadEngine]);
 
   const handleAttachFiles = async (files: FileList) => {
     // PLACEHOLDER: File attachment not fully implemented

@@ -184,12 +184,15 @@ export default function SystemMonitor({
 
   const hydrateModelStatusFromStorage = React.useCallback(async () => {
     try {
-      const [storedRecord, storedConfigId] = await Promise.all([
-        apiClient.getStorageItem('lastSuccessfulModelTest', null),
-        apiClient.getStorageItem('selectedConfig', null),
+      const [storedRecord, storedConfigId] = await Promise.all<[
+        (StoredModelTestRecord | null),
+        (string | null)
+      ]>([
+        apiClient.getStorageItem<StoredModelTestRecord | null>('lastSuccessfulModelTest', null),
+        apiClient.getStorageItem<string | null>('selectedConfig', null),
       ]);
 
-      selectedConfigRef.current = storedConfigId ?? selectedConfigRef.current;
+      selectedConfigRef.current = (storedConfigId ?? selectedConfigRef.current) as string | null;
 
       if (storedRecord && typeof storedRecord.timestamp === 'number') {
         console.log('[SystemMonitor] Hydrated stored model test state', {

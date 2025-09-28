@@ -436,18 +436,20 @@ export default function LaunchManager({}: LaunchManagerProps) {
         
         if (apiClient.isElectron && apiClient.isElectron() && !forceWelcome) {
           // NEW: Check if user has explicitly enabled welcome screen caching (default: false)
-          const welcomeCachingEnabled = await apiClient.getStorageItem('enableWelcomeCaching', false);
+          const welcomeCachingEnabled = await apiClient.getStorageItem<boolean>('enableWelcomeCaching', false);
           
           if (welcomeCachingEnabled) {
-            const hasCompleted = await apiClient.getStorageItem('hasCompletedWelcome', false);
-            const savedConfig = await apiClient.getStorageItem('selectedConfig', null);
-            const savedPrompt = await apiClient.getStorageItem('systemPrompt', null);
+            const hasCompleted = await apiClient.getStorageItem<boolean>('hasCompletedWelcome', false);
+            const savedConfig = await apiClient.getStorageItem<string | null>('selectedConfig', null);
+            const savedPrompt = await apiClient.getStorageItem<string | null>('systemPrompt', null);
             
             if (hasCompleted && savedConfig) {
               // Skip welcome screen and go straight to initialization
               setSelectedConfig(savedConfig);
               setTimeout(() => {
-                handleConfigSelected(savedConfig, savedPrompt);
+                if (savedConfig) {
+                  handleConfigSelected(savedConfig, savedPrompt || undefined);
+                }
               }, 100); // Small delay to ensure state is updated
               return;
             }

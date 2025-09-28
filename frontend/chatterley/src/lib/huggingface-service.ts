@@ -104,9 +104,9 @@ export class HuggingFaceService {
    * Enhanced config enhancement with real-time HF metadata
    */
   static async enhanceConfigsWithMetadata(
-    configs: any[],
+    configs: Record<string, unknown>[],
     credentials?: HuggingFaceCredentials
-  ): Promise<any[]> {
+  ): Promise<Record<string, unknown>[]> {
     // Get unique model names to minimize API calls, filtering out API-only models
     const uniqueModels = new Set<string>();
     configs.forEach(config => {

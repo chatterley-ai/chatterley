@@ -15,11 +15,11 @@ describe('ChatHistorySidebar session-scoped merge', () => {
       currentConversationId: null,
       currentBranchId: 'main',
       currentSessionId: 'S1',
-    } as any);
+    } as ReturnType<typeof useChatStore.getState>);
 
-    jest.spyOn(apiClient as any, 'getStorageItem').mockReset();
-    jest.spyOn(apiClient as any, 'listConversations').mockReset();
-    jest.spyOn(apiClient as any, 'loadConversation').mockReset();
+    jest.spyOn(apiClient as unknown as { getStorageItem: jest.Mock }, 'getStorageItem').mockReset();
+    jest.spyOn(apiClient as unknown as { listConversations: jest.Mock }, 'listConversations').mockReset();
+    jest.spyOn(apiClient as unknown as { loadConversation: jest.Mock }, 'loadConversation').mockReset();
   });
 
   it('shows only current session conversations, ignoring others', async () => {
@@ -36,7 +36,7 @@ describe('ChatHistorySidebar session-scoped merge', () => {
     ];
 
     // Spy getStorageItem to return data only when asked for the exact key
-    (apiClient.getStorageItem as jest.Mock).mockImplementation(async (key: string, def: any) => {
+    (apiClient.getStorageItem as jest.Mock).mockImplementation(async (key: string, def: unknown) => {
       if (key === s1Key) return s1Convs;
       if (key === s2Key) return s2Convs;
       return def;
@@ -68,7 +68,7 @@ describe('ChatHistorySidebar session-scoped merge', () => {
     const s1Convs = [
       { id: 'conv_s1_a', name: 'S1 Conv A', lastModified: '2025-01-02T10:00:00Z', messageCount: 2, preview: '...' },
     ];
-    (apiClient.getStorageItem as jest.Mock).mockImplementation(async (key: string, def: any) => {
+    (apiClient.getStorageItem as jest.Mock).mockImplementation(async (key: string, def: unknown) => {
       if (key === s1Key) return s1Convs;
       return def;
     });

@@ -5,9 +5,9 @@
 "use client";
 
 import React from 'react';
-import { X, Search, History, MessageCircle, Calendar, Clock, Filter, ChevronDown, ChevronRight, FileText, User, Bot, Regex, Type, Settings2 } from 'lucide-react';
+import { X, Search, History, MessageCircle, Clock, Filter, ChevronDown, ChevronRight, User, Bot, Regex, Type, Settings2 } from 'lucide-react';
 import { useChatStore } from '@/lib/store';
-import { Message, Conversation } from '@/lib/types';
+import { Message } from '@/lib/types';
 
 interface SearchResult {
   conversationId: string;
@@ -70,8 +70,8 @@ export default function SearchHistoryWindow({ isOpen, onClose, onNavigateToMessa
         try {
           const flags = caseSensitive ? 'g' : 'gi';
           searchPattern = new RegExp(searchQuery, flags);
-        } catch (error) {
-          console.error('Invalid regex pattern:', error);
+        } catch (_error) {
+          console.error('Invalid regex pattern:', _error);
           setIsSearching(false);
           return;
         }
@@ -125,12 +125,13 @@ export default function SearchHistoryWindow({ isOpen, onClose, onNavigateToMessa
       // Sort results by timestamp (newest first)
       results.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
       setSearchResults(results);
-    } catch (error) {
-      console.error('Search error:', error);
+    } catch (_error) {
+      console.error('Search error:', _error);
     } finally {
       setIsSearching(false);
     }
-  }, [searchQuery, searchType, caseSensitive, conversations]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery, searchType, caseSensitive, conversations, currentConversationId, currentMessages, filterRole]);
 
   /**
    * Search within a set of messages
@@ -251,7 +252,8 @@ export default function SearchHistoryWindow({ isOpen, onClose, onNavigateToMessa
       }
 
       return text.replace(pattern, '<mark class="bg-yellow-200 dark:bg-yellow-800 px-1 rounded">$&</mark>');
-    } catch (error) {
+    } catch {
+      // Silently fail on regex errors
       return text;
     }
   };
@@ -530,7 +532,7 @@ export default function SearchHistoryWindow({ isOpen, onClose, onNavigateToMessa
                           {/* Expanded conversation details */}
                           {expandedConversations.has(conversation.id) && (
                             <div className="bg-muted/50 p-4 space-y-2">
-                              {useChatStore.getState().getBranchMessages(conversation.id, 'main').slice(0, 3).map((message, index) => (
+                              {useChatStore.getState().getBranchMessages(conversation.id, 'main').slice(0, 3).map((message) => (
                                 <div key={message.id} className="flex items-start space-x-2 text-sm">
                                   {message.role === 'user' ? (
                                     <User className="w-3 h-3 text-blue-500 mt-0.5 flex-shrink-0" />

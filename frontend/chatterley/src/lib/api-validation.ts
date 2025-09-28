@@ -324,6 +324,7 @@ class ApiValidationService {
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private async validateGeneric(provider: ApiProvider, apiKey: string): Promise<ApiValidationResult> {
     // For providers without specific validation logic, just return format validation
     return {

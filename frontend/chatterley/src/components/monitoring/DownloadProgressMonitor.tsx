@@ -6,7 +6,7 @@
 
 import React from 'react';
 import { Download, AlertCircle, CheckCircle, Clock } from 'lucide-react';
-import { DownloadProgress, DownloadState, DownloadErrorEvent } from '@/lib/types';
+import { DownloadProgress, DownloadState } from '@/lib/types';
 
 interface DownloadProgressBarProps {
   download: DownloadProgress;

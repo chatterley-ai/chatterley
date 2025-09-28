@@ -111,12 +111,12 @@ class ElectronApiClient {
   }
 
   // File system methods
-  public async showSaveDialog(options: any): Promise<string | null> {
+  public async showSaveDialog(options: Record<string, unknown>): Promise<string | null> {
     if (!this.isElectron) return null;
     return window.electronAPI.files.showSaveDialog(options);
   }
 
-  public async showOpenDialog(options: any): Promise<string[] | null> {
+  public async showOpenDialog(options: Record<string, unknown>): Promise<string[] | null> {
     if (!this.isElectron) return null;
     return window.electronAPI.files.showOpenDialog(options);
   }
@@ -185,7 +185,7 @@ class ElectronApiClient {
     }
   }
 
-  public async getModels(): Promise<ApiResponse<{ data: Array<{ id: string; config_metadata?: any }> }>> {
+  public async getModels(): Promise<ApiResponse<{ data: Array<{ id: string; config_metadata?: Record<string, unknown> }> }>> {
     if (!this.isElectron) {
       throw new Error('Model access only available in Electron app');
     }
@@ -193,14 +193,14 @@ class ElectronApiClient {
   }
 
   // System detection methods
-  public async getSystemCapabilities(): Promise<any> {
+  public async getSystemCapabilities(): Promise<Record<string, unknown> | null> {
     if (!this.isElectron) {
       throw new Error('System detection only available in Electron app');
     }
     return window.electronAPI.system.getCapabilities();
   }
 
-  public async getSystemInfo(): Promise<any> {
+  public async getSystemInfo(): Promise<Record<string, unknown> | null> {
     if (!this.isElectron) {
       throw new Error('System detection only available in Electron app');
     }
@@ -240,7 +240,7 @@ class ElectronApiClient {
     return window.electronAPI.apiKeys.remove(providerId);
   }
 
-  public async updateApiKeyStatus(providerId: string, updates: any): Promise<ApiResponse> {
+  public async updateApiKeyStatus(providerId: string, updates: Record<string, unknown>): Promise<ApiResponse> {
     if (!this.isElectron) {
       throw new Error('API key updates only available in Electron app');
     }
@@ -402,40 +402,40 @@ class ElectronApiClient {
   }
 
   // Event system methods
-  public on(channel: string, listener: (...args: any[]) => void): void {
+  public on(channel: string, listener: (...args: unknown[]) => void): void {
     if (this.isElectron) {
       window.electronAPI.events.on(channel, listener);
     }
   }
 
-  public off(channel: string, listener: (...args: any[]) => void): void {
+  public off(channel: string, listener: (...args: unknown[]) => void): void {
     if (this.isElectron) {
       window.electronAPI.events.off(channel, listener);
     }
   }
 
-  public send(channel: string, ...args: any[]): void {
+  public send(channel: string, ...args: unknown[]): void {
     if (this.isElectron) {
       window.electronAPI.events.send(channel, ...args);
     }
   }
 
-  public async invoke(channel: string, ...args: any[]): Promise<any> {
+  public async invoke(channel: string, ...args: unknown[]): Promise<unknown> {
     if (!this.isElectron) return null;
     return window.electronAPI.events.invoke(channel, ...args);
   }
 
   // Storage methods
-  public async getStorageItem(key: string, defaultValue?: any): Promise<any> {
+  public async getStorageItem<T = unknown>(key: string, defaultValue?: T): Promise<T> {
     if (!this.isElectron) {
       // Fall back to localStorage for web version
       const item = localStorage.getItem(key);
-      return item ? JSON.parse(item) : defaultValue;
+      return (item ? JSON.parse(item) : defaultValue) as T;
     }
-    return window.electronAPI.storage.get(key, defaultValue);
+    return window.electronAPI.storage.get(key, defaultValue) as Promise<T>;
   }
 
-  public async setStorageItem(key: string, value: any): Promise<void> {
+  public async setStorageItem(key: string, value: unknown): Promise<void> {
     if (!this.isElectron) {
       // Fall back to localStorage for web version
       localStorage.setItem(key, JSON.stringify(value));
@@ -521,24 +521,24 @@ class ElectronApiClient {
     return window.electronAPI.python.getSystemChangeInfo();
   }
 
-  public async getEnvironmentSystemInfo(): Promise<any> {
+  public async getEnvironmentSystemInfo(): Promise<Record<string, unknown> | null> {
     if (!this.isElectron) return null;
     return window.electronAPI.python.getEnvironmentSystemInfo();
   }
 
   // Get basic system information using lightweight Python script (fallback when main backend isn't ready)
-  public async getBasicSystemInfo(): Promise<any> {
+  public async getBasicSystemInfo(): Promise<Record<string, unknown> | null> {
     if (!this.isElectron) return null;
     return window.electronAPI.python.getBasicSystemInfo();
   }
 
-  public onSetupProgress(callback: (progress: any) => void): void {
+  public onSetupProgress(callback: (progress: Record<string, unknown>) => void): void {
     if (this.isElectron) {
       window.electronAPI.python.onSetupProgress(callback);
     }
   }
 
-  public offSetupProgress(callback: (progress: any) => void): void {
+  public offSetupProgress(callback: (progress: Record<string, unknown>) => void): void {
     if (this.isElectron) {
       window.electronAPI.python.offSetupProgress(callback);
     }

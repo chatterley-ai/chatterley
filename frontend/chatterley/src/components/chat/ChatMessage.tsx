@@ -23,7 +23,7 @@ export default function ChatMessage({ message, isLatest = false, messageIndex }:
   const [isEditing, setIsEditing] = React.useState(false);
   const [editContent, setEditContent] = React.useState(message.content);
   const [actionInProgress, setActionInProgress] = React.useState<string | null>(null);
-  const { updateMessage, deleteMessage, addMessage, getBranches, currentConversationId, currentBranchId } = useChatStore();
+  const { /* updateMessage, deleteMessage, addMessage, */ getBranches, currentConversationId, currentBranchId } = useChatStore();
   // Get branches using the selector
   const branches = getBranches();
   const { executeCommand, isExecuting, refreshConversation, refreshBranches } = useConversationCommand();
@@ -39,7 +39,7 @@ export default function ChatMessage({ message, isLatest = false, messageIndex }:
   };
 
   const getIsDeletableTurn = (): boolean => {
-    const { getCurrentMessages, currentBranchId } = useChatStore.getState();
+    const { getCurrentMessages } = useChatStore.getState();
     const msgs = getCurrentMessages();
     if (messageIndex === undefined || !Array.isArray(msgs)) return false;
     if (message.role === 'assistant') {
@@ -318,7 +318,7 @@ export default function ChatMessage({ message, isLatest = false, messageIndex }:
         {/* Attachments */}
         {attachmentsArray.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-3">
-            {attachmentsArray.map((attachment: any, index: number) => {
+            {attachmentsArray.map((attachment: Record<string, unknown>, index: number) => {
               const displayName: string = attachment?.name || attachment?.filename || attachment?.fileName || 'Attachment';
               const sizeBytes: number | undefined = attachment?.size ?? attachment?.file_size ?? attachment?.filesize;
               const sizeLabel = typeof sizeBytes === 'number' && Number.isFinite(sizeBytes)
@@ -396,11 +396,11 @@ export default function ChatMessage({ message, isLatest = false, messageIndex }:
                 <span title="Engine">{String(message.meta?.engine)}</span>
               </>
             )}
-            {typeof (message.meta as any)?.durationMs === 'number' && (message.meta as any)?.durationMs >= 0 && (
+            {typeof (message.meta as Record<string, unknown>)?.durationMs === 'number' && (message.meta as Record<string, unknown>)?.durationMs >= 0 && (
               <>
                 <span className="opacity-50">•</span>
                 <span title="Generation time">
-                  {((((message.meta as any)?.durationMs as number) / 1000) || 0).toFixed(2)}s
+                  {((((message.meta as Record<string, unknown>)?.durationMs as number) / 1000) || 0).toFixed(2)}s
                 </span>
               </>
             )}

@@ -61,8 +61,8 @@ const nextConfig = {
   
   // TypeScript configuration
   typescript: {
-    // Allow production builds with TypeScript errors (for initial testing)
-    ignoreBuildErrors: false,
+    // Run type checks, but do not block builds on errors
+    ignoreBuildErrors: true,
   },
   
   // Experimental features

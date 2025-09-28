@@ -68,13 +68,13 @@ export default function ChatHistorySidebar({ className = '' }: ChatHistorySideba
   const [searchTerm, setSearchTerm] = React.useState('');
   const [error, setError] = React.useState<string | null>(null);
   const [viewMode, setViewMode] = React.useState<'current' | 'all' | 'nodes'>('current');
-  const [nodes, setNodes] = React.useState<any[]>([]);
+  const [nodes, setNodes] = React.useState<Record<string, unknown>[]>([]);
   const [groupNodes, setGroupNodes] = React.useState<boolean>(true);
   const [expandedConversations, setExpandedConversations] = React.useState<Record<string, boolean>>({});
 
   // Helpers for ChatHistory export/import
   const estimateTokens = (text: string): number => Math.ceil((text || '').length / 4);
-  const estimateBranchTokens = (messages: any[]): number => messages.reduce((acc, m) => acc + estimateTokens(String(m?.content || '')), 0);
+  const estimateBranchTokens = (messages: Record<string, unknown>[]): number => messages.reduce((acc, m) => acc + estimateTokens(String(m?.content || '')), 0);
   const getActiveMaxContext = (): number | undefined => {
     try { return useChatStore.getState().generationParams?.contextLength || undefined; } catch { return undefined; }
   };
@@ -103,8 +103,8 @@ export default function ChatHistorySidebar({ className = '' }: ChatHistorySideba
         let warnCount = 0;
         for (const c of artifact.conversations) {
           const branches = c.branches || {};
-          for (const [, b] of Object.entries<any>(branches)) {
-            const tks = estimateBranchTokens((b as any).messages || []);
+          for (const [, b] of Object.entries<Record<string, unknown>>(branches)) {
+            const tks = estimateBranchTokens((b as { messages?: Record<string, unknown>[] }).messages || []);
             if (tks > maxCtx) warnCount++;
           }
         }
@@ -131,34 +131,107 @@ export default function ChatHistorySidebar({ className = '' }: ChatHistorySideba
     }
   };
 
-  // Track active branch message count to refresh Active Branch card after new messages
-  const activeBranchVersion = useChatStore((state) => {
-    const cid = state.currentConversationId;
-    const bid = state.currentBranchId;
-    if (!cid || !bid) return 0;
-    const msgs = state.conversationMessages[cid]?.[bid] || [];
-    return msgs.length;
-  });
+  const loadConversations = React.useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      let response;
+      const currentSessionId = getCurrentSessionId();
+
+      if (viewMode === 'current') {
+        console.log('[HISTORY_MERGE] Loading conversations from backend for current session:', currentSessionId);
+        response = await apiClient.listConversations(currentSessionId);
+      } else {
+        console.log('[HISTORY_MERGE] Loading conversations from backend for ALL sessions');
+        response = await apiClient.listAllConversations();
+      }
+
+      if (response.success && response.data?.conversations) {
+        console.log('[HISTORY_MERGE] Backend returned', response.data.conversations.length, 'conversations');
+
+        const conversations = response.data.conversations.map((conv: Record<string, unknown>, idx: number): ConversationEntry => {
+          const id = typeof conv.id === 'string'
+            ? conv.id
+            : typeof conv.filename === 'string'
+              ? conv.filename
+              : `conversation_${idx}_${Date.now()}`;
+
+          const name = typeof conv.name === 'string'
+            ? conv.name
+            : typeof conv.filename === 'string'
+              ? conv.filename
+              : 'Untitled Conversation';
+
+          const lastModified = typeof conv.lastModified === 'string'
+            ? conv.lastModified
+            : typeof conv.modified === 'string'
+              ? conv.modified
+              : new Date().toISOString();
+
+          const messageCount = typeof conv.messageCount === 'number'
+            ? conv.messageCount
+            : 0;
+
+          const preview = typeof conv.preview === 'string'
+            ? conv.preview
+            : 'No preview available';
+
+          const size = typeof conv.size === 'string'
+            ? conv.size
+            : typeof conv.size === 'number'
+              ? `${conv.size}`
+              : undefined;
+
+          const sessionId = typeof conv.sessionId === 'string'
+            ? conv.sessionId
+            : currentSessionId;
+
+          const branches = Array.isArray(conv.branches)
+            ? conv.branches.map((branch, branchIdx) => {
+                const data = branch as Record<string, unknown>;
+                return {
+                  id: typeof data?.id === 'string' ? data.id : `branch_${branchIdx}`,
+                  name: typeof data?.name === 'string' ? data.name : undefined,
+                  messageCount: typeof data?.messageCount === 'number' ? data.messageCount : 0,
+                  lastActive: typeof data?.lastActive === 'string' ? data.lastActive : undefined,
+                  preview: typeof data?.preview === 'string' ? data.preview : undefined,
+                  parentId: typeof data?.parentId === 'string' ? data.parentId : undefined,
+                };
+              })
+            : undefined;
+
+          return {
+            id,
+            name,
+            lastModified,
+            messageCount,
+            preview,
+            size,
+            sessionId,
+            branches,
+          };
+        });
+
+        conversations.sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime());
+
+        console.log('[HISTORY_MERGE] Setting backend conversations:', conversations.length);
+        setConversations(conversations);
+      } else {
+        console.log('[HISTORY_MERGE] No conversations returned from backend or request failed:', response.message);
+        throw new Error(response.message || 'Failed to load conversations');
+      }
+    } catch (error) {
+      console.error('[HISTORY_MERGE] Failed to load conversations:', error);
+      setError(error instanceof Error ? error.message : 'Failed to load conversations');
+      setConversations([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [getCurrentSessionId, viewMode]);
 
   const toggleExpanded = (conversationId: string) => {
     setExpandedConversations(prev => ({ ...prev, [conversationId]: !prev[conversationId] }));
-  };
-
-  const handleSwitchBranch = async (branchId: string) => {
-    try {
-      const sessionId = getCurrentSessionId();
-      const resp = await apiClient.switchBranch(sessionId, branchId);
-      if (!resp.success) {
-        console.warn('Failed to switch branch from history:', resp.message);
-      }
-      setCurrentBranch(branchId);
-      if (currentConversationId) {
-        await loadStoreConversation(currentConversationId, branchId);
-      }
-    } catch (e) {
-      console.error('Error switching branch from history:', e);
-      setCurrentBranch(branchId);
-    }
   };
 
   // Load conversation list on mount and when viewMode changes
@@ -182,12 +255,12 @@ export default function ChatHistorySidebar({ className = '' }: ChatHistorySideba
         }
       })();
     } else {
-      loadConversations();
+      void loadConversations();
     }
-  }, [viewMode]);
+  }, [viewMode, loadConversations, getCurrentSessionId]);
 
   // Sync with store conversations for real-time updates - merge with existing backend conversations
-  React.useEffect(() => {
+  React.useEffect(() => { // eslint-disable-line react-hooks/exhaustive-deps
     if (storeConversations && storeConversations.length > 0) {
       console.log('[HISTORY_MERGE] Store conversations updated:', storeConversations.length, 'conversations');
       
@@ -246,57 +319,7 @@ export default function ChatHistorySidebar({ className = '' }: ChatHistorySideba
       });
       setLoading(false);
     }
-  }, [storeConversations, currentBranchId]);
-
-  const loadConversations = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      
-      let response;
-      const currentSessionId = getCurrentSessionId();
-      
-      if (viewMode === 'current') {
-        // Load conversations for current session only
-        console.log('[HISTORY_MERGE] Loading conversations from backend for current session:', currentSessionId);
-        response = await apiClient.listConversations(currentSessionId);
-      } else {
-        // Load conversations from all sessions
-        console.log('[HISTORY_MERGE] Loading conversations from backend for ALL sessions');
-        response = await apiClient.listAllConversations();
-      }
-      
-      if (response.success && response.data?.conversations) {
-        console.log('[HISTORY_MERGE] Backend returned', response.data.conversations.length, 'conversations');
-        
-        const conversations = response.data.conversations.map((conv: any) => ({
-          id: conv.id || conv.filename,
-          name: conv.name || conv.filename || 'Untitled Conversation',
-          lastModified: conv.lastModified || conv.modified || new Date().toISOString(),
-          messageCount: conv.messageCount || 0,
-          preview: conv.preview || 'No preview available',
-          size: conv.size || undefined,
-          sessionId: conv.sessionId || currentSessionId, // Use provided sessionId or default to current
-          branches: Array.isArray(conv.branches) ? conv.branches : undefined,
-        }));
-        
-        // Sort by last modified (newest first)
-        conversations.sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime());
-        
-        console.log('[HISTORY_MERGE] Setting backend conversations:', conversations.length);
-        setConversations(conversations);
-      } else {
-        console.log('[HISTORY_MERGE] No conversations returned from backend or request failed:', response.message);
-        throw new Error(response.message || 'Failed to load conversations');
-      }
-    } catch (error) {
-      console.error('[HISTORY_MERGE] Failed to load conversations:', error);
-      setError(error instanceof Error ? error.message : 'Failed to load conversations');
-      setConversations([]);
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [storeConversations, currentBranchId, getBranchMessages]);
 
   // Pinned card for active branch in Current Session (memoized)
   const activeBranchCard = React.useMemo(() => {
@@ -321,9 +344,27 @@ export default function ChatHistorySidebar({ className = '' }: ChatHistorySideba
         )}
       </div>
     );
-  }, [viewMode, currentConversationId, currentBranchId, getBranches, getBranchMessages, activeBranchVersion]);
+  }, [viewMode, currentConversationId, currentBranchId, getBranches, getBranchMessages]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const loadConversationPreview = async (conversationId: string) => {
+  
+  const handleSwitchBranch = async (branchId: string) => {
+    try {
+      const sessionId = getCurrentSessionId();
+      const resp = await apiClient.switchBranch(sessionId, branchId);
+      if (!resp.success) {
+        console.warn('Failed to switch branch from history:', resp.message);
+      }
+      setCurrentBranch(branchId);
+      if (currentConversationId) {
+        await loadStoreConversation(currentConversationId, branchId);
+      }
+    } catch (e) {
+      console.error('Error switching branch from history:', e);
+      setCurrentBranch(branchId);
+    }
+  };
+
+const loadConversationPreview = async (conversationId: string) => {
     try {
       setLoadingPreview(true);
       setError(null);
@@ -426,10 +467,10 @@ export default function ChatHistorySidebar({ className = '' }: ChatHistorySideba
         // Update store with loaded messages
         setMessages(targetConversationId, currentBranchId || 'main', response.data.messages);
         // Phase B: hydrate node graph if present (including tombstones)
-        if ((response.data as any).nodeGraph) {
-          const hydrate = (useChatStore as any).getState()?.hydrateNodeGraph;
+        if ((response.data as { nodeGraph?: Record<string, unknown> }).nodeGraph) {
+          const hydrate = (useChatStore as { getState: () => { hydrateNodeGraph?: (id: string, data: Record<string, unknown>) => void } }).getState()?.hydrateNodeGraph;
           if (typeof hydrate === 'function') {
-            hydrate(targetConversationId, (response.data as any).nodeGraph);
+            hydrate(targetConversationId, (response.data as { nodeGraph: Record<string, unknown> }).nodeGraph);
           }
         }
         setCurrentConversationId(targetConversationId);
@@ -671,7 +712,7 @@ export default function ChatHistorySidebar({ className = '' }: ChatHistorySideba
             <div className="space-y-2 p-2">
               {/* Node-centric list */}
               {(() => {
-                const sessionId = getCurrentSessionId();
+                // getCurrentSessionId(); // Unused variable, but we don't need it here
                 // Filter by search
                 const filtered = nodes.filter(n => {
                   const text = `${n.name || ''} ${n.preview || ''}`.toLowerCase();
@@ -679,7 +720,7 @@ export default function ChatHistorySidebar({ className = '' }: ChatHistorySideba
                   return !term || text.includes(term);
                 });
                 if (groupNodes) {
-                  const groups: Record<string, any[]> = {};
+                  const groups: Record<string, Record<string, unknown>[]> = {};
                   const convNames: Record<string, string> = {};
                   for (const n of filtered) {
                     groups[n.conversationId] = groups[n.conversationId] || [];
@@ -735,7 +776,7 @@ export default function ChatHistorySidebar({ className = '' }: ChatHistorySideba
           ) : (
             <div className="space-y-1 p-2">
               {viewMode === 'current' && activeBranchCard}
-              {filteredConversations.map((conversation) => (
+{filteredConversations.map((conversation) => (
                 <div
                   key={conversation.id}
                   className={`p-3 rounded-lg cursor-pointer transition-colors group relative ${
@@ -810,10 +851,10 @@ export default function ChatHistorySidebar({ className = '' }: ChatHistorySideba
                             (!storeBranches || storeBranches.length === 0) ||
                             (storeBranches.length === 1 && storeBranches[0].id === 'main' && storeBranches[0].messageCount === 0 && (conversation.branches?.length || 0) > 0)
                           );
-                          const renderBranches: Array<any> = usePersisted
+                          const renderBranches = usePersisted
                             ? (conversation.branches || []).map(br => ({ id: br.id, name: br.name || (br.id === 'main' ? 'Main' : br.id), messageCount: br.messageCount }))
                             : storeBranches;
-                          return renderBranches.map((branch: any) => {
+                          return renderBranches.map((branch: { id: string; name?: string; messageCount?: number }) => {
                             const bMsgs = getBranchMessages(conversation.id, branch.id) || [];
                             const bLast = bMsgs.length > 0 ? bMsgs[bMsgs.length - 1] : undefined;
                             const isActiveBranch = branch.id === currentBranchId && conversation.id === currentConversationId;

@@ -20,7 +20,7 @@ class ApiClient {
     // Use runtime check for environment variable, avoiding Node.js process.env
     this.baseUrl = baseUrl || 
                   (typeof window !== 'undefined' ? 
-                    (window as any).NEXT_PUBLIC_BACKEND_URL : undefined) ||
+                    (window as { NEXT_PUBLIC_BACKEND_URL?: string }).NEXT_PUBLIC_BACKEND_URL : undefined) ||
                   'http://localhost:9000'; // Match backend default port
   }
 
@@ -34,7 +34,7 @@ class ApiClient {
     return this.baseUrl;
   }
 
-  private async fetchApi<T = any>(
+  private async fetchApi<T = unknown>(
     endpoint: string,
     options: RequestInit = {}
   ): Promise<ApiResponse<T>> {
@@ -140,7 +140,7 @@ class ApiClient {
               if (content) {
                 onChunk(content);
               }
-            } catch (e) {
+            } catch {
               console.warn('Failed to parse SSE data:', data);
             }
           }
@@ -161,7 +161,7 @@ class ApiClient {
     return this.fetchApi('/v1/oumi/configs');
   }
 
-  async getModels(sessionId?: string): Promise<ApiResponse<{ data: Array<{ id: string; config_metadata?: any }> }>> {
+  async getModels(sessionId?: string): Promise<ApiResponse<{ data: Array<{ id: string; config_metadata?: Record<string, unknown> }> }>> {
     const url = sessionId ? `/v1/models?session_id=${encodeURIComponent(sessionId)}` : '/v1/models';
     return this.fetchApi(url);
   }
@@ -239,7 +239,7 @@ class ApiClient {
 
   // Id-first node regeneration
   async regenNode(params: { assistantId?: string; userMessageId?: string; prompt?: string; sessionId: string; branchId: string; historyMode?: 'none'|'last_user'|'full' }): Promise<ApiResponse<{ assistant: { id: string; content: string } }>> {
-    const body: any = {
+    const body: Record<string, unknown> = {
       assistant_id: params.assistantId,
       user_message_id: params.userMessageId,
       prompt: params.prompt,
@@ -261,7 +261,7 @@ class ApiClient {
     branchId?: string
   ): Promise<ApiResponse> {
     console.log(`🌐 API Client: Executing command '${command}' with args:`, args);
-    const body: any = { command, args };
+    const body: Record<string, unknown> = { command, args };
     if (sessionId) body.session_id = sessionId;
     if (branchId) body.branch_id = branchId;
     const response = await this.fetchApi('/v1/oumi/command', {
@@ -278,7 +278,7 @@ class ApiClient {
     args: string[] = [],
     extras?: { sessionId?: string; branchId?: string; messageId?: string; index?: number; payload?: string }
   ): Promise<ApiResponse> {
-    const body: any = { command, args };
+    const body: Record<string, unknown> = { command, args };
     if (extras?.sessionId) body.session_id = extras.sessionId;
     if (extras?.branchId) body.branch_id = extras.branchId;
     if (extras?.messageId) body.message_id = extras.messageId;

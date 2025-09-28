@@ -2,7 +2,7 @@
  * Configuration Matcher - Analyzes system capabilities and recommends the best configurations
  */
 
-import { logger } from './logger';
+// import { logger } from './logger';
 
 export interface SystemCapabilities {
   platform: string;         // darwin, win32, linux
@@ -46,7 +46,7 @@ export class ConfigMatcher {
     system: SystemCapabilities
   ): ConfigRecommendation {
     let score = 50; // Base score
-    let warnings: string[] = [];
+    const warnings: string[] = [];
     let reason = '';
 
     // Penalize specialist models for general recommendations

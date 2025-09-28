@@ -4,6 +4,7 @@
 
 import apiClient from './api';  // Original HTTP API client
 import electronAPI from './electron-api';  // Electron IPC API client
+import type { SystemCapabilities } from './config-matcher';
 
 import { 
   ApiResponse, 
@@ -13,7 +14,8 @@ import {
   ConversationBranch, 
   Message,
   DiffusionGenerationRequest,
-  DiffusionGenerationResponse
+  DiffusionGenerationResponse,
+  ChatHistory
 } from './types';
 
 const debugLog = (...args: unknown[]) => {
@@ -115,14 +117,14 @@ class UnifiedApiClient {
     }
   }
 
-  async getServerStatus(): Promise<ApiResponse> {
+  async getServerStatus(): Promise<ApiResponse<{ running: boolean; url?: string; port?: number | string }>> {
     if (this.isElectron()) {
       const status = await this.electronClient.getServerStatus();
       if (status?.success) {
         const data = (status.data || status) as { url?: string; port?: number };
         this.updateBaseUrlFromServer(data?.url, data?.port);
       }
-      return status;
+      return status as ApiResponse<{ running: boolean; url?: string; port?: number | string }>;
     } else {
       return { success: true, data: { running: true, url: 'N/A', port: 'N/A' } };
     }
@@ -152,22 +154,15 @@ class UnifiedApiClient {
   }
 
   async getModels(): Promise<ApiResponse<{ data: Array<{ id: string; config_metadata?: Record<string, unknown> }> }>> {
-    // Try to attach session_id so backend returns session-specific model
-    let sessionId: string | undefined;
-    try {
-      const storeMod = await import('./store') as { useChatStore?: { getState?: () => { getCurrentSessionId?: () => string; currentSessionId?: string; currentBranchId?: string } } };
-      const st = storeMod.useChatStore?.getState?.();
-      sessionId = st?.getCurrentSessionId?.() || st?.currentSessionId;
-    } catch {}
+    // Avoid importing the store here to prevent circular-eval during app bootstrap
     const stack = new Error().stack?.split('\n').slice(2, 6).map(line => line.trim());
     debugLog('[UnifiedApi] getModels invoked', {
       environment: this.isElectron() ? 'electron' : 'web',
-      sessionId,
       timestamp: new Date().toISOString(),
       caller: stack,
     });
-    // Always hit HTTP endpoint so we can include session_id consistently
-    return this.webClient.getModels(sessionId);
+    // Delegate to the active client; session scoping is handled by the backend or elsewhere
+    return this.getClient().getModels();
   }
 
   // Branch management
@@ -686,7 +681,7 @@ class UnifiedApiClient {
   }
 
   // ChatHistory save/load
-  async saveChatHistoryToFile(chatHistory: Record<string, unknown>, filename?: string): Promise<boolean> {
+  async saveChatHistoryToFile(chatHistory: ChatHistory, filename?: string): Promise<boolean> {
     if (this.isElectron()) {
       try {
         const filePath = filename || await this.electronClient.showSaveDialog({
@@ -721,7 +716,7 @@ class UnifiedApiClient {
     }
   }
 
-  async loadChatHistoryFromFile(): Promise<Record<string, unknown> | null> {
+  async loadChatHistoryFromFile(): Promise<ChatHistory | null> {
     if (this.isElectron()) {
       try {
         const files = await this.electronClient.showOpenDialog({
@@ -732,7 +727,7 @@ class UnifiedApiClient {
         if (!files || files.length === 0) return null;
         const content = await this.electronClient.readFile(files[0]);
         if (!content) return null;
-        return JSON.parse(content);
+        return JSON.parse(content) as ChatHistory;
       } catch (e) {
         console.error('Failed to load ChatHistory:', e);
         return null;
@@ -747,7 +742,7 @@ class UnifiedApiClient {
           if (!file) return resolve(null);
           try {
             const content = await file.text();
-            resolve(JSON.parse(content));
+            resolve(JSON.parse(content) as ChatHistory);
           } catch (err) {
             console.error('Failed to parse ChatHistory:', err);
             resolve(null);
@@ -789,18 +784,18 @@ class UnifiedApiClient {
   }
 
   // Storage methods (with localStorage fallback)
-  async getStorageItem(key: string, defaultValue?: unknown): Promise<unknown> {
+  async getStorageItem<T = unknown>(key: string, defaultValue?: T): Promise<T> {
     if (this.isElectron()) {
-      return this.electronClient.getStorageItem(key, defaultValue);
+      return this.electronClient.getStorageItem<T>(key, defaultValue as T);
     } else {
       const item = localStorage.getItem(key);
-      return item ? JSON.parse(item) : defaultValue;
+      return (item ? JSON.parse(item) : defaultValue) as T;
     }
   }
 
-  async setStorageItem(key: string, value: unknown): Promise<void> {
+  async setStorageItem<T = unknown>(key: string, value: T): Promise<void> {
     if (this.isElectron()) {
-      return this.electronClient.setStorageItem(key, value);
+      return this.electronClient.setStorageItem(key, value as unknown);
     } else {
       localStorage.setItem(key, JSON.stringify(value));
     }
@@ -1167,9 +1162,10 @@ class UnifiedApiClient {
   }
 
   // System detection methods
-  async getSystemCapabilities(): Promise<Record<string, unknown> | null> {
+  async getSystemCapabilities(): Promise<SystemCapabilities | null> {
     if (this.isElectron()) {
-      return this.electronClient.getSystemCapabilities();
+      const caps = await this.electronClient.getSystemCapabilities();
+      return caps as SystemCapabilities | null;
     } else {
       // Return null for web version - capabilities detection requires system access
       return null;

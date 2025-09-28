@@ -555,7 +555,10 @@ export default function MessageInput({
           type: 'fetch',
           name: `Website: ${fetchUrl}`,
           fetchUrl: fetchUrl.trim(),
-          fetchContent: response.data || 'Content retrieved successfully.'
+          fetchContent:
+            ((response.data as Record<string, unknown> | undefined)?.content as string | undefined) ||
+            (typeof response.data === 'string' ? response.data : undefined) ||
+            'Content retrieved successfully.'
         };
 
         setStagedAttachments(prev => [...prev, fetchAttachment]);

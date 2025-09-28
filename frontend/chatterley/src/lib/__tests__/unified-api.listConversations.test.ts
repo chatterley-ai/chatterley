@@ -1,11 +1,11 @@
 import unifiedApiClient from '../../lib/unified-api';
 
 describe('unified-api listConversations session scoping', () => {
-  const originalGetStorageItem = unifiedApiClient.getStorageItem.bind(unifiedApiClient as any);
+  const originalGetStorageItem = unifiedApiClient.getStorageItem.bind(unifiedApiClient as unknown);
 
   afterEach(() => {
     // Restore real method after each test
-    (unifiedApiClient as any).getStorageItem = originalGetStorageItem;
+    (unifiedApiClient as Record<string, unknown>).getStorageItem = originalGetStorageItem;
   });
 
   it('returns only conversations for the provided sessionId', async () => {
@@ -18,8 +18,8 @@ describe('unified-api listConversations session scoping', () => {
     ];
 
     const spy = jest
-      .spyOn(unifiedApiClient as any, 'getStorageItem')
-      .mockImplementation(((k: string, def: any) => {
+      .spyOn(unifiedApiClient as Record<string, unknown>, 'getStorageItem')
+      .mockImplementation(((k: string, def: unknown) => {
         // The following implementation is specifically for the test
         if (k === key) return sample;
         // If the implementation tries to read other session keys, surface it
@@ -27,11 +27,11 @@ describe('unified-api listConversations session scoping', () => {
           throw new Error(`Attempted to read unexpected key: ${k}`);
         }
         return def;
-      }) as any);
+      }) as unknown);
 
     const res = await unifiedApiClient.listConversations(sessionId);
     expect(res.success).toBe(true);
-    expect(res.data?.conversations.map((c: any) => c.id)).toEqual(['c2', 'c1']); // sorted by lastModified desc
+    expect(res.data?.conversations.map((c: Record<string, unknown>) => c.id)).toEqual(['c2', 'c1']); // sorted by lastModified desc
     expect(spy).toHaveBeenCalledWith(key, []);
   });
 
@@ -40,7 +40,7 @@ describe('unified-api listConversations session scoping', () => {
     const key = `conversations_${sessionId}`;
 
     const spy = jest
-      .spyOn(unifiedApiClient as any, 'getStorageItem')
+      .spyOn(unifiedApiClient as Record<string, unknown>, 'getStorageItem')
       .mockResolvedValueOnce([]);
 
     const res = await unifiedApiClient.listConversations(sessionId);

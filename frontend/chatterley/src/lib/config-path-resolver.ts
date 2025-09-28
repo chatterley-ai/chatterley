@@ -8,19 +8,19 @@
 import { logger } from './logger';
 
 export interface ConfigPathResolver {
-  loadStaticConfigs(): Promise<any>;
-  getConfigById(configId: string): Promise<{ config: any; configPath: string } | null>;
+  loadStaticConfigs(): Promise<Record<string, unknown>>;
+  getConfigById(configId: string): Promise<{ config: Record<string, unknown>; configPath: string } | null>;
 }
 
 class UnifiedConfigPathResolver implements ConfigPathResolver {
-  private staticConfigs?: any;
+  private staticConfigs?: Record<string, unknown>;
   private lastLoadAttempt: number = 0;
   private loadAttemptInterval: number = 5000; // Don't retry failed loads more than once per 5 seconds
 
   /**
    * Load static configs with consistent error handling
    */
-  public async loadStaticConfigs(): Promise<any> {
+  public async loadStaticConfigs(): Promise<Record<string, unknown>> {
     logger.debug('ConfigPathResolver', `loadStaticConfigs called, cached: ${!!this.staticConfigs}`);
     
     if (this.staticConfigs) {
@@ -82,10 +82,10 @@ class UnifiedConfigPathResolver implements ConfigPathResolver {
   /**
    * Get a specific config by ID - returns original path for backend resolution
    */
-  public async getConfigById(configId: string): Promise<{ config: any; configPath: string } | null> {
+  public async getConfigById(configId: string): Promise<{ config: Record<string, unknown>; configPath: string } | null> {
     try {
       const staticConfigs = await this.loadStaticConfigs();
-      const config = staticConfigs.configs?.find((cfg: any) => cfg.id === configId);
+      const config = (staticConfigs.configs as Record<string, unknown>[] | undefined)?.find((cfg: Record<string, unknown>) => cfg.id === configId);
       
       if (!config) {
         logger.warn('ConfigPathResolver', `Config not found: ${configId}`);

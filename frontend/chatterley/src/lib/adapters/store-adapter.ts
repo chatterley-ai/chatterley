@@ -166,7 +166,7 @@ export function buildBranchStructure(
 
 // Helper function to omit the id field from branch metadata
 function omitId(branch: ConversationBranch): Omit<ConversationBranch, 'id'> {
-  const { id, ...rest } = branch;
+  const { id, ...rest } = branch; // eslint-disable-line @typescript-eslint/no-unused-vars
   return rest;
 }
 
@@ -290,8 +290,9 @@ export async function autoSaveConversation(conversation: Conversation): Promise<
 
 export function buildChatHistoryForCurrentSession(): ChatHistory {
   // Lazy import store to avoid cycles
-  const storeMod: any = require('../store');
-  const state = storeMod.useChatStore.getState();
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const storeMod = require('../store') as Record<string, unknown>;
+  const state = (storeMod.useChatStore as {getState: () => unknown}).getState();
 
   const sessionId = SessionManager.getCurrentSessionId();
   const conversations: ChatHistory['conversations'] = (state.conversations || []).map((conv: Conversation) => {
@@ -329,17 +330,18 @@ export function buildChatHistoryForCurrentSession(): ChatHistory {
 }
 
 export function hydrateStoreFromChatHistory(artifact: ChatHistory): void {
-  const storeMod: any = require('../store');
-  const state = storeMod.useChatStore.getState();
-  const setState = storeMod.useChatStore.setState;
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const storeMod = require('../store') as Record<string, unknown>;
+  const state = (storeMod.useChatStore as {getState: () => unknown}).getState(); // eslint-disable-line @typescript-eslint/no-unused-vars
+  const setState = (storeMod.useChatStore as {setState: (state: Record<string, unknown>) => void}).setState;
 
   // Build normalized maps
-  const conversationMessages: any = {};
-  const messageNodes: { [conv: string]: { [id: string]: MessageNode } } = {} as any;
-  const branchTimelines: any = {};
-  const branchHeads: any = {};
-  const branchTombstones: any = {};
-  const merges: any = {};
+  const conversationMessages: Record<string, Record<string, Message[]>> = {};
+  const messageNodes: Record<string, Record<string, MessageNode>> = {};
+  const branchTimelines: Record<string, Record<string, string[]>> = {};
+  const branchHeads: Record<string, Record<string, Record<string, string>>> = {};
+  const branchTombstones: Record<string, Record<string, boolean>> = {};
+  const merges: Record<string, unknown[]> = {};
 
   const conversations: Conversation[] = artifact.conversations.map((c) => ({
     id: c.id,
@@ -354,7 +356,7 @@ export function hydrateStoreFromChatHistory(artifact: ChatHistory): void {
     conversationMessages[c.id] = {};
     // branches -> normalized message store
     for (const [bid, bdata] of Object.entries(c.branches || {})) {
-      conversationMessages[c.id][bid] = (bdata as any).messages || [];
+      conversationMessages[c.id][bid] = ((bdata as {messages?: Message[]}).messages) || [];
     }
     // node graph
     if (c.nodeGraph) {

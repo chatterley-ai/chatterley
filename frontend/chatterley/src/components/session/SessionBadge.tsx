@@ -7,7 +7,7 @@
 import React from 'react';
 import { History, Clock } from 'lucide-react';
 import { useChatStore } from '@/lib/store';
-import { Session } from '@/lib/types';
+// Session type is provided by useChatStore
 
 interface SessionBadgeProps {
   className?: string;
