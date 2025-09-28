@@ -8,7 +8,7 @@ export interface LogEntry {
   level: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR';
   component: string;
   message: string;
-  data?: any;
+  data?: unknown;
 }
 
 export interface LoggerConfig {
@@ -37,7 +37,7 @@ class Logger {
         if (savedConfig) {
           this.config = { ...this.config, ...JSON.parse(savedConfig) };
         }
-      } catch (error) {
+      } catch {
         // Ignore localStorage errors
       }
     }
@@ -52,7 +52,7 @@ class Logger {
     if (typeof window !== 'undefined') {
       try {
         localStorage.setItem('chatterley-logger-config', JSON.stringify(this.config));
-      } catch (error) {
+      } catch {
         // Ignore localStorage errors
       }
     }
@@ -71,7 +71,7 @@ class Logger {
   /**
    * Add log entry
    */
-  private addLogEntry(level: LogEntry['level'], component: string, message: string, data?: any): void {
+  private addLogEntry(level: LogEntry['level'], component: string, message: string, data?: unknown): void {
     if (!this.shouldLog(level)) return;
 
     const entry: LogEntry = {
@@ -110,7 +110,7 @@ class Logger {
 
     // File output (Electron only)
     if (this.config.enableFile && typeof window !== 'undefined' && window.electronAPI?.logger) {
-      window.electronAPI.logger.writeLog(entry).catch((error: any) => {
+      window.electronAPI.logger.writeLog(entry).catch((error: unknown) => {
         // Only log to console if electron logging fails (to avoid recursion)
         console.warn('[Logger] Failed to write to file:', error);
       });
@@ -120,28 +120,28 @@ class Logger {
   /**
    * Debug level logging
    */
-  public debug(component: string, message: string, data?: any): void {
+  public debug(component: string, message: string, data?: unknown): void {
     this.addLogEntry('DEBUG', component, message, data);
   }
 
   /**
    * Info level logging
    */
-  public info(component: string, message: string, data?: any): void {
+  public info(component: string, message: string, data?: unknown): void {
     this.addLogEntry('INFO', component, message, data);
   }
 
   /**
    * Warning level logging
    */
-  public warn(component: string, message: string, data?: any): void {
+  public warn(component: string, message: string, data?: unknown): void {
     this.addLogEntry('WARN', component, message, data);
   }
 
   /**
    * Error level logging
    */
-  public error(component: string, message: string, data?: any): void {
+  public error(component: string, message: string, data?: unknown): void {
     this.addLogEntry('ERROR', component, message, data);
   }
 

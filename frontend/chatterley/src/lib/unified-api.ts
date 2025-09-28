@@ -69,7 +69,7 @@ class UnifiedApiClient {
     if (this.isElectron()) {
       const resp = await this.electronClient.startServer(configPath, systemPrompt);
       if (resp?.success) {
-        const data: any = resp;
+        const data = resp as { url?: string; port?: number };
         this.updateBaseUrlFromServer(data.url, data.port);
       }
       return resp;
@@ -90,7 +90,7 @@ class UnifiedApiClient {
     if (this.isElectron()) {
       const resp = await this.electronClient.restartServer();
       if (resp?.success) {
-        const data: any = resp;
+        const data = resp as { url?: string; port?: number };
         this.updateBaseUrlFromServer(data.url, data.port);
       }
       return resp;
@@ -119,7 +119,7 @@ class UnifiedApiClient {
     if (this.isElectron()) {
       const status = await this.electronClient.getServerStatus();
       if (status?.success) {
-        const data: any = status.data || status;
+        const data = (status.data || status) as { url?: string; port?: number };
         this.updateBaseUrlFromServer(data?.url, data?.port);
       }
       return status;
@@ -151,11 +151,11 @@ class UnifiedApiClient {
     return this.getClient().getConfigs();
   }
 
-  async getModels(): Promise<ApiResponse<{ data: Array<{ id: string; config_metadata?: any }> }>> {
+  async getModels(): Promise<ApiResponse<{ data: Array<{ id: string; config_metadata?: Record<string, unknown> }> }>> {
     // Try to attach session_id so backend returns session-specific model
     let sessionId: string | undefined;
     try {
-      const storeMod: any = await import('./store');
+      const storeMod = await import('./store') as { useChatStore?: { getState?: () => { getCurrentSessionId?: () => string; currentSessionId?: string; currentBranchId?: string } } };
       const st = storeMod.useChatStore?.getState?.();
       sessionId = st?.getCurrentSessionId?.() || st?.currentSessionId;
     } catch {}
@@ -214,7 +214,7 @@ class UnifiedApiClient {
     let branchId = params.branchId;
     try {
       if (!sessionId || !branchId) {
-        const storeMod: any = await import('./store');
+        const storeMod = await import('./store') as { useChatStore?: { getState?: () => { getCurrentSessionId?: () => string; currentSessionId?: string; currentBranchId?: string } } };
         const st = storeMod.useChatStore?.getState?.();
         sessionId = sessionId || st?.getCurrentSessionId?.() || st?.currentSessionId;
         branchId = branchId || st?.currentBranchId || 'main';
@@ -230,7 +230,7 @@ class UnifiedApiClient {
       historyMode: params.historyMode || 'last_user',
     };
 
-    const client: any = this.getClient();
+    const client = this.getClient() as { regenNode?: (payload: unknown) => Promise<ApiResponse<unknown>> };
     if (typeof client.regenNode === 'function') {
       return client.regenNode(payload);
     }
@@ -245,7 +245,7 @@ class UnifiedApiClient {
     });
   }
 
-  async listConversations(sessionId: string): Promise<ApiResponse<{ conversations: any[] }>> {
+  async listConversations(sessionId: string): Promise<ApiResponse<{ conversations: Record<string, unknown>[] }>> {
     // Scope strictly to the provided sessionId to prevent cross-session leakage
     try {
       const key = `conversations_${sessionId}`;
@@ -270,7 +270,7 @@ class UnifiedApiClient {
    * 
    * @returns ApiResponse with conversations from all sessions with sessionId attached
    */
-  async listAllConversations(): Promise<ApiResponse<{ conversations: any[] }>> {
+  async listAllConversations(): Promise<ApiResponse<{ conversations: Record<string, unknown>[] }>> {
     try {
       // Get all keys from storage
       const allKeys = await this.getAllStorageKeys();
@@ -331,11 +331,11 @@ class UnifiedApiClient {
    * Returns flattened branch nodes for a session.
    * Each node represents a conversation+branch pair with summary metadata.
    */
-  async listSessionNodes(sessionId: string): Promise<ApiResponse<{ nodes: any[] }>> {
+  async listSessionNodes(sessionId: string): Promise<ApiResponse<{ nodes: Record<string, unknown>[] }>> {
     try {
       const key = `conversations_${sessionId}`;
       const conversations = await this.getStorageItem(key, []);
-      const nodes: any[] = [];
+      const nodes: Record<string, unknown>[] = [];
       if (Array.isArray(conversations)) {
         for (const conv of conversations) {
           const convId = conv.id || conv.filename;
@@ -386,8 +386,9 @@ class UnifiedApiClient {
   async loadConversation(
     sessionId: string, 
     conversationId: string,
-    targetBranchId?: string
-  ): Promise<ApiResponse<{ messages: Message[]; nodeGraph?: any; currentBranchId?: string }>> {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    targetBranchId?: string // Currently unused but will be used in future implementation
+  ): Promise<ApiResponse<{ messages: Message[]; nodeGraph?: Record<string, unknown>; currentBranchId?: string }>> {
     if (this.isElectron()) {
       // For Electron, use storage fallback for now until backend method is implemented
       try {
@@ -467,7 +468,7 @@ class UnifiedApiClient {
         
         // Update the conversations list
         const storedConversations = await this.getStorageItem(conversationsKey, []);
-        const updatedConversations = storedConversations.filter((conv: any) => conv.id !== conversationId);
+        const updatedConversations = storedConversations.filter((conv: Record<string, unknown>) => conv.id !== conversationId);
         await this.setStorageItem(conversationsKey, updatedConversations);
         
         return {
@@ -494,7 +495,7 @@ class UnifiedApiClient {
         const storedConversations = localStorage.getItem(conversationsKey);
         if (storedConversations) {
           const conversations = JSON.parse(storedConversations);
-          const updatedConversations = conversations.filter((conv: any) => conv.id !== conversationId);
+          const updatedConversations = conversations.filter((conv: Record<string, unknown>) => conv.id !== conversationId);
           localStorage.setItem(conversationsKey, JSON.stringify(updatedConversations));
         }
         
@@ -529,7 +530,7 @@ class UnifiedApiClient {
     let sessionId: string | undefined;
     let branchId: string | undefined;
     try {
-      const storeMod: any = await import('./store');
+      const storeMod = await import('./store') as { useChatStore?: { getState?: () => { getCurrentSessionId?: () => string; currentSessionId?: string; currentBranchId?: string } } };
       const st = storeMod.useChatStore?.getState?.();
       if (st) {
         sessionId = st.getCurrentSessionId?.() || st.currentSessionId;
@@ -549,7 +550,7 @@ class UnifiedApiClient {
     let branchId = extras?.branchId;
     try {
       if (!sessionId || !branchId) {
-        const storeMod: any = await import('./store');
+        const storeMod = await import('./store') as { useChatStore?: { getState?: () => { getCurrentSessionId?: () => string; currentSessionId?: string; currentBranchId?: string } } };
         const st = storeMod.useChatStore?.getState?.();
         sessionId = sessionId || st?.getCurrentSessionId?.() || st?.currentSessionId;
         branchId = branchId || st?.currentBranchId || 'main';
@@ -562,7 +563,7 @@ class UnifiedApiClient {
       index: extras?.index,
       payload: extras?.payload,
     };
-    const client: any = this.getClient();
+    const client = this.getClient() as { regenNode?: (payload: unknown) => Promise<ApiResponse<unknown>> };
     if (typeof client.executeCommandAdvanced === 'function') {
       return client.executeCommandAdvanced(command, args, payload);
     }
@@ -583,7 +584,7 @@ class UnifiedApiClient {
     // Always hit HTTP endpoint so we can include session_id consistently
     let sessionId: string | undefined;
     try {
-      const storeMod: any = await import('./store');
+      const storeMod = await import('./store') as { useChatStore?: { getState?: () => { getCurrentSessionId?: () => string; currentSessionId?: string; currentBranchId?: string } } };
       const st = storeMod.useChatStore?.getState?.();
       sessionId = st?.getCurrentSessionId?.() || st?.currentSessionId;
     } catch {}
@@ -601,7 +602,7 @@ class UnifiedApiClient {
   }
 
   // Electron-specific methods (graceful degradation for web)
-  async showSaveDialog(options: any): Promise<string | null> {
+  async showSaveDialog(options: Record<string, unknown>): Promise<string | null> {
     if (this.isElectron()) {
       return this.electronClient.showSaveDialog(options);
     } else {
@@ -611,7 +612,7 @@ class UnifiedApiClient {
     }
   }
 
-  async showOpenDialog(options: any): Promise<string[] | null> {
+  async showOpenDialog(options: Record<string, unknown>): Promise<string[] | null> {
     const environment = this.isElectron() ? 'electron' : 'web';
     const stack = new Error().stack?.split('\n').slice(2, 6).map(line => line.trim());
     const prefix = '[UnifiedApi] showOpenDialog';
@@ -685,7 +686,7 @@ class UnifiedApiClient {
   }
 
   // ChatHistory save/load
-  async saveChatHistoryToFile(chatHistory: any, filename?: string): Promise<boolean> {
+  async saveChatHistoryToFile(chatHistory: Record<string, unknown>, filename?: string): Promise<boolean> {
     if (this.isElectron()) {
       try {
         const filePath = filename || await this.electronClient.showSaveDialog({
@@ -720,7 +721,7 @@ class UnifiedApiClient {
     }
   }
 
-  async loadChatHistoryFromFile(): Promise<any | null> {
+  async loadChatHistoryFromFile(): Promise<Record<string, unknown> | null> {
     if (this.isElectron()) {
       try {
         const files = await this.electronClient.showOpenDialog({
@@ -788,7 +789,7 @@ class UnifiedApiClient {
   }
 
   // Storage methods (with localStorage fallback)
-  async getStorageItem(key: string, defaultValue?: any): Promise<any> {
+  async getStorageItem(key: string, defaultValue?: unknown): Promise<unknown> {
     if (this.isElectron()) {
       return this.electronClient.getStorageItem(key, defaultValue);
     } else {
@@ -797,7 +798,7 @@ class UnifiedApiClient {
     }
   }
 
-  async setStorageItem(key: string, value: any): Promise<void> {
+  async setStorageItem(key: string, value: unknown): Promise<void> {
     if (this.isElectron()) {
       return this.electronClient.setStorageItem(key, value);
     } else {
@@ -817,14 +818,14 @@ class UnifiedApiClient {
   async saveConversation(
     sessionId: string,
     conversationId: string,
-    conversationData: any
+    conversationData: Record<string, unknown>
   ): Promise<ApiResponse> {
     try {
       // Save individual conversation (attach node graph if available from store)
       const conversationKey = `conversation_${sessionId}_${conversationId}`;
       let payload = conversationData;
       try {
-        const storeMod: any = await import('./store');
+        const storeMod = await import('./store') as { useChatStore?: { getState?: () => { getCurrentSessionId?: () => string; currentSessionId?: string; currentBranchId?: string } } };
         const storeState = storeMod.useChatStore?.getState?.();
         if (storeState) {
           const nodeGraph = {
@@ -847,7 +848,7 @@ class UnifiedApiClient {
       const conversationsKey = `conversations_${sessionId}`;
       const existingConversations = await this.getStorageItem(conversationsKey, []);
       
-      const conversationIndex = existingConversations.findIndex((c: any) => c.id === conversationId);
+      const conversationIndex = existingConversations.findIndex((c: Record<string, unknown>) => c.id === conversationId);
 
       // Derive message count and preview from branches first, falling back to flat messages
       let messageCount = Array.isArray(conversationData?.messages) ? conversationData.messages.length : 0;
@@ -862,10 +863,10 @@ class UnifiedApiClient {
       }> = [];
       
       if (conversationData?.branches && typeof conversationData.branches === 'object') {
-        let latestMsg: any = null;
+        let latestMsg: { timestamp?: number; content?: string } | null = null;
         let total = 0;
-        for (const [branchId, branch] of Object.entries(conversationData.branches) as any) {
-          const msgs: any[] = Array.isArray(branch?.messages) ? branch.messages : [];
+        for (const [branchId, branch] of Object.entries(conversationData.branches) as [string, { messages?: unknown[]; metadata?: Record<string, unknown> }][]) {
+          const msgs: Array<Record<string, unknown>> = Array.isArray(branch?.messages) ? branch.messages : [];
           total += msgs.length;
           if (msgs.length > 0) {
             const candidate = msgs[msgs.length - 1];
@@ -910,14 +911,14 @@ class UnifiedApiClient {
       let currentBranchId: string | undefined = conversationData?.currentBranchId || conversationData?.current_branch;
       if (!currentBranchId) {
         try {
-          const branchesResp: any = await this.getBranches(sessionId);
+          const branchesResp = await this.getBranches(sessionId) as ApiResponse<{ current_branch?: string }>;
           if (branchesResp?.success && branchesResp.data?.current_branch) {
             currentBranchId = branchesResp.data.current_branch;
           }
         } catch {}
       }
 
-      const conversationEntry: any = {
+      const conversationEntry: Record<string, unknown> = {
         id: conversationId,
         name: conversationData.title || 'Untitled Conversation',
         lastModified: conversationData.updatedAt || new Date().toISOString(),
@@ -1054,25 +1055,25 @@ class UnifiedApiClient {
   }
 
   // Event system methods (Electron-specific)
-  on(channel: string, listener: (...args: any[]) => void): void {
+  on(channel: string, listener: (...args: unknown[]) => void): void {
     if (this.isElectron()) {
       this.electronClient.on(channel, listener);
     }
   }
 
-  off(channel: string, listener: (...args: any[]) => void): void {
+  off(channel: string, listener: (...args: unknown[]) => void): void {
     if (this.isElectron()) {
       this.electronClient.off(channel, listener);
     }
   }
 
-  send(channel: string, ...args: any[]): void {
+  send(channel: string, ...args: unknown[]): void {
     if (this.isElectron()) {
       this.electronClient.send(channel, ...args);
     }
   }
 
-  async invoke(channel: string, ...args: any[]): Promise<any> {
+  async invoke(channel: string, ...args: unknown[]): Promise<unknown> {
     if (this.isElectron()) {
       return this.electronClient.invoke(channel, ...args);
     }
@@ -1166,7 +1167,7 @@ class UnifiedApiClient {
   }
 
   // System detection methods
-  async getSystemCapabilities(): Promise<any> {
+  async getSystemCapabilities(): Promise<Record<string, unknown> | null> {
     if (this.isElectron()) {
       return this.electronClient.getSystemCapabilities();
     } else {
@@ -1175,7 +1176,7 @@ class UnifiedApiClient {
     }
   }
 
-  async getSystemInfo(): Promise<any> {
+  async getSystemInfo(): Promise<Record<string, unknown> | null> {
     if (this.isElectron()) {
       return this.electronClient.getSystemInfo();
     } else {
@@ -1216,7 +1217,7 @@ class UnifiedApiClient {
     }
   }
 
-  async updateApiKeyStatus(providerId: string, updates: any): Promise<ApiResponse> {
+  async updateApiKeyStatus(providerId: string, updates: Record<string, unknown>): Promise<ApiResponse> {
     if (this.isElectron()) {
       return this.electronClient.updateApiKeyStatus(providerId, updates);
     } else {
@@ -1232,7 +1233,7 @@ class UnifiedApiClient {
     }
   }
 
-  async getEnvironmentSystemInfo(): Promise<any> {
+  async getEnvironmentSystemInfo(): Promise<Record<string, unknown> | null> {
     if (this.isElectron()) {
       // First try the full environment system info (requires Oumi backend)
       try {
@@ -1240,7 +1241,8 @@ class UnifiedApiClient {
         if (fullInfo && fullInfo.platform && fullInfo.platform !== 'unknown') {
           return fullInfo;
         }
-      } catch (error) {
+      } catch {
+        // Error handling without using the error variable
         console.debug('Full system info not available, trying basic fallback...');
       }
       
@@ -1262,13 +1264,13 @@ class UnifiedApiClient {
 
   
 
-  onSetupProgress(callback: (progress: any) => void): void {
+  onSetupProgress(callback: (progress: Record<string, unknown>) => void): void {
     if (this.isElectron()) {
       this.electronClient.onSetupProgress(callback);
     }
   }
 
-  offSetupProgress(callback: (progress: any) => void): void {
+  offSetupProgress(callback: (progress: Record<string, unknown>) => void): void {
     if (this.isElectron()) {
       this.electronClient.offSetupProgress(callback);
     }

@@ -12,7 +12,7 @@ import SystemChangeWarning from '@/components/monitoring/SystemChangeWarning';
 import { useChatStore } from '@/lib/store';
 import apiClient from '@/lib/unified-api';
 import { useConversationCommand, COMMAND_CONFIGS } from '@/hooks/useConversationCommand';
-import { Maximize2, Minimize2, Settings, RotateCcw, PanelLeft, PanelLeftClose, X, Search, History } from 'lucide-react';
+import { Maximize2, Minimize2, Settings, RotateCcw, PanelLeft, PanelLeftClose, X, Search, History, ChevronDown, ChevronRight } from 'lucide-react';
 import ConfirmationDialog from '@/components/ui/ConfirmationDialog';
 import SettingsScreen from '@/components/settings/SettingsScreen';
 import ChatHistorySidebar from '@/components/history/ChatHistorySidebar';
@@ -21,10 +21,10 @@ import { ChatInterfaceRef } from '@/components/chat/ChatInterface';
 import ToastContainer from '@/components/ui/ToastContainer';
 
 export default function AppLayout() {
-  const [isBranchTreeExpanded, setIsBranchTreeExpanded] = React.useState(true);
+  const [isBranchTreeExpanded, setIsBranchTreeExpanded] = React.useState(false);
   const [isControlPanelExpanded, setIsControlPanelExpanded] = React.useState(true);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = React.useState(false);
-  const [showChatHistory, setShowChatHistory] = React.useState(true);
+  const [showChatHistory, setShowChatHistory] = React.useState(false);
   const [isInitialized, setIsInitialized] = React.useState(false);
   const [showSettings, setShowSettings] = React.useState(false);
   const [showSearchHistory, setShowSearchHistory] = React.useState(false);
@@ -91,7 +91,7 @@ export default function AppLayout() {
       };
 
       const handleToggleControlPanel = () => {
-        console.log('🔧 [AppLayout] Toggling Control Panel from menu');
+        console.log('🔧 [AppLayout] Toggling Model Controls from menu');
         setIsControlPanelExpanded(prev => !prev);
       };
 
@@ -551,29 +551,29 @@ export default function AppLayout() {
                 <RotateCcw size={18} className={isExecuting ? 'animate-spin' : ''} />
               </button>
 
-              {/* Control panel toggle */}
+              {/* Model controls toggle */}
               <button
                 onClick={() => setIsControlPanelExpanded(!isControlPanelExpanded)}
                 className={`no-drag p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground ${
                   isControlPanelExpanded ? 'bg-accent' : ''
                 }`}
-                title={isControlPanelExpanded ? 'Hide control panel' : 'Show control panel'}
+                title={isControlPanelExpanded ? 'Hide model controls' : 'Show model controls'}
               >
                 {isControlPanelExpanded ? <PanelLeftClose size={18} /> : <PanelLeft size={18} />}
               </button>
 
-              {/* Branch tree toggle */}
+              {/* Branch controls toggle */}
               <button
                 onClick={() => setIsBranchTreeExpanded(!isBranchTreeExpanded)}
                 className="no-drag p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground"
-                title={isBranchTreeExpanded ? 'Collapse branches' : 'Expand branches'}
+                title={isBranchTreeExpanded ? 'Collapse branch tree' : 'Expand branch tree'}
               >
                 {isBranchTreeExpanded ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
               </button>
               <button
                 onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
                 className="no-drag p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground"
-                title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                title={isSidebarCollapsed ? 'Expand branch controls' : 'Collapse branch controls'}
               >
                 {isSidebarCollapsed ? <PanelLeft size={18} /> : <PanelLeftClose size={18} />}
               </button>
@@ -603,13 +603,11 @@ export default function AppLayout() {
           </div>
 
           {/* Right sidebar with Branch tree and Chat history */}
-          <div className={`transition-all duration-200 w-80 ${
-            (isBranchTreeExpanded || showChatHistory) && !isSidebarCollapsed ? '' : 'hidden'
-          }`}>
+          <div className={`transition-all duration-200 ${isSidebarCollapsed ? 'hidden' : 'w-80'}`}>
             <div className="flex flex-col h-full overflow-hidden">
               {/* Right sidebar header with toggle button */}
               <div className="bg-card border-b p-3 flex items-center justify-between sticky top-0 z-10">
-                <h3 className="font-medium text-foreground text-sm">Sidebar</h3>
+                <h2 className="text-base font-semibold text-foreground">Branch Controls</h2>
                 <div className="flex items-center gap-1">
                   <button
                     onClick={() => setShowChatHistory(!showChatHistory)}
@@ -618,32 +616,67 @@ export default function AppLayout() {
                         ? 'text-orange-600 bg-orange-100 dark:bg-orange-900/30' 
                         : 'text-muted-foreground hover:text-foreground'
                     }`}
-                    title={showChatHistory ? 'Hide chat history' : 'Show chat history'}
+                    title={showChatHistory ? 'Collapse chat history' : 'Expand chat history'}
                   >
                     <History size={16} />
                   </button>
                   <button
                     onClick={() => setIsSidebarCollapsed(true)}
                     className="p-1 hover:bg-muted rounded transition-colors text-muted-foreground hover:text-foreground"
-                    title="Collapse sidebar"
+                    title="Collapse branch controls"
                   >
                     <PanelLeftClose size={16} />
                   </button>
                 </div>
               </div>
-              {/* Branch Tree - shows when branch tree is expanded */}
-              {isBranchTreeExpanded && (
-                <div className={`${showChatHistory ? 'flex-1' : 'h-full'} min-h-0 overflow-y-auto overscroll-contain`}>
-                  <BranchTree className="h-full" />
+
+              <div className="flex-1 overflow-y-auto p-3 space-y-3">
+                <div className="border border-border/60 rounded-lg bg-background/60">
+                  <button
+                    onClick={() => setIsBranchTreeExpanded(!isBranchTreeExpanded)}
+                    className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-muted transition-colors"
+                    aria-expanded={isBranchTreeExpanded}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-blue-500" aria-hidden />
+                      <span className="text-sm font-medium text-foreground">Branch Tree</span>
+                    </div>
+                    {isBranchTreeExpanded ? (
+                      <ChevronDown size={16} className="text-muted-foreground" />
+                    ) : (
+                      <ChevronRight size={16} className="text-muted-foreground" />
+                    )}
+                  </button>
+                  {isBranchTreeExpanded && (
+                    <div className="max-h-[55vh] min-h-[240px] overflow-y-auto overscroll-contain p-3">
+                      <BranchTree className="h-full" />
+                    </div>
+                  )}
                 </div>
-              )}
-              
-              {/* Chat History - shows when chat history is enabled */}
-              {showChatHistory && (
-                <div className={`${isBranchTreeExpanded ? 'flex-1' : 'h-full'} min-h-0 overflow-y-auto overscroll-contain ${isBranchTreeExpanded ? 'border-t' : ''}`}>
-                  <ChatHistorySidebar className="h-full" />
+
+                <div className="border border-border/60 rounded-lg bg-background/60">
+                  <button
+                    onClick={() => setShowChatHistory(!showChatHistory)}
+                    className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-muted transition-colors"
+                    aria-expanded={showChatHistory}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-orange-500" aria-hidden />
+                      <span className="text-sm font-medium text-foreground">Chat History</span>
+                    </div>
+                    {showChatHistory ? (
+                      <ChevronDown size={16} className="text-muted-foreground" />
+                    ) : (
+                      <ChevronRight size={16} className="text-muted-foreground" />
+                    )}
+                  </button>
+                  {showChatHistory && (
+                    <div className="max-h-[55vh] min-h-[240px] overflow-y-auto overscroll-contain p-3">
+                      <ChatHistorySidebar className="h-full" />
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
             </div>
           </div>
         </div>

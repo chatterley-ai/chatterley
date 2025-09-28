@@ -94,8 +94,8 @@ export class SessionManager {
           });
         }
       }
-    } catch (error) {
-      console.error('Failed to load sessions from storage:', error);
+    } catch {
+      console.error('Failed to load sessions from storage');
     }
   }
 
@@ -110,8 +110,8 @@ export class SessionManager {
         localStorage.setItem(this.storageKey, JSON.stringify(sessionsArray));
         localStorage.setItem('oumi_current_session', this.currentSessionId);
       }
-    } catch (error) {
-      console.error('Failed to save sessions to storage:', error);
+    } catch {
+      console.error('Failed to save sessions to storage');
     }
   }
 
@@ -125,7 +125,7 @@ export class SessionManager {
   /**
    * Create a new session with the given name
    */
-  public createNewSession(name: string = 'New Session', metadata?: { [key: string]: any }): string {
+  public createNewSession(name: string = 'New Session', metadata?: { [key: string]: unknown }): string {
     const sessionId = this.generateSessionId();
     const now = new Date().toISOString();
     
@@ -155,7 +155,7 @@ export class SessionManager {
   /**
    * Start a new session (static helper)
    */
-  public static startNewSession(name: string = 'New Session', metadata?: { [key: string]: any }): string {
+  public static startNewSession(name: string = 'New Session', metadata?: { [key: string]: unknown }): string {
     return SessionManager.getInstance().createNewSession(name, metadata);
   }
   

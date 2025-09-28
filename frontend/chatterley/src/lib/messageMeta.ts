@@ -4,11 +4,11 @@ import { useChatStore } from '@/lib/store';
 interface BackendMessage {
   id?: string;
   role: string;
-  content: any;
-  timestamp: any;
-  attachments?: any;
-  metadata?: Record<string, any> | null;
-  meta?: Record<string, any> | null;
+  content: unknown;
+  timestamp: unknown;
+  attachments?: unknown[];
+  metadata?: Record<string, unknown> | null;
+  meta?: Record<string, unknown> | null;
 }
 
 interface TransformOptions {
@@ -20,7 +20,7 @@ interface TransformOptions {
   branchId?: string;
 }
 
-const isRecord = (value: unknown): value is Record<string, any> =>
+const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const coalesce = <T>(...values: Array<T | null | undefined | ''>): T | undefined => {
@@ -32,7 +32,7 @@ const coalesce = <T>(...values: Array<T | null | undefined | ''>): T | undefined
   return undefined;
 };
 
-const toNumber = (value: any): number | undefined => {
+const toNumber = (value: unknown): number | undefined => {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return value;
   }
@@ -45,7 +45,7 @@ const toNumber = (value: any): number | undefined => {
   return undefined;
 };
 
-const normalizeTimestamp = (t: any): number => {
+const normalizeTimestamp = (t: unknown): number => {
   if (typeof t === 'number' && Number.isFinite(t)) {
     return t < 1e11 ? Math.round(t * 1000) : Math.round(t);
   }
@@ -68,11 +68,11 @@ export const transformBackendMessages = (
 
   const existingMessages = options.existingMessages ?? [];
   const storeState = useChatStore.getState();
-  const existingMetaById = new Map<string, Record<string, any>>();
-  const existingMetaByIndex = new Map<number, Record<string, any>>();
+  const existingMetaById = new Map<string, Record<string, unknown>>();
+  const existingMetaByIndex = new Map<number, Record<string, unknown>>();
 
   existingMessages.forEach((msg, index) => {
-    const meta = (msg as any)?.meta;
+    const meta = (msg as { meta?: Record<string, unknown> })?.meta;
     if (!isRecord(meta)) return;
     const cloned = { ...meta };
     if (msg.id !== undefined && msg.id !== null) {
@@ -82,7 +82,7 @@ export const transformBackendMessages = (
   });
 
   return messages.map((backendMsg, index) => {
-    const timestamp = normalizeTimestamp((backendMsg as any)?.timestamp);
+    const timestamp = normalizeTimestamp(backendMsg?.timestamp);
     const existingMeta = (() => {
       const byId = backendMsg?.id !== undefined && backendMsg?.id !== null
         ? existingMetaById.get(String(backendMsg.id))
@@ -98,7 +98,7 @@ export const transformBackendMessages = (
         if (!info.nodeId) return undefined;
         const node = storeState.messageNodes[options.conversationId]?.[info.nodeId];
         const version = node?.versions?.[info.activeIndex];
-        const meta = version && isRecord((version as any).meta) ? (version as any).meta : undefined;
+        const meta = version && isRecord((version as { meta?: Record<string, unknown> }).meta) ? (version as { meta: Record<string, unknown> }).meta : undefined;
         return meta ? { ...meta } : undefined;
       } catch {
         return undefined;
@@ -131,7 +131,7 @@ export const transformBackendMessages = (
       backendMsg.role === 'assistant' ? options.settings.selectedProvider : undefined
     );
 
-    const durationCandidate = coalesce<any>(
+    const durationCandidate = coalesce<unknown>(
       rawMeta?.duration_ms,
       rawMeta?.durationMs,
       rawMeta?.response_ms,
@@ -139,7 +139,7 @@ export const transformBackendMessages = (
     );
     const durationMs = toNumber(durationCandidate);
 
-    const meta: Record<string, any> = existingMeta ? { ...existingMeta } : (nodeMeta ? { ...nodeMeta } : {});
+    const meta: Record<string, unknown> = existingMeta ? { ...existingMeta } : (nodeMeta ? { ...nodeMeta } : {});
     if (rawMeta) {
       for (const [key, value] of Object.entries(rawMeta)) {
         if (value !== undefined) {
@@ -177,16 +177,56 @@ export const transformBackendMessages = (
       meta.modelName = derivedModelName;
     } else if (meta.modelName === undefined && existingMeta?.modelName) {
       meta.modelName = existingMeta.modelName;
-    } else if (meta.modelName === undefined) {
-      delete meta.modelName;
+    } else if (meta.modelName === undefined && nodeMeta?.modelName) {
+      meta.modelName = nodeMeta.modelName;
+    } else if (meta.modelName === undefined && options.fallbackModel) {
+      meta.modelName = options.fallbackModel;
     }
 
     if (derivedEngine) {
       meta.engine = derivedEngine;
     } else if (meta.engine === undefined && existingMeta?.engine) {
       meta.engine = existingMeta.engine;
-    } else if (meta.engine === undefined) {
-      delete meta.engine;
+    } else if (meta.engine === undefined && nodeMeta?.engine) {
+      meta.engine = nodeMeta.engine;
+    }
+
+    if (process.env.NODE_ENV !== 'production' && backendMsg.role === 'assistant' && !meta.modelName) {
+      const debugInfo = (() => {
+        if (!options.conversationId || !options.branchId) {
+          return { reason: 'missing conversation/branch context' };
+        }
+        try {
+          const state = useChatStore.getState();
+          const branchStateEntry = state.branchState[options.conversationId]?.[options.branchId];
+          const timeline = branchStateEntry?.timeline || state.branchTimelines[options.conversationId]?.[options.branchId] || [];
+          const heads = branchStateEntry?.heads || state.branchHeads[options.conversationId]?.[options.branchId] || {};
+          const info = state.getMessageNodeInfo(options.conversationId, options.branchId, String(backendMsg?.id ?? ''), index);
+          return {
+            nodeId: info.nodeId,
+            versions: info.versions?.length ?? 0,
+            activeIndex: info.activeIndex,
+            headId: info.nodeId ? heads?.[info.nodeId] : undefined,
+            timelineLength: timeline.length,
+            timelineEntry: index < timeline.length ? timeline[index] : undefined,
+            timelinePreview: timeline.slice(Math.max(0, index - 2), index + 3),
+          };
+        } catch (err) {
+          return { reason: 'lookup failure', error: err instanceof Error ? err.message : String(err) };
+        }
+      })();
+
+      console.warn('[messageMeta] Missing model metadata', {
+        conversationId: options.conversationId,
+        branchId: options.branchId,
+        backendId: backendMsg?.id,
+        index,
+        role: backendMsg.role,
+        debugInfo,
+        rawMeta,
+        existingMeta,
+        nodeMeta,
+      });
     }
 
     if (typeof durationMs === 'number' && Number.isFinite(durationMs) && durationMs >= 0) {
@@ -210,9 +250,9 @@ export const transformBackendMessages = (
     return {
       id,
       role: backendMsg.role,
-      content: (backendMsg as any)?.content,
+      content: backendMsg.content,
       timestamp,
-      attachments: (backendMsg as any)?.attachments,
+      attachments: backendMsg.attachments,
       meta,
     } as Message;
   });

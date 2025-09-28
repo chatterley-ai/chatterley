@@ -232,7 +232,7 @@ export function createApplicationMenu(mainWindow: BrowserWindow): Menu {
           }
         },
         {
-          label: 'Toggle Control Panel',
+          label: 'Toggle Model Controls',
           accelerator: 'CmdOrCtrl+T',
           click: () => {
             mainWindow.webContents.send('menu:toggle-control-panel');

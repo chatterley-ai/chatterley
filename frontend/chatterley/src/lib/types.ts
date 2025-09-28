@@ -11,7 +11,7 @@ export interface Session {
   updatedAt: string;
   conversationIds: string[];
   metadata?: {
-    [key: string]: any;
+    [key: string]: unknown;
   };
 }
 
@@ -20,7 +20,7 @@ export interface Message {
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: number;
-  attachments?: any[];
+  attachments?: Record<string, unknown>[];
   branchId?: string;
   meta?: {
     authorName?: string;            // Human-friendly name (user or model label)
@@ -29,7 +29,7 @@ export interface Message {
     engine?: string;                // Provider/engine id
     createdAt?: number;             // Epoch ms when message was created
     durationMs?: number;            // Generation duration (AI)
-    [k: string]: any;
+    [k: string]: unknown;
   };
 }
 
@@ -39,7 +39,7 @@ export interface MessageVersion {
   role: 'user' | 'assistant' | 'system';
   content: string;     // raw content (markdown/plain)
   timestamp: number;   // when this version was created
-  attachments?: any[];
+  attachments?: Record<string, unknown>[];
   meta?: {
     editor?: 'user' | 'system' | 'regen' | string;
     sourceVersionId?: string; // for regen/edit lineage
@@ -49,7 +49,7 @@ export interface MessageVersion {
     engine?: string;
     createdAt?: number;
     durationMs?: number;
-    [k: string]: any;
+    [k: string]: unknown;
   };
 }
 
@@ -67,7 +67,7 @@ export interface MergeRecord {
   sourceNodeId?: string;
   targetNodeId?: string;
   chosenVersionId?: string;
-  meta?: { [k: string]: any };
+  meta?: { [k: string]: unknown };
 }
 
 export interface ConversationBranch {
@@ -110,7 +110,7 @@ export interface GenerationParams {
   stream?: boolean;
 }
 
-export interface ApiResponse<T = any> {
+export interface ApiResponse<T = unknown> {
   success: boolean;
   data?: T;
   message?: string;
@@ -135,7 +135,7 @@ export interface DiffusionGenerationRequest {
 export interface DiffusionArtifact {
   image_path: string;
   metadata_path: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   image_base64?: string;
 }
 
@@ -189,7 +189,7 @@ export interface ConfigOption {
 export interface ChatCompletionRequest {
   messages: Array<{
     role: 'user' | 'assistant' | 'system';
-    content: string | any[]; // supports multimodal parts for omni models
+    content: string | Record<string, unknown>[]; // supports multimodal parts for omni models
   }>;
   session_id?: string;
   branch_id?: string;
@@ -306,7 +306,7 @@ export interface ChatHistory {
     id: string;
     title: string;
     updatedAt: string;
-    branches: { [branchId: string]: { messages: Message[]; metadata?: any } };
+    branches: { [branchId: string]: { messages: Message[]; metadata?: Record<string, unknown> } };
     nodeGraph?: {
       nodes?: { [id: string]: MessageNode };
       timelines?: { [branchId: string]: string[] };
