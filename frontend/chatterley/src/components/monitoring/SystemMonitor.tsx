@@ -202,7 +202,7 @@ export default function SystemMonitor({
         const isRecent = Date.now() - storedRecord.timestamp < RECENT_TEST_WINDOW_MS;
         if (isRecent) {
           lastSuccessfulTestRef.current = storedRecord;
-          setModelStatus(() => ({
+          setModelStatus(prev => ({
             ...prev,
             loaded: true,
             modelName: storedRecord.modelName ?? prev.modelName,
@@ -240,7 +240,7 @@ export default function SystemMonitor({
           lastSuccessfulTest: lastSuccessfulTestRef.current,
         });
 
-        setModelStatus(() => ({
+        setModelStatus(prev => ({
           ...prev,
           modelName: model.id,
         }));
@@ -268,7 +268,7 @@ export default function SystemMonitor({
               lastRecord,
             });
 
-            setModelStatus(() => ({
+            setModelStatus(prev => ({
               ...prev,
               loaded: true,
               testResult: 'success',
@@ -372,12 +372,12 @@ export default function SystemMonitor({
       const success = response.success && response.data?.success;
       const completedAt = Date.now();
       
-      setModelStatus(() => ({
+      setModelStatus({
         loaded: Boolean(success), // Only set loaded to true if test succeeds
         modelName: name,
         lastTested: completedAt,
         testResult: success ? 'success' : 'failure',
-      }));
+      });
       
       console.log(success ? '✅ Model test successful' : '❌ Model test failed', response.data?.message);
 
@@ -397,12 +397,12 @@ export default function SystemMonitor({
       }
     } catch (error) {
       console.error('Model test error:', error);
-      setModelStatus(() => ({
+      setModelStatus({
         loaded: false, // Test failed, so not loaded
         modelName: name,
         lastTested: Date.now(),
         testResult: 'failure',
-      }));
+      });
     } finally {
       setIsModelActionLoading(false);
     }
@@ -413,7 +413,7 @@ export default function SystemMonitor({
     try {
       const response = await apiClient.clearModel();
       if (response.success) {
-        setModelStatus(() => ({
+        setModelStatus(prev => ({
           ...prev,
           loaded: false,
           testResult: 'unknown',
@@ -450,7 +450,7 @@ export default function SystemMonitor({
           const mr = await apiClient.getModels();
           const name = mr.success ? mr.data?.data?.[0]?.id : undefined;
           if (name) {
-            setModelStatus(() => ({ ...prev, modelName: name }));
+            setModelStatus(prev => ({ ...prev, modelName: name }));
             await testModel(name, 'reload-flow');
           }
         } catch {  // Ignore errors

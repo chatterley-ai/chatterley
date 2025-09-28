@@ -7,6 +7,8 @@ import { useState } from 'react';
 import apiClient from '@/lib/unified-api';
 import { useChatStore } from '@/lib/store';
 import { transformBackendMessages } from '@/lib/messageMeta';
+// Import BackendMessage type directly from messageMeta.ts
+import type { BackendMessage } from '@/lib/messageMeta';
 
 interface CommandOptions {
   /** Wait time after command execution before refreshing (for async operations like regen) */
@@ -57,7 +59,7 @@ export function useConversationCommand() {
       const conversationResponse = await apiClient.getConversation(getCurrentSessionId(), currentBranchId || 'main');
       if (conversationResponse.success && conversationResponse.data?.conversation && currentConversationId) {
         const existingMessages = getBranchMessages(currentConversationId, currentBranchId || 'main');
-        const mapped = transformBackendMessages(conversationResponse.data?.conversation as Record<string, unknown>[], {
+        const mapped = transformBackendMessages(conversationResponse.data?.conversation as BackendMessage[], {
           settings,
           existingMessages,
           fallbackModel: settings.selectedModel,
@@ -93,7 +95,7 @@ export function useConversationCommand() {
         
         // Transform backend branches to frontend format
         const { getCurrentMessages } = useChatStore.getState();
-        const transformedBranches = branches.map((branch: Record<string, unknown>) => {
+        const transformedBranches = branches.map((branch: ConversationBranch) => {
           const isActive = branch.id === current_branch;
           const messageCount = isActive
             ? getCurrentMessages().length
@@ -102,7 +104,7 @@ export function useConversationCommand() {
             id: branch.id,
             name: branch.name,
             isActive,
-            messageCount,
+            messageCount: Number(messageCount),
             createdAt: branch.created_at,
             lastActive: branch.last_active || branch.created_at,
             preview: messageCount > 0 ? `${messageCount} message${messageCount !== 1 ? 's' : ''}` : 'Empty branch'
@@ -214,9 +216,9 @@ export function useConversationCommand() {
       // If backend returned an updated conversation snapshot, apply it immediately
       try {
         const { currentConversationId, currentBranchId, setMessages, setCurrentConversationId, settings, getBranchMessages } = useChatStore.getState();
-        const snap = response?.data?.conversation as Record<string, unknown>[] | undefined;
-        const snapConvId: string | undefined = response?.data?.conversation_id;
-        const snapBranchId: string | undefined = response?.data?.branch_id || response?.data?.current_branch;
+        const snap = response?.data?.conversation as BackendMessage[] | undefined;
+        const snapConvId: string | undefined = response?.data?.conversation_id as string | undefined;
+        const snapBranchId: string | undefined = (response?.data?.branch_id as string | undefined) || (response?.data?.current_branch as string | undefined);
         const targetConvId = snapConvId || currentConversationId;
         const targetBranchId = snapBranchId || currentBranchId || 'main';
         if (targetConvId && snap && Array.isArray(snap)) {
@@ -226,8 +228,8 @@ export function useConversationCommand() {
           const mapped = transformBackendMessages(snap, {
             settings,
             existingMessages,
-            fallbackModel: response?.data?.model_info?.name || settings.selectedModel,
-            fallbackEngine: response?.data?.model_info?.engine || settings.selectedProvider,
+            fallbackModel: ((response?.data?.model_info as Record<string, unknown> | undefined)?.name as string | undefined) || settings.selectedModel,
+            fallbackEngine: ((response?.data?.model_info as Record<string, unknown> | undefined)?.engine as string | undefined) || settings.selectedProvider,
             conversationId: targetConvId,
             branchId: targetBranchId,
           });
@@ -242,9 +244,9 @@ export function useConversationCommand() {
         // Non-fatal; fall back to standard refresh path
       }
 
-      const serverDeclined = !response.success || (response.data && (response.data.success === false || response.data.error));
+      const serverDeclined = !response.success || (response.data && ((response.data.success as boolean | undefined) === false || response.data.error));
       if (serverDeclined) {
-        const errorMessage = response.message || (response.data?.message || response.data?.error) || 'Unknown error';
+        const errorMessage = response.message || ((response.data?.message as string | undefined) || (response.data?.error as string | undefined)) || 'Unknown error';
         // Rich diagnostics when the backend ignores/declines the operation
         try {
           const {
@@ -311,12 +313,12 @@ export function useConversationCommand() {
       // Surface id/index resolution mismatches as a small toast
       try {
         const backend = options.backend;
-        const target = (response.data && (response.data as Record<string, unknown>).target) || undefined;
+        const target = (response.data && (response.data as Record<string, unknown>).target as Record<string, unknown> | undefined) || undefined;
         if (backend && target) {
           const requestedId = backend.messageId;
           const requestedIndex = backend.index;
-          const resolvedId = target.message_id ?? target.messageId;
-          const resolvedIndex = target.index;
+          const resolvedId = (target.message_id as string | undefined) ?? (target.messageId as string | undefined);
+          const resolvedIndex = target.index as number | undefined;
           const idMismatch = requestedId && resolvedId && requestedId !== resolvedId;
           const idxMismatch = typeof requestedIndex === 'number' && typeof resolvedIndex === 'number' && requestedIndex !== resolvedIndex;
           const looksLikeIdRemap = idMismatch && requestedId?.startsWith('user-') && resolvedId?.startsWith('msg_');
@@ -375,7 +377,7 @@ export function useConversationCommand() {
       return { 
         success: true, 
         message: resultMessage,
-        data: response.data 
+        data: response.data as Record<string, unknown>
       };
 
     } catch (error) {

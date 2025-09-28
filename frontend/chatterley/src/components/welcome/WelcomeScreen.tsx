@@ -84,7 +84,7 @@ export default function WelcomeScreen({ onConfigSelected, systemCapabilities }: 
     currentError, 
     showModelTestError, 
     showConfigError, 
-    showDownloadError,
+    // Remove unused variable
     clearError 
   } = useErrorHandler();
   
@@ -117,7 +117,7 @@ export default function WelcomeScreen({ onConfigSelected, systemCapabilities }: 
     if (!isActive()) return;
 
     await new Promise<void>((resolve, reject) => {
-      const start = Date.now();
+      // Remove unused start variable
       const interval = setInterval(() => {
         const s = downloadStateRef.current;
         // Abort on error
@@ -141,13 +141,14 @@ export default function WelcomeScreen({ onConfigSelected, systemCapabilities }: 
   }, []);
 
   // Python environment setup state
-  const [envSetupNeeded, setEnvSetupNeeded] = React.useState(false);
+  // Remove unused envSetupNeeded
+  const setEnvSetupNeeded = React.useState(false)[1];
   const [showEnvSetup, setShowEnvSetup] = React.useState(false);
   
   // System capabilities are now passed as a prop from LaunchManager
 
   // System prompt presets
-  const systemPromptPresets: SystemPromptPreset[] = [
+  const systemPromptPresets = React.useMemo<SystemPromptPreset[]>(() => [
     {
       id: 'default',
       name: 'Default Assistant',
@@ -201,16 +202,16 @@ export default function WelcomeScreen({ onConfigSelected, systemCapabilities }: 
       name: 'Patient Teacher',
       icon: <Wand2 className="w-5 h-5" />,
       description: 'Educational explanations and learning support',
-      prompt: 'You are a patient, encouraging teacher who excels at explaining complex topics in simple terms. Use examples, analogies, and step-by-step breakdowns. Adapt your teaching style to the user\'s level and learning preferences.',
+      prompt: 'You are a patient, encouraging teacher who excels at explaining complex topics in simple terms. Use examples, analogies, and step-by-step breakdowns. Adapt your teaching style to the user&apos;s level and learning preferences.',
       category: 'general'
     }
-  ];
+  ], []);
 
   React.useEffect(() => {
     loadConfigs();
     loadWelcomeCachingPreference();
     setupDownloadMonitoring();
-  }, []);
+  }, [loadConfigs]);
 
   // Set up download progress monitoring
   const setupDownloadMonitoring = () => {
@@ -273,7 +274,7 @@ export default function WelcomeScreen({ onConfigSelected, systemCapabilities }: 
 
   React.useEffect(() => {
     filterConfigs();
-  }, [configs, searchTerm, selectedEngine, selectedSize]);
+  }, [configs, searchTerm, selectedEngine, selectedSize, filterConfigs]);
 
   // Handle ESC key to close settings modal
   React.useEffect(() => {
@@ -574,9 +575,10 @@ export default function WelcomeScreen({ onConfigSelected, systemCapabilities }: 
         return result;
       };
 
-      let testResult;
+      // Remove unused testResult
+      let result;
       try {
-        testResult = await runTest();
+        result = await runTest();
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         const downloadsActive = (() => {
@@ -592,7 +594,7 @@ export default function WelcomeScreen({ onConfigSelected, systemCapabilities }: 
           setTestProgress('Model test timed out, but downloads are in progress. Waiting for downloads to complete...');
           await waitForDownloadsToFinish();
           setTestProgress('Downloads complete. Retrying model test...');
-          testResult = await runTest();
+          result = await runTest();
         } else {
           throw err;
         }
@@ -719,7 +721,7 @@ export default function WelcomeScreen({ onConfigSelected, systemCapabilities }: 
               <div className="text-center mb-6">
                 <h2 className="text-xl font-semibold mb-2 text-foreground">Preparing Your Model</h2>
                 <p className="text-muted-foreground">
-                  We're downloading and testing the model to ensure it's ready for you.
+                  We&apos;re downloading and testing the model to ensure it&apos;s ready for you.
                 </p>
               </div>
               <DownloadProgressMonitor downloadState={downloadState} />
@@ -860,7 +862,7 @@ export default function WelcomeScreen({ onConfigSelected, systemCapabilities }: 
                 <div className="mt-4 space-y-2">
                   <h4 className="font-medium text-foreground">Tips:</h4>
                   <ul className="text-sm text-muted-foreground space-y-1">
-                    <li>• Be specific about the AI's role and expertise</li>
+                    <li>• Be specific about the AI&apos;s role and expertise</li>
                     <li>• Include desired tone (formal, casual, friendly, etc.)</li>
                     <li>• Mention any constraints or guidelines</li>
                     <li>• Keep it clear and concise</li>

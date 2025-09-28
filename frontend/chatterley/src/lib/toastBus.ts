@@ -12,7 +12,7 @@ export interface ToastEventDetail {
   durationMs?: number; // default 3500ms
 }
 
-const emitter: EventTarget = typeof window !== 'undefined' ? new EventTarget() : ({} as any);
+const emitter: EventTarget = typeof window !== 'undefined' ? new EventTarget() : ({} as unknown as EventTarget);
 
 export function showToast(detail: ToastEventDetail) {
   if (typeof window === 'undefined' || !('dispatchEvent' in emitter)) return;

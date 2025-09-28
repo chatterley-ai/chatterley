@@ -464,22 +464,41 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
     
     try {
       // Prepare messages for API
-      const apiMessages: ChatCompletionRequest['messages'] = messages
+      const storeSnapshot = useChatStore.getState();
+      const activeConversationId = currentConversationId || storeSnapshot.currentConversationId || '';
+      const activeBranchId = currentBranchId || storeSnapshot.currentBranchId || 'main';
+      const history = activeConversationId
+        ? storeSnapshot.getBranchMessages(activeConversationId, activeBranchId)
+        : [];
+
+      const apiMessages: ChatCompletionRequest['messages'] = history
         .filter(msg => msg.role !== 'system') // Exclude system messages from API
         .map(msg => ({
           role: (msg.role as 'user' | 'assistant' | 'system'),
           content: msg.content,
         }));
 
+      if (process.env.NODE_ENV !== 'production') {
+        console.debug('[ChatInterface] Prepared API messages', {
+          count: apiMessages.length,
+          sample: apiMessages.slice(-5),
+        });
+      }
+
       // Add the current user message (possibly multimodal)
       const contentOrParts = isOmniCapable ? buildContentParts(content, attachments) : content;
-      apiMessages.push({
-        role: 'user', 
-        content: contentOrParts as string | Array<{
-          type: string;
-          content: string;
-        }>
-      });
+      const lastHistoryEntry = history[history.length - 1];
+      if (lastHistoryEntry?.role === 'user' && apiMessages.length > 0) {
+        apiMessages[apiMessages.length - 1] = {
+          role: 'user',
+          content: contentOrParts as string | Array<{ type: string; content: string }>,
+        };
+      } else {
+        apiMessages.push({
+          role: 'user',
+          content: contentOrParts as string | Array<{ type: string; content: string }>,
+        });
+      }
 
       // Auto-reload model if needed before attempting chat
       await ensureModelLoaded();

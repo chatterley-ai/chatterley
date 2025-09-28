@@ -59,7 +59,7 @@ export function useAutoSave() {
         intervalRef.current = null;
       }
     };
-  }, [settings.autoSave, messages.length]);
+  }, [settings.autoSave, messages.length, saveConversation]);
 
   return {
     isAutoSaveEnabled: settings.autoSave?.enabled || false,
