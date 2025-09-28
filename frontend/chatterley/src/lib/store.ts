@@ -1492,7 +1492,7 @@ export const useChatStore = create<ChatStore>()(
               const conversationPayload = response.data.conversation as unknown;
               const rawMessages = Array.isArray(conversationPayload)
                 ? (conversationPayload as Record<string, unknown>[])
-                : [];
+                : undefined;
 
               let transformedMessages: Message[] = Array.isArray(conversationPayload)
                 ? (conversationPayload as Message[])
@@ -1502,7 +1502,8 @@ export const useChatStore = create<ChatStore>()(
                 const existingMessages = state.getBranchMessages
                   ? state.getBranchMessages(conversationId, targetBranchId)
                   : state.conversationMessages[conversationId]?.[targetBranchId] || [];
-                transformedMessages = transformBackendMessages(rawMessages, {
+                const normalizedInput = rawMessages as Parameters<typeof transformBackendMessages>[0];
+                transformedMessages = transformBackendMessages(normalizedInput, {
                   settings: state.settings,
                   existingMessages,
                   fallbackModel: state.settings.selectedModel,
