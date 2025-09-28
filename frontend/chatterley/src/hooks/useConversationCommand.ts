@@ -7,8 +7,8 @@ import { useState } from 'react';
 import apiClient from '@/lib/unified-api';
 import { useChatStore } from '@/lib/store';
 import { transformBackendMessages } from '@/lib/messageMeta';
-// Import BackendMessage type directly from messageMeta.ts
-import type { BackendMessage } from '@/lib/messageMeta';
+// Import required types
+import type { Message } from '@/lib/types';
 
 interface CommandOptions {
   /** Wait time after command execution before refreshing (for async operations like regen) */
@@ -59,7 +59,7 @@ export function useConversationCommand() {
       const conversationResponse = await apiClient.getConversation(getCurrentSessionId(), currentBranchId || 'main');
       if (conversationResponse.success && conversationResponse.data?.conversation && currentConversationId) {
         const existingMessages = getBranchMessages(currentConversationId, currentBranchId || 'main');
-        const mapped = transformBackendMessages(conversationResponse.data?.conversation as BackendMessage[], {
+        const mapped = transformBackendMessages(conversationResponse.data?.conversation as any[], {
           settings,
           existingMessages,
           fallbackModel: settings.selectedModel,
@@ -95,6 +95,14 @@ export function useConversationCommand() {
         
         // Transform backend branches to frontend format
         const { getCurrentMessages } = useChatStore.getState();
+        interface ConversationBranch {
+          id: string;
+          name: string;
+          message_count?: number;
+          created_at: string;
+          last_active?: string;
+        }
+        
         const transformedBranches = branches.map((branch: ConversationBranch) => {
           const isActive = branch.id === current_branch;
           const messageCount = isActive
@@ -216,9 +224,13 @@ export function useConversationCommand() {
       // If backend returned an updated conversation snapshot, apply it immediately
       try {
         const { currentConversationId, currentBranchId, setMessages, setCurrentConversationId, settings, getBranchMessages } = useChatStore.getState();
-        const snap = response?.data?.conversation as BackendMessage[] | undefined;
-        const snapConvId: string | undefined = response?.data?.conversation_id as string | undefined;
-        const snapBranchId: string | undefined = (response?.data?.branch_id as string | undefined) || (response?.data?.current_branch as string | undefined);
+        const snap = response?.data && typeof response.data === 'object' ? 
+          ('conversation' in response.data ? response.data.conversation as any[] : undefined) : undefined;
+        const snapConvId: string | undefined = response?.data && typeof response.data === 'object' ?
+          ('conversation_id' in response.data ? response.data.conversation_id as string : undefined) : undefined;
+        const snapBranchId: string | undefined = response?.data && typeof response.data === 'object' ?
+          ('branch_id' in response.data ? response.data.branch_id as string : 
+          'current_branch' in response.data ? response.data.current_branch as string : undefined) : undefined;
         const targetConvId = snapConvId || currentConversationId;
         const targetBranchId = snapBranchId || currentBranchId || 'main';
         if (targetConvId && snap && Array.isArray(snap)) {
@@ -228,8 +240,12 @@ export function useConversationCommand() {
           const mapped = transformBackendMessages(snap, {
             settings,
             existingMessages,
-            fallbackModel: ((response?.data?.model_info as Record<string, unknown> | undefined)?.name as string | undefined) || settings.selectedModel,
-            fallbackEngine: ((response?.data?.model_info as Record<string, unknown> | undefined)?.engine as string | undefined) || settings.selectedProvider,
+            fallbackModel: (response?.data && typeof response.data === 'object' && 'model_info' in response.data && 
+            typeof response.data.model_info === 'object' && response.data.model_info && 'name' in response.data.model_info ? 
+            response.data.model_info.name as string : undefined) || settings.selectedModel,
+          fallbackEngine: (response?.data && typeof response.data === 'object' && 'model_info' in response.data && 
+            typeof response.data.model_info === 'object' && response.data.model_info && 'engine' in response.data.model_info ? 
+            response.data.model_info.engine as string : undefined) || settings.selectedProvider,
             conversationId: targetConvId,
             branchId: targetBranchId,
           });
@@ -244,9 +260,15 @@ export function useConversationCommand() {
         // Non-fatal; fall back to standard refresh path
       }
 
-      const serverDeclined = !response.success || (response.data && ((response.data.success as boolean | undefined) === false || response.data.error));
+      const serverDeclined = !response.success || 
+        (response.data && typeof response.data === 'object' && 
+        (('success' in response.data && response.data.success === false) || 
+         ('error' in response.data && response.data.error)));
       if (serverDeclined) {
-        const errorMessage = response.message || ((response.data?.message as string | undefined) || (response.data?.error as string | undefined)) || 'Unknown error';
+        const errorMessage = response.message || 
+        (response.data && typeof response.data === 'object' ? 
+         ('message' in response.data ? response.data.message as string : 
+          'error' in response.data ? response.data.error as string : undefined) : undefined) || 'Unknown error';
         // Rich diagnostics when the backend ignores/declines the operation
         try {
           const {
@@ -317,8 +339,9 @@ export function useConversationCommand() {
         if (backend && target) {
           const requestedId = backend.messageId;
           const requestedIndex = backend.index;
-          const resolvedId = (target.message_id as string | undefined) ?? (target.messageId as string | undefined);
-          const resolvedIndex = target.index as number | undefined;
+          const resolvedId = ('message_id' in target ? target.message_id as string : 
+                      'messageId' in target ? target.messageId as string : undefined);
+        const resolvedIndex = 'index' in target ? target.index as number : undefined;
           const idMismatch = requestedId && resolvedId && requestedId !== resolvedId;
           const idxMismatch = typeof requestedIndex === 'number' && typeof resolvedIndex === 'number' && requestedIndex !== resolvedIndex;
           const looksLikeIdRemap = idMismatch && requestedId?.startsWith('user-') && resolvedId?.startsWith('msg_');

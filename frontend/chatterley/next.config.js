@@ -3,6 +3,8 @@ const isElectron = process.env.ELECTRON_BUILD === 'true';
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Disable SWC minify to avoid rare TDZ issues in Electron export runtime
+  swcMinify: false,
   // Enable static export for Electron builds
   output: isElectron ? 'export' : undefined,
   

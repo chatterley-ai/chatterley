@@ -207,11 +207,100 @@ export default function WelcomeScreen({ onConfigSelected, systemCapabilities }: 
     }
   ], []);
 
+  const loadConfigs = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // System capabilities are now passed as a prop and loaded by LaunchManager
+      
+      // Try runtime config discovery first (Electron app)
+      if (apiClient.isElectronApp()) {
+        try {
+          const { configPathResolver } = await import('@/lib/config-path-resolver');
+          const staticConfigs = await configPathResolver.loadStaticConfigs();
+          
+          if (staticConfigs?.configs) {
+            let transformedConfigs = staticConfigs.configs;
+            
+            // Enhance with fresh HuggingFace metadata if credentials are available
+            const hasHfCredentials = settings.huggingFace?.username && settings.huggingFace?.token;
+            if (hasHfCredentials) {
+              console.log('Enhancing configs with authenticated HuggingFace metadata...');
+              transformedConfigs = await HuggingFaceService.enhanceConfigsWithMetadata(
+                transformedConfigs,
+                settings.huggingFace as { username: string; token: string }
+              );
+            }
+            
+            // Apply smart recommendations using ConfigMatcher if system capabilities are available
+            logger.debug('WelcomeScreen', 'System capabilities detected', systemCapabilities);
+            if (systemCapabilities) {
+              logger.info('WelcomeScreen', 'Applying ConfigMatcher recommendations to Electron configs');
+              transformedConfigs = ConfigMatcher.sortConfigsByRecommendation(transformedConfigs, systemCapabilities);
+            } else {
+              logger.warn('WelcomeScreen', 'No system capabilities available - skipping recommendations');
+            }
+            
+            setConfigs(transformedConfigs);
+            return;
+          } else {
+            throw new Error('Config discovery failed - no configs found');
+          }
+        } catch (electronError) {
+          console.warn('Electron config discovery failed, falling back to static file:', electronError);
+        }
+      }
+      
+      // Fallback to unified config resolver (handles static configs and multiple locations)
+      const data = await configPathResolver.loadStaticConfigs();
+      
+      if (data.configs && Array.isArray(data.configs)) {
+        let configs = data.configs;
+        
+        // Enhance with fresh HuggingFace metadata if credentials are available
+        const hasHfCredentials = settings.huggingFace?.username && settings.huggingFace?.token;
+        if (hasHfCredentials) {
+          console.log('Enhancing configs with authenticated HuggingFace metadata...');
+          configs = await HuggingFaceService.enhanceConfigsWithMetadata(
+            configs,
+            settings.huggingFace as { username: string; token: string }
+          );
+        }
+        
+        // Apply smart recommendations using ConfigMatcher if system capabilities are available
+        logger.debug('WelcomeScreen', 'System capabilities for static configs', systemCapabilities);
+        if (systemCapabilities) {
+          logger.info('WelcomeScreen', 'Applying ConfigMatcher recommendations to static configs');
+          configs = ConfigMatcher.sortConfigsByRecommendation(configs, systemCapabilities);
+        } else {
+          logger.warn('WelcomeScreen', 'No system capabilities available for static configs - skipping recommendations');
+        }
+        
+        setConfigs(configs);
+      } else {
+        throw new Error('Invalid configuration format');
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to load configurations';
+      
+      showConfigError(
+        errorMessage,
+        () => {
+          clearError();
+          loadConfigs();
+        }
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
   React.useEffect(() => {
     loadConfigs();
     loadWelcomeCachingPreference();
     setupDownloadMonitoring();
-  }, [loadConfigs]);
+  }, []);
 
   // Set up download progress monitoring
   const setupDownloadMonitoring = () => {
@@ -272,9 +361,63 @@ export default function WelcomeScreen({ onConfigSelected, systemCapabilities }: 
     }
   };
 
+  const filterConfigs = () => {
+    let filtered = [...configs];
+
+    // Search filter
+    if (searchTerm) {
+      const lower = (v: unknown) => (typeof v === 'string' ? v.toLowerCase() : '');
+      const term = lower(searchTerm);
+      filtered = filtered.filter(config => 
+        lower(config.display_name).includes(term) ||
+        lower(config.model_name).includes(term) ||
+        lower(config.model_family).includes(term)
+      );
+    }
+
+    // Engine filter
+    if (selectedEngine !== 'all') {
+      const lower = (v: unknown) => (typeof v === 'string' ? v.toLowerCase() : '');
+      filtered = filtered.filter(config => lower(config.engine) === lower(selectedEngine));
+    }
+
+    // Size filter
+    if (selectedSize !== 'all') {
+      filtered = filtered.filter(config => ConfigMatcher.getModelSizeCategory(config) === selectedSize);
+    }
+
+    // Sort by smart recommendations first, then by recommended flag, then by model family and size
+    filtered.sort((a, b) => {
+      // Sort by recommendation score (highest first) if both have recommendations
+      if (a.recommendation && b.recommendation) {
+        const scoreDiff = b.recommendation.score - a.recommendation.score;
+        if (scoreDiff !== 0) return scoreDiff;
+      }
+      
+      // Sort by "good match" status
+      if (a.recommendation?.goodMatch && !b.recommendation?.goodMatch) return -1;
+      if (!a.recommendation?.goodMatch && b.recommendation?.goodMatch) return 1;
+      
+      // Sort by recommendation score if available
+      const aScore = a.recommendation?.score || 0;
+      const bScore = b.recommendation?.score || 0;
+      if (aScore !== bScore) return bScore - aScore;
+      
+      // Sort by model family
+      if (a.model_family !== b.model_family) {
+        return a.model_family.localeCompare(b.model_family);
+      }
+      
+      // Finally sort by display name
+      return a.display_name.localeCompare(b.display_name);
+    });
+
+    setFilteredConfigs(filtered);
+  };
+
   React.useEffect(() => {
     filterConfigs();
-  }, [configs, searchTerm, selectedEngine, selectedSize, filterConfigs]);
+  }, [configs, searchTerm, selectedEngine, selectedSize]);
 
   // Handle ESC key to close settings modal
   React.useEffect(() => {
