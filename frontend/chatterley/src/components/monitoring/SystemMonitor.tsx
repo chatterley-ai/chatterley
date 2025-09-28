@@ -132,7 +132,7 @@ export default function SystemMonitor({
   const [isModelActionLoading, setIsModelActionLoading] = React.useState(false);
   // Fallback (frontend-only) state when backend stats are unavailable
   const [useFallback, setUseFallback] = React.useState(false);
-  const [capabilities, setCapabilities] = React.useState<any>(null);
+  const [capabilities, setCapabilities] = React.useState<Record<string, unknown> | null>(null);
   const [testStatus, setTestStatus] = React.useState<{ running: boolean; pid?: number; startedAt?: string } | null>(null);
   const intervalRef = React.useRef<NodeJS.Timeout | null>(null);
   const requestTimesRef = React.useRef<number[]>([]);
@@ -202,7 +202,7 @@ export default function SystemMonitor({
         const isRecent = Date.now() - storedRecord.timestamp < RECENT_TEST_WINDOW_MS;
         if (isRecent) {
           lastSuccessfulTestRef.current = storedRecord;
-          setModelStatus(prev => ({
+          setModelStatus(() => ({
             ...prev,
             loaded: true,
             modelName: storedRecord.modelName ?? prev.modelName,
@@ -240,7 +240,7 @@ export default function SystemMonitor({
           lastSuccessfulTest: lastSuccessfulTestRef.current,
         });
 
-        setModelStatus(prev => ({
+        setModelStatus(() => ({
           ...prev,
           modelName: model.id,
         }));
@@ -268,7 +268,7 @@ export default function SystemMonitor({
               lastRecord,
             });
 
-            setModelStatus(prev => ({
+            setModelStatus(() => ({
               ...prev,
               loaded: true,
               testResult: 'success',
@@ -328,7 +328,7 @@ export default function SystemMonitor({
       if (!configId) {
         const configsResponse = await apiClient.getConfigs();
         if (configsResponse.success && configsResponse.data?.configs) {
-          const matchingConfig = configsResponse.data.configs.find((config: any) => 
+          const matchingConfig = configsResponse.data.configs.find((config: Record<string, unknown>) => 
             config.id === name || config.display_name?.includes(name) || name.includes(config.id)
           );
           if (matchingConfig) {
@@ -372,7 +372,7 @@ export default function SystemMonitor({
       const success = response.success && response.data?.success;
       const completedAt = Date.now();
       
-      setModelStatus(prev => ({
+      setModelStatus(() => ({
         loaded: Boolean(success), // Only set loaded to true if test succeeds
         modelName: name,
         lastTested: completedAt,
@@ -397,7 +397,7 @@ export default function SystemMonitor({
       }
     } catch (error) {
       console.error('Model test error:', error);
-      setModelStatus(prev => ({
+      setModelStatus(() => ({
         loaded: false, // Test failed, so not loaded
         modelName: name,
         lastTested: Date.now(),
@@ -413,7 +413,7 @@ export default function SystemMonitor({
     try {
       const response = await apiClient.clearModel();
       if (response.success) {
-        setModelStatus(prev => ({
+        setModelStatus(() => ({
           ...prev,
           loaded: false,
           testResult: 'unknown',
@@ -450,10 +450,10 @@ export default function SystemMonitor({
           const mr = await apiClient.getModels();
           const name = mr.success ? mr.data?.data?.[0]?.id : undefined;
           if (name) {
-            setModelStatus(prev => ({ ...prev, modelName: name }));
+            setModelStatus(() => ({ ...prev, modelName: name }));
             await testModel(name, 'reload-flow');
           }
-        } catch (e) {
+        } catch {  // Ignore errors
           console.warn('Reload: failed to re-fetch models before test', e);
         }
         setIsModelActionLoading(false);
@@ -477,9 +477,9 @@ export default function SystemMonitor({
         try {
           const status = await apiClient.getServerStatus();
           if (!status.success || !status.data?.running) {
-            if (typeof window !== 'undefined' && (window as any).electronAPI) {
-              const caps = await (window as any).electronAPI.system.getCapabilities();
-              const tstat = await (window as any).electronAPI.system.getModelTestStatus();
+            if (typeof window !== 'undefined' && 'electronAPI' in window) {
+              const caps = await (window as Window & { electronAPI: { system: { getCapabilities: () => Promise<Record<string, unknown>> } } }).electronAPI.system.getCapabilities();
+              const tstat = await (window as Window & { electronAPI: { system: { getModelTestStatus: () => Promise<{ running: boolean; pid?: number; startedAt?: string }> } } }).electronAPI.system.getModelTestStatus();
               setCapabilities(caps);
               setTestStatus(tstat);
               setUseFallback(true);
@@ -488,7 +488,7 @@ export default function SystemMonitor({
               return;
             }
           }
-        } catch (e) {
+        } catch {  // Ignore errors
           // Ignore and continue to backend fetch; if that fails, error UI handles it
         }
       }
@@ -553,7 +553,7 @@ export default function SystemMonitor({
     const ensureServerReadyThenStart = async () => {
       try {
         // In Electron, check server status before polling to avoid noisy fetch-failed errors
-        const isElectron = typeof window !== 'undefined' && (window as any).electronAPI;
+        const isElectron = typeof window !== 'undefined' && 'electronAPI' in window;
         if (isElectron) {
           try {
             const status = await apiClient.getServerStatus();
@@ -595,6 +595,7 @@ export default function SystemMonitor({
       cancelled = true;
       stopPolling();
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     updateInterval,
     hydrateModelStatusFromStorage,

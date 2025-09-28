@@ -103,7 +103,7 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
         // Load available configs first
         const configsResponse = await apiClient.getConfigs();
         if (configsResponse.success && configsResponse.data?.configs) {
-          const sanitized = configsResponse.data.configs.map((c: any) => ({
+          const sanitized = configsResponse.data.configs.map((c: Record<string, unknown>) => ({
             id: c.id ?? c.relative_path ?? c.config_path ?? c.filename ?? '',
             config_path: c.config_path ?? '',
             relative_path: c.relative_path ?? '',
@@ -497,7 +497,7 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
                     <div className="space-y-3">
                       <div className="p-4 text-center text-muted-foreground">
                         <Search size={24} className="mx-auto mb-2 opacity-50" />
-                        <div className="text-sm">No models found matching "{searchTerm}"</div>
+                        <div className="text-sm">No models found matching &quot;{searchTerm}&quot;</div>
                       </div>
                       {/* Custom model option */}
                       <div className="border-t pt-3">
@@ -508,7 +508,7 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
                           <div className="flex items-center gap-3 flex-1">
                             <div className="flex-1">
                               <div className="font-medium text-sm text-foreground">
-                                Use "{searchTerm}" as custom model
+                                Use &quot;{searchTerm}&quot; as custom model
                               </div>
                               <div className="text-xs text-muted-foreground">
                                 Load model from HuggingFace Hub or local path

@@ -1038,96 +1038,86 @@ export const useChatStore = create<ChatStore>()(
         }),
 
       // Branch actions
-      addBranch: (branchId: string, name?: string, parentId?: string) =>
+      addBranch: (branchId: string, name?: string, parentId?: string) => {
+        const snapshot = get();
+        const conversationId = snapshot.currentConversationId;
+        if (!conversationId) {
+          return;
+        }
+
+        const sourceBranchId = parentId || snapshot.currentBranchId || 'main';
+        let parentMessages: Message[] = [];
+        try {
+          parentMessages = snapshot.getBranchMessages(conversationId, sourceBranchId);
+        } catch {
+          parentMessages = snapshot.conversationMessages[conversationId]?.[sourceBranchId] || [];
+        }
+
+        const clonedMessages = parentMessages.map((msg) => {
+          const attachments = Array.isArray(msg.attachments)
+            ? msg.attachments.map(att => ({ ...(att as Record<string, unknown>) }))
+            : undefined;
+          const meta = msg.meta ? { ...msg.meta } : undefined;
+          return {
+            ...msg,
+            branchId,
+            attachments,
+            meta,
+          } as Message;
+        });
+
+        const now = new Date().toISOString();
+        const firstMessage = clonedMessages[0];
+        const lastMessage = clonedMessages[clonedMessages.length - 1];
+        const createdAt = firstMessage ? new Date(firstMessage.timestamp).toISOString() : now;
+        const lastActive = lastMessage ? new Date(lastMessage.timestamp).toISOString() : now;
+        const preview = lastMessage
+          ? lastMessage.content.slice(0, 50) + (lastMessage.content.length > 50 ? '...' : '')
+          : snapshot.branchState[conversationId]?.[branchId]?.metadata?.preview;
+
         set((state) => {
-          // If we have a current conversation, initialize the branch storage
-          if (state.currentConversationId) {
-            const now = new Date().toISOString();
-            const conversationId = state.currentConversationId;
-            
-            // Create empty branch messages array
-            const updatedConversationMessages = {
-              ...state.conversationMessages,
+          const existingMetadata = state.branchMetadata[conversationId] || {};
+          const existingBranchState = state.branchState[conversationId] || {};
+
+          return {
+            branchMetadata: {
+              ...state.branchMetadata,
               [conversationId]: {
-                ...(state.conversationMessages[conversationId] || {}),
-                [branchId]: [] // Initialize with empty messages array
-              }
-            };
-            
-            // Update the conversation object - only update timestamp
-            const updatedConversations = state.conversations.map((conv) =>
-              conv.id === conversationId
-                ? { 
-                    ...conv, 
-                    updatedAt: now
-                  }
-                : conv
-            );
-            
-            // Auto-save updated conversation to backend
-            const updatedConv = updatedConversations.find(c => c.id === conversationId);
-            const branchMetaMap = {
-              ...state.branchMetadata[conversationId],
-              [branchId]: {
-                ...(state.branchMetadata[conversationId]?.[branchId] || {}),
-                name: name || `Branch ${branchId}`,
-                parentId,
-                createdAt: now,
-                lastActive: now,
-                messageCount: 0
-              }
-            };
-
-            if (updatedConv) {
-              const branchMetadata = getBranchMetadata(
-                conversationId,
-                updatedConversationMessages,
-                state.currentBranchId,
-                branchMetaMap
-              );
-
-              const hydratedConv = {
-                ...updatedConv,
-                branches: buildBranchStructure(
-                  conversationId,
-                  updatedConversationMessages,
-                  branchMetadata
-                )
-              };
-              autoSaveConversation(hydratedConv);
-            }
-            
-            return {
-              conversationMessages: updatedConversationMessages,
-              conversations: updatedConversations,
-              branchMetadata: {
-                ...state.branchMetadata,
-                [conversationId]: branchMetaMap
+                ...existingMetadata,
+                [branchId]: {
+                  ...existingMetadata[branchId],
+                  name: name || `Branch ${branchId}`,
+                  parentId,
+                  createdAt: existingMetadata[branchId]?.createdAt || createdAt,
+                  lastActive,
+                  preview,
+                },
               },
-              branchState: {
-                ...state.branchState,
-                [conversationId]: {
-                  ...(state.branchState[conversationId] || {}),
-                  [branchId]: {
-                    timeline: [],
-                    heads: {},
-                    metadata: {
-                      ...(state.branchState[conversationId]?.[branchId]?.metadata || {}),
-                      name: name || `Branch ${branchId}`,
-                      parentId,
-                      createdAt: now,
-                      lastActive: now,
-                      messageCount: 0,
-                      preview: state.branchState[conversationId]?.[branchId]?.metadata?.preview
-                    }
-                  }
-                }
-              }
-            };
-          }
-          
-          return state;
-        }),
+            },
+            branchState: {
+              ...state.branchState,
+              [conversationId]: {
+                ...existingBranchState,
+                [branchId]: {
+                  timeline: existingBranchState[branchId]?.timeline || [],
+                  heads: existingBranchState[branchId]?.heads || {},
+                  metadata: {
+                    ...existingBranchState[branchId]?.metadata,
+                    name: name || `Branch ${branchId}`,
+                    parentId,
+                    createdAt: existingBranchState[branchId]?.metadata?.createdAt || createdAt,
+                    lastActive,
+                    preview,
+                  },
+                },
+              },
+            },
+          };
+        });
+
+        const initializeMessages = clonedMessages.length > 0 ? clonedMessages : [];
+        get().setMessages(conversationId, branchId, initializeMessages);
+      },
 
       deleteBranch: (branchId: string) =>
         set((state) => {
@@ -1499,79 +1489,94 @@ export const useChatStore = create<ChatStore>()(
             const response = await unifiedApiClient.getConversation(sessionId, targetBranchId);
             
             if (response.success && response.data?.conversation) {
-              // If backend request was successful
-              const backendMessages = response.data.conversation;
-              
-              // If we already have the conversation object but not this branch
+              const conversationPayload = response.data.conversation as unknown;
+              const rawMessages = Array.isArray(conversationPayload)
+                ? (conversationPayload as Record<string, unknown>[])
+                : [];
+
+              let transformedMessages: Message[] = Array.isArray(conversationPayload)
+                ? (conversationPayload as Message[])
+                : [];
+              try {
+                const { transformBackendMessages } = await import('./messageMeta');
+                const existingMessages = state.getBranchMessages
+                  ? state.getBranchMessages(conversationId, targetBranchId)
+                  : state.conversationMessages[conversationId]?.[targetBranchId] || [];
+                transformedMessages = transformBackendMessages(rawMessages, {
+                  settings: state.settings,
+                  existingMessages,
+                  fallbackModel: state.settings.selectedModel,
+                  fallbackEngine: state.settings.selectedProvider,
+                  conversationId,
+                  branchId: targetBranchId,
+                });
+              } catch (transformError) {
+                if (process.env.NODE_ENV !== 'production') {
+                  console.warn('[STORE] Failed to normalize backend messages', transformError);
+                }
+              }
+
               if (conversation) {
-                // Update just the branch messages in the store
-                set(state => ({
+                set(curr => ({
                   conversationMessages: {
-                    ...state.conversationMessages,
+                    ...curr.conversationMessages,
                     [conversationId]: {
-                      ...(state.conversationMessages[conversationId] || {}),
-                      [targetBranchId]: backendMessages
-                    }
-                  }
+                      ...(curr.conversationMessages[conversationId] || {}),
+                      [targetBranchId]: transformedMessages,
+                    },
+                  },
                 }));
-                
-                // Update the conversation in the store
+
                 set(() => ({
                   currentConversationId: conversationId,
-                  currentBranchId: targetBranchId
+                  currentBranchId: targetBranchId,
                 }));
-                
+
                 return conversation;
-              } else {
-                // No existing conversation, need to create it
-                // Create a new conversation object
-                const now = new Date().toISOString();
-                const newConversation: Conversation = {
-                  id: conversationId,
-                  title: `Conversation ${conversationId}`, // Will be updated with proper title later
-                  messages: [],
-                  createdAt: now,
-                  updatedAt: now
-                };
-                
-                // Add the conversation with messages to the store
-                set(state => ({
-                  conversations: [...state.conversations, newConversation],
-                  conversationMessages: {
-                    ...state.conversationMessages,
-                    [conversationId]: {
-                      [targetBranchId]: backendMessages
-                    }
-                  },
-                  currentConversationId: conversationId,
-                  currentBranchId: targetBranchId
-                }));
-                
-                // Add to session tracking
-                const sessionConversations = [...(state.conversationsBySession[sessionId] || []), conversationId];
-                set(state => ({
-                  conversationsBySession: {
-                    ...state.conversationsBySession,
-                    [sessionId]: sessionConversations
-                  }
-                }));
-                
-                // Use title from first message if possible
-                if (backendMessages.length > 0) {
-                  const firstUserMsg = backendMessages.find(m => m.role === 'user');
-                  if (firstUserMsg) {
-                    // Update title based on first user message
-                    const title = firstUserMsg.content.slice(0, 30) + (firstUserMsg.content.length > 30 ? '...' : '');
-                    set(state => ({
-                      conversations: state.conversations.map(c => 
-                        c.id === conversationId ? { ...c, title } : c
-                      )
-                    }));
-                  }
-                }
-                
-                return newConversation;
               }
+
+              const now = new Date().toISOString();
+              const newConversation: Conversation = {
+                id: conversationId,
+                title: `Conversation ${conversationId}`,
+                messages: [],
+                createdAt: now,
+                updatedAt: now,
+              };
+
+              set(curr => ({
+                conversations: [...curr.conversations, newConversation],
+                conversationMessages: {
+                  ...curr.conversationMessages,
+                  [conversationId]: {
+                    [targetBranchId]: transformedMessages,
+                  },
+                },
+                currentConversationId: conversationId,
+                currentBranchId: targetBranchId,
+              }));
+
+              const sessionConversations = [...(state.conversationsBySession[sessionId] || []), conversationId];
+              set(curr => ({
+                conversationsBySession: {
+                  ...curr.conversationsBySession,
+                  [sessionId]: sessionConversations,
+                },
+              }));
+
+              if (transformedMessages.length > 0) {
+                const firstUserMsg = transformedMessages.find(m => m.role === 'user');
+                if (firstUserMsg) {
+                  const title = firstUserMsg.content.slice(0, 30) + (firstUserMsg.content.length > 30 ? '...' : '');
+                  set(curr => ({
+                    conversations: curr.conversations.map(c =>
+                      c.id === conversationId ? { ...c, title } : c
+                    ),
+                  }));
+                }
+              }
+
+              return newConversation;
             }
           } catch (error) {
             console.error('Error fetching conversation from backend:', error);

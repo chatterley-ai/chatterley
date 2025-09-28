@@ -17,7 +17,7 @@ interface SystemChangeWarningProps {
 
 export default function SystemChangeWarning({ onRebuild, onDismiss }: SystemChangeWarningProps) {
   const [changeInfo, setChangeInfo] = useState<SystemChangeInfo | null>(null);
-  const [systemInfo, setSystemInfo] = useState<any>(null);
+  const [systemInfo, setSystemInfo] = useState<Record<string, unknown> | null>(null);
   const [isVisible, setIsVisible] = useState(false);
   const [isRebuilding, setIsRebuilding] = useState(false);
 
@@ -90,7 +90,7 @@ export default function SystemChangeWarning({ onRebuild, onDismiss }: SystemChan
     parts.push(`${systemInfo.totalRAM || 0}GB RAM`);
     
     if (systemInfo.cudaAvailable && systemInfo.cudaDevices?.length > 0) {
-      const totalVRAM = systemInfo.cudaDevices.reduce((sum: number, device: any) => sum + (device.vram || 0), 0);
+      const totalVRAM = systemInfo.cudaDevices.reduce((sum: number, device: Record<string, unknown>) => sum + (Number(device.vram) || 0), 0);
       parts.push(`CUDA (${systemInfo.cudaDevices.length} GPU${systemInfo.cudaDevices.length > 1 ? 's' : ''}, ${totalVRAM.toFixed(1)}GB VRAM)`);
     } else {
       parts.push('No CUDA');

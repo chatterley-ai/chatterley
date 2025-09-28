@@ -7,7 +7,7 @@
 import React from 'react';
 import { Settings, Thermometer, Hash, Target, RotateCcw, FileText, Zap } from 'lucide-react';
 import { useChatStore } from '@/lib/store';
-import apiClient from '@/lib/unified-api';
+// import apiClient from '@/lib/unified-api'; // Unused import
 
 interface SliderProps {
   label: string;
