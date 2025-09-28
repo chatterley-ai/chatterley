@@ -18,6 +18,7 @@ class RegenHandler:
         self.db = db
 
     async def handle_regen_node_api(self, request: web.Request) -> web.Response:
+        logger.debug("regen_node: request received")
         try:
             data = await request.json()
         except Exception as e:
@@ -35,6 +36,9 @@ class RegenHandler:
         prompt = data.get("prompt")
         history_mode = data.get("history_mode", "last_user")  # last_user | full | none
         is_electron = bool(data.get("electron"))
+        logger.debug(
+            f"regen_node: inputs session={session_id} branch={branch_id} assistant_id={assistant_id} user_message_id={user_message_id} history_mode={history_mode}"
+        )
 
         # Get session
         session = await self.session_manager.get_or_create_session_safe(session_id, self.db)
@@ -98,6 +102,7 @@ class RegenHandler:
                 logger.debug(f"regen_node: fallback resolution failed: {e}")
 
         if not resolved_prompt:
+            logger.debug("regen_node: failed to resolve prompt; target not found")
             return web.json_response({"error": "Unable to resolve prompt for regeneration: target not found"}, status=400)
 
         # IMPORTANT: Do NOT truncate conversation history for regeneration.
@@ -172,6 +177,9 @@ class RegenHandler:
                 convo_msgs.append(Message(role=Role.USER, content=resolved_prompt))
 
         full_conversation = Conversation(messages=convo_msgs)
+        logger.debug(
+            f"regen_node: built visible context with {len(convo_msgs)} messages (visible_end={visible_end}, mode={history_mode})"
+        )
 
         # Choose engine/config respecting /swap
         session_config = session.config
@@ -206,12 +214,14 @@ class RegenHandler:
                 target_msg["content"] = response_content
                 target_msg["timestamp"] = time.time()
                 updated_id = target_msg.get("id")
+                logger.debug(f"regen_node: updated assistant at index {target_assistant_index} (id={updated_id})")
             except Exception:
                 # If update fails unexpectedly, return an error rather than appending
                 return web.json_response({"error": "Failed to update target node"}, status=500)
 
         if updated_id is None:
             # Strict atomic behavior: don't append; require a resolvable target node
+            logger.debug("regen_node: target assistant node not found; aborting")
             return web.json_response({"error": "Target assistant node not found or not resolvable"}, status=400)
 
         # Sync branch snapshot
@@ -250,6 +260,7 @@ class RegenHandler:
                             session.conversation_history[target_assistant_index]["id"] = db_updated_id
                         except Exception:
                             pass
+                    logger.debug(f"regen_node: DB update completed for seq={target_assistant_index} id={new_id}")
                 else:
                     # No specific target in history: append a new assistant message to DB
                     db_id = self.db.append_message_to_branch(
@@ -293,6 +304,7 @@ class RegenHandler:
         except Exception:
             pass
 
+        logger.debug("regen_node: returning success response")
         return web.json_response(
             {
                 "success": True,

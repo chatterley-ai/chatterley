@@ -94,10 +94,17 @@ export default function ChatMessage({ message, isLatest = false, messageIndex }:
         // Apply only the node update locally; do not refresh entire conversation
         const newContent = (resp.data as any)?.assistant?.content as string | undefined;
         if (newContent && currentConversationId) {
-          updateMessage(currentConversationId, currentBranchId || 'main', message.id, {
-            content: newContent,
-            timestamp: Date.now(),
-          });
+          updateMessage(
+            currentConversationId,
+            currentBranchId || 'main',
+            message.id,
+            {
+              content: newContent,
+              timestamp: Date.now(),
+              __commit: true,
+            } as any
+          );
+          try { console.log(`🔄 Regenerated assistant message applied locally: ${message.id}`); } catch {}
         }
       }
     } catch (e) {

@@ -213,10 +213,17 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
       // Apply only the node update locally; do not refresh entire conversation
       const newContent = (resp.data as any)?.assistant?.content as string | undefined;
       if (newContent && currentConversationId && lastAssistant) {
-        updateMessage(currentConversationId, currentBranchId, lastAssistant.id, {
-          content: newContent,
-          timestamp: Date.now(),
-        });
+        updateMessage(
+          currentConversationId,
+          currentBranchId || 'main',
+          lastAssistant.id,
+          {
+            content: newContent,
+            timestamp: Date.now(),
+            __commit: true,
+          } as any
+        );
+        try { console.log(`🔄 Regenerated last assistant message applied locally: ${lastAssistant.id}`); } catch {}
       }
     } catch (e) {
       console.error('regenNode failed:', e);
