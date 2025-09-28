@@ -184,13 +184,8 @@ export default function SystemMonitor({
 
   const hydrateModelStatusFromStorage = React.useCallback(async () => {
     try {
-      const [storedRecord, storedConfigId] = await Promise.all<[
-        (StoredModelTestRecord | null),
-        (string | null)
-      ]>([
-        apiClient.getStorageItem<StoredModelTestRecord | null>('lastSuccessfulModelTest', null),
-        apiClient.getStorageItem<string | null>('selectedConfig', null),
-      ]);
+      const storedRecord = await apiClient.getStorageItem<StoredModelTestRecord | null>('lastSuccessfulModelTest', null);
+      const storedConfigId = await apiClient.getStorageItem<string | null>('selectedConfig', null);
 
       selectedConfigRef.current = (storedConfigId ?? selectedConfigRef.current) as string | null;
 
@@ -328,17 +323,19 @@ export default function SystemMonitor({
       if (!configId) {
         const configsResponse = await apiClient.getConfigs();
         if (configsResponse.success && configsResponse.data?.configs) {
-          const matchingConfig = configsResponse.data.configs.find((config: Record<string, unknown>) => 
-            config.id === name || config.display_name?.includes(name) || name.includes(config.id)
-          );
+          const matchingConfig = configsResponse.data.configs.find((config) => {
+            const configId = String(config.id || '');
+            const displayName = String(config.display_name || '');
+            return configId === name || displayName.includes(name) || name.includes(configId);
+          });
           if (matchingConfig) {
-            configId = matchingConfig.id;
+            configId = null;
           }
         }
       }
 
       if (configId) {
-        selectedConfigRef.current = configId;
+        selectedConfigRef.current = configId || null;
       }
 
       // Now resolve the config ID to an actual file path using UnifiedConfigPathResolver
@@ -454,7 +451,7 @@ export default function SystemMonitor({
             await testModel(name, 'reload-flow');
           }
         } catch {  // Ignore errors
-          console.warn('Reload: failed to re-fetch models before test', e);
+          console.warn('Reload: failed to re-fetch models before test');
         }
         setIsModelActionLoading(false);
       }, 1000);
@@ -498,7 +495,7 @@ export default function SystemMonitor({
             
       if (response.success && response.data) {
         if (useFallback) setUseFallback(false);
-        setStats(response.data);
+        setStats(response.data as SystemStats);
         setError(null);
         trackNetworkRequest(true, responseTime);
       } else {
@@ -614,9 +611,9 @@ export default function SystemMonitor({
           <span className="text-sm font-medium">Local System Snapshot</span>
         </div>
         <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-          <div>Platform: {capabilities.platform}</div>
-          <div>Arch: {capabilities.architecture}</div>
-          <div>Total RAM: {capabilities.totalRAM} GB</div>
+          <div>Platform: {String(capabilities.platform || '')}</div>
+          <div>Arch: {String(capabilities.architecture || '')}</div>
+          <div>Total RAM: {Number(capabilities.totalRAM || 0)} GB</div>
           <div>CUDA: {capabilities.cudaAvailable ? 'Yes' : 'No'}</div>
         </div>
         <div className="text-xs">

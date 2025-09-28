@@ -43,6 +43,29 @@ export default function AppLayout() {
   const { executeCommand, isExecuting } = useConversationCommand();
   const chatInterfaceRef = React.useRef<ChatInterfaceRef | null>(null);
 
+  // Define handleClearConversation early
+  const handleClearConversation = React.useCallback(async () => {
+    if (confirm('Are you sure you want to clear this conversation? This action cannot be undone.')) {
+      try {
+        // Clear messages in the UI immediately for responsiveness
+        clearMessages();
+        
+        // Execute clear command which will refresh conversation and branches
+        const result = await executeCommand('clear', [], COMMAND_CONFIGS.clear);
+        
+        if (!result.success && result.message) {
+          console.error('Failed to clear conversation:', result.message);
+        }
+      } catch (error) {
+        console.error('Error clearing conversation:', error);
+        // Messages were already cleared in UI, so we don't revert that
+      }
+    }
+  }, [clearMessages, executeCommand]);
+
+  const handleClearConversationRef = React.useRef(handleClearConversation);
+  React.useEffect(() => { handleClearConversationRef.current = handleClearConversation; }, [handleClearConversation]);
+
   // Keep latest function references for handlers registered once
   const executeCommandRef = React.useRef(executeCommand);
   React.useEffect(() => { executeCommandRef.current = executeCommand; }, [executeCommand]);
@@ -154,7 +177,11 @@ React.useEffect(() => {
 
       const handleClearConversationMenu = () => {
         console.log('🔧 [AppLayout] Clear Conversation from menu');
-        handleClearConversation();
+        try {
+          handleClearConversationRef.current?.();
+        } catch (error) {
+          console.error('Failed to clear conversation from menu handler:', error);
+        }
       };
 
       const handleNewChat = async () => {
@@ -249,7 +276,7 @@ React.useEffect(() => {
     const cleanup = setupElectronIntegration();
 
     return cleanup;
-  }, [handleClearConversation]);
+  }, []);
 
 
   // Initialize app state from backend on first load
@@ -280,15 +307,27 @@ React.useEffect(() => {
             : 'main';
 
           // Transform backend branches to frontend format
-          const transformedBranches = backendBranches.map((branch: Record<string, unknown>) => ({
-            id: branch.id,
-            name: branch.name,
-            isActive: branch.id === currentBranchFromBackend,
-            messageCount: branch.message_count || 0,
-            createdAt: branch.created_at,
-            lastActive: branch.last_active || branch.created_at,
-            preview: branch.message_count > 0 ? `${branch.message_count} messages` : 'Empty branch'
-          }));
+          interface BackendBranch {
+            id: unknown;
+            name: unknown;
+            message_count?: number;
+            created_at: unknown;
+            last_active?: unknown;
+          }
+          
+          const transformedBranches = backendBranches.map((branch) => {
+            const backendBranch = branch as unknown as BackendBranch;
+            return {
+              id: backendBranch.id,
+              name: backendBranch.name,
+              isActive: backendBranch.id === currentBranchFromBackend,
+              messageCount: typeof backendBranch.message_count === 'number' ? backendBranch.message_count : 0,
+              createdAt: backendBranch.created_at,
+              lastActive: backendBranch.last_active || backendBranch.created_at,
+              preview: typeof backendBranch.message_count === 'number' && backendBranch.message_count > 0 ? 
+                `${backendBranch.message_count} messages` : 'Empty branch'
+            };
+          });
 
           console.log(`📋 Loaded ${transformedBranches.length} branches, current: ${currentBranchFromBackend}`);
           // Note: setBranches is no longer needed since branches are derived on demand
@@ -396,24 +435,7 @@ React.useEffect(() => {
     };
   }, []);
 
-  const handleClearConversation = async () => {
-    if (confirm('Are you sure you want to clear this conversation? This action cannot be undone.')) {
-      try {
-        // Clear messages in the UI immediately for responsiveness
-        clearMessages();
-        
-        // Execute clear command which will refresh conversation and branches
-        const result = await executeCommand('clear', [], COMMAND_CONFIGS.clear);
-        
-        if (!result.success && result.message) {
-          console.error('Failed to clear conversation:', result.message);
-        }
-      } catch (error) {
-        console.error('Error clearing conversation:', error);
-        // Messages were already cleared in UI, so we don't revert that
-      }
-    }
-  };
+  // handleClearConversation moved up for correct declaration order
 
   // Reset history handlers
   const createBackup = async (): Promise<boolean> => {
@@ -462,7 +484,17 @@ React.useEffect(() => {
       
       // Save backup to file
       const filename = `chat-backup-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.json`;
-      const saved = await apiClient.saveConversationToFile(backupData, filename);
+      // Convert backup data to Message[] format expected by saveConversationToFile
+      const saved = await apiClient.saveConversationToFile(
+        [{
+          id: 'backup-metadata',
+          role: 'system',
+          content: JSON.stringify(backupData),
+          timestamp: Date.now(),
+          meta: { backupData: true }
+        }], 
+        filename
+      );
       
       if (saved) {
         setResetProgress(prev => [...prev, `Backup saved successfully to ${filename}`]);

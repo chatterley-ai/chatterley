@@ -228,7 +228,7 @@ export default function WelcomeScreen({ onConfigSelected, systemCapabilities }: 
             if (hasHfCredentials) {
               console.log('Enhancing configs with authenticated HuggingFace metadata...');
               transformedConfigs = await HuggingFaceService.enhanceConfigsWithMetadata(
-                transformedConfigs,
+                transformedConfigs as Record<string, unknown>[],
                 settings.huggingFace as { username: string; token: string }
               );
             }
@@ -237,12 +237,12 @@ export default function WelcomeScreen({ onConfigSelected, systemCapabilities }: 
             logger.debug('WelcomeScreen', 'System capabilities detected', systemCapabilities);
             if (systemCapabilities) {
               logger.info('WelcomeScreen', 'Applying ConfigMatcher recommendations to Electron configs');
-              transformedConfigs = ConfigMatcher.sortConfigsByRecommendation(transformedConfigs, systemCapabilities);
+              transformedConfigs = ConfigMatcher.sortConfigsByRecommendation(transformedConfigs as ConfigOption[], systemCapabilities);
             } else {
               logger.warn('WelcomeScreen', 'No system capabilities available - skipping recommendations');
             }
             
-            setConfigs(transformedConfigs);
+            setConfigs(transformedConfigs as ConfigOption[]);
             return;
           } else {
             throw new Error('Config discovery failed - no configs found');
@@ -263,7 +263,7 @@ export default function WelcomeScreen({ onConfigSelected, systemCapabilities }: 
         if (hasHfCredentials) {
           console.log('Enhancing configs with authenticated HuggingFace metadata...');
           configs = await HuggingFaceService.enhanceConfigsWithMetadata(
-            configs,
+            configs as Record<string, unknown>[],
             settings.huggingFace as { username: string; token: string }
           );
         }
@@ -272,7 +272,7 @@ export default function WelcomeScreen({ onConfigSelected, systemCapabilities }: 
         logger.debug('WelcomeScreen', 'System capabilities for static configs', systemCapabilities);
         if (systemCapabilities) {
           logger.info('WelcomeScreen', 'Applying ConfigMatcher recommendations to static configs');
-          configs = ConfigMatcher.sortConfigsByRecommendation(configs, systemCapabilities);
+          configs = ConfigMatcher.sortConfigsByRecommendation(configs as ConfigOption[], systemCapabilities);
         } else {
           logger.warn('WelcomeScreen', 'No system capabilities available for static configs - skipping recommendations');
         }

@@ -747,7 +747,7 @@ const loadConversationPreview = async (conversationId: string) => {
                               </div>
                               <span className="text-xs text-muted-foreground">{n.messageCount as number} msg</span>
                             </div>
-                            {n.preview && <div className="text-xs text-muted-foreground truncate mt-0.5">{String(n.preview).slice(0, 100)}</div>}
+                            {n.preview ? <div className="text-xs text-muted-foreground truncate mt-0.5">{String(n.preview).slice(0, 100)}</div> : null}
                           </button>
                         ))}
                       </div>
@@ -768,7 +768,7 @@ const loadConversationPreview = async (conversationId: string) => {
                       </div>
                       <span className="text-xs text-muted-foreground">{n.messageCount as number} msg</span>
                     </div>
-                    {n.preview && <div className="text-xs text-muted-foreground truncate mt-0.5">{String(n.preview).slice(0, 100)}</div>}
+                    {n.preview ? <div className="text-xs text-muted-foreground truncate mt-0.5">{String(n.preview).slice(0, 100)}</div> : null}
                   </button>
                 ));
               })()}

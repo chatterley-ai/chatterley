@@ -89,7 +89,7 @@ export default function SystemChangeWarning({ onRebuild, onDismiss }: SystemChan
     parts.push(`${systemInfo.platformVersion || 'Unknown OS'} (${systemInfo.architecture || 'Unknown'})`);
     parts.push(`${systemInfo.totalRAM || 0}GB RAM`);
     
-    if (systemInfo.cudaAvailable && systemInfo.cudaDevices?.length > 0) {
+    if (systemInfo.cudaAvailable && Array.isArray(systemInfo.cudaDevices) && systemInfo.cudaDevices.length > 0) {
       const totalVRAM = systemInfo.cudaDevices.reduce((sum: number, device: Record<string, unknown>) => sum + (Number(device.vram) || 0), 0);
       parts.push(`CUDA (${systemInfo.cudaDevices.length} GPU${systemInfo.cudaDevices.length > 1 ? 's' : ''}, ${totalVRAM.toFixed(1)}GB VRAM)`);
     } else {

@@ -95,7 +95,8 @@ export function useConversationCommand() {
         
         // Transform backend branches to frontend format
         const { getCurrentMessages } = useChatStore.getState();
-        interface ConversationBranch {
+        // Backend API branch structure (different from ConversationBranch type in types.ts)
+interface BackendBranch {
           id: string;
           name: string;
           message_count?: number;
@@ -103,7 +104,7 @@ export function useConversationCommand() {
           last_active?: string;
         }
         
-        const transformedBranches = branches.map((branch: ConversationBranch) => {
+        const transformedBranches = (branches as unknown[] as BackendBranch[]).map((branch) => {
           const isActive = branch.id === current_branch;
           const messageCount = isActive
             ? getCurrentMessages().length

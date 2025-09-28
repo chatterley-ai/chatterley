@@ -118,11 +118,11 @@ async function getCombinedSystemInfo(): Promise<ExtendedSystemInfo | null> {
           ...backendSystemInfo,
           ...browserInfo,
           // Default any missing required properties
-          platform: backendSystemInfo.platform || (browserInfo as unknown as { platform?: string }).platform || 'Unknown',
-          architecture: backendSystemInfo.architecture || 'Unknown',
-          totalRAM: backendSystemInfo.totalRAM || browserInfo.estimatedMemoryGB || 0,
-          cudaAvailable: backendSystemInfo.cudaAvailable || false,
-          cudaDevices: backendSystemInfo.cudaDevices || [] as Array<{vram: number}>,
+          platform: (backendSystemInfo.platform as string) || (browserInfo as { platform?: string }).platform || 'Unknown',
+          architecture: (backendSystemInfo.architecture as string) || 'Unknown',
+          totalRAM: (backendSystemInfo.totalRAM as number) || browserInfo.estimatedMemoryGB || 0,
+          cudaAvailable: (backendSystemInfo.cudaAvailable as boolean) || false,
+          cudaDevices: (backendSystemInfo.cudaDevices as Array<{vram: number}>) || ([] as Array<{vram: number}>),
         };
       }
     }

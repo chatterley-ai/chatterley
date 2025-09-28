@@ -2553,7 +2553,7 @@ setUnifiedApiSessionResolver(() => {
 
 setUnifiedApiStoreStateResolver(() => {
   try {
-    return useChatStore.getState();
+    return useChatStore.getState() as unknown as Record<string, unknown>;
   } catch {
     return undefined;
   }
