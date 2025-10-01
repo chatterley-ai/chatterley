@@ -21,15 +21,17 @@ import {
   HardDrive,
   Zap,
   Image as ImageIcon,
+  Palette,
 } from 'lucide-react';
 import ApiSettings from './ApiSettings';
+import AppearanceSettingsSection from './AppearanceSettings';
 import ModelSettings from './ModelSettings';
 import { useChatStore } from '@/lib/store';
 import { useAutoSave } from '@/hooks/useAutoSave';
 import apiClient from '@/lib/unified-api';
 import { SystemCapabilities } from '@/lib/config-matcher';
 
-type SettingsTab = 'api' | 'model' | 'system' | 'notifications' | 'about';
+type SettingsTab = 'api' | 'model' | 'appearance' | 'system' | 'notifications' | 'about';
 
 interface ExtendedSystemInfo extends SystemCapabilities {
   // Additional browser/frontend detected information
@@ -921,6 +923,12 @@ export default function SettingsScreen() {
       description: 'Configure generation parameters',
     },
     {
+      id: 'appearance',
+      icon: <Palette size={16} />,
+      label: 'Appearance',
+      description: 'Customize theme and typography',
+    },
+    {
       id: 'system',
       icon: <Monitor size={16} />,
       label: 'System',
@@ -946,6 +954,8 @@ export default function SettingsScreen() {
         return <ApiSettings />;
       case 'model':
         return <ModelSettings />;
+      case 'appearance':
+        return <AppearanceSettingsSection />;
       case 'system':
         return <SystemSettings />;
       case 'notifications':

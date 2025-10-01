@@ -10,6 +10,7 @@ import AppLayout from '@/components/layout/AppLayout';
 import DownloadProgressMonitor from '@/components/monitoring/DownloadProgressMonitor';
 import ErrorDialog from '@/components/ui/ErrorDialog';
 import useErrorHandler from '@/hooks/useErrorHandler';
+import useApplyAppearanceSettings from '@/hooks/useApplyAppearanceSettings';
 import { Loader2, AlertTriangle } from 'lucide-react';
 import apiClient from '@/lib/unified-api';
 import { DownloadState, DownloadProgress, DownloadErrorEvent } from '@/lib/types';
@@ -50,6 +51,8 @@ export default function LaunchManager({}: LaunchManagerProps) {
     completedFiles: 0,
     hasError: false
   });
+
+  useApplyAppearanceSettings();
 
   const handleConfigSelected = async (configId: string, systemPrompt?: string) => {
     setSelectedConfig(configId);

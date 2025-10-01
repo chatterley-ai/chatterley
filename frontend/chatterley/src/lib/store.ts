@@ -8,6 +8,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { Message, MessageNode, MessageVersion, MergeRecord, ConversationBranch, Conversation, GenerationParams, AppSettings, ApiKeyConfig, /* ApiProvider, */ ApiUsageStats, Session } from './types';
 import { generateDisplayName } from './nameGen';
+import { DEFAULT_APPEARANCE, normalizeAppearance } from './appearance';
 import apiClient, { setUnifiedApiSessionResolver, setUnifiedApiStoreStateResolver } from './unified-api';
 import { 
   adaptLegacyConversation, 
@@ -223,6 +224,7 @@ export const useChatStore = create<ChatStore>()(
         selectedModel: '',
         usageMonitoring: true,
         autoValidateKeys: true,
+        appearance: { ...DEFAULT_APPEARANCE },
         startNewSessionOnLaunch: true,
         media: {
           resizeImages: true,
@@ -1922,9 +1924,17 @@ export const useChatStore = create<ChatStore>()(
         })),
 
       updateSettings: (updates: Partial<AppSettings>) =>
-        set((state) => ({
-          settings: { ...state.settings, ...updates },
-        })),
+        set((state) => {
+          const { appearance: appearanceUpdates, ...rest } = updates as Partial<AppSettings>;
+          const mergedSettings = { ...state.settings, ...rest } as AppSettings;
+          if (appearanceUpdates) {
+            mergedSettings.appearance = normalizeAppearance({
+              ...state.settings.appearance,
+              ...(appearanceUpdates as Partial<typeof state.settings.appearance>),
+            });
+          }
+          return { settings: mergedSettings };
+        }),
 
       updateUsageStats: (providerId: string, stats: Partial<ApiUsageStats>) =>
         set((state) => {
@@ -2490,6 +2500,12 @@ if (process.env.NODE_ENV === 'development') {
               ...defaultMediaSettings,
               ...state.settings.media,
             };
+          }
+
+          if (!state.settings.appearance) {
+            state.settings.appearance = { ...DEFAULT_APPEARANCE };
+          } else {
+            state.settings.appearance = normalizeAppearance({ ...state.settings.appearance });
           }
         }
 

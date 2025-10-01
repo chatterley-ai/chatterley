@@ -318,12 +318,27 @@ export interface ChatHistory {
 }
 
 // Settings types
+export interface AppearanceSettings {
+  backgroundColor: string;
+  textColor: string;
+  primaryColor: string;
+  cardColor: string;
+  mutedColor: string;
+  borderColor: string;
+  fontFamily: string;
+  textScale: number;
+  lineHeight: number;
+  compactMode: boolean;
+  cornerRadius: number;
+}
+
 export interface AppSettings {
   apiKeys: Record<string, ApiKeyConfig>;
   selectedProvider: string;
   selectedModel: string;
   usageMonitoring: boolean;
   autoValidateKeys: boolean;
+  appearance: AppearanceSettings;
   // When true, the app creates a fresh session on each launch
   startNewSessionOnLaunch: boolean;
   media: {

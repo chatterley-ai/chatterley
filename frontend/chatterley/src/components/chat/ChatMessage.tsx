@@ -246,9 +246,9 @@ export default function ChatMessage({ message, isLatest = false, messageIndex }:
 
   return (
     <div
-      className={`group flex gap-3 px-4 py-6 ${
-        isUser 
-          ? 'bg-muted' 
+      className={`chat-message group flex gap-3 px-4 ${
+        isUser
+          ? 'bg-muted'
           : 'bg-card'
       } ${isLatest ? 'border-b border-blue-200' : ''}`}
     >
