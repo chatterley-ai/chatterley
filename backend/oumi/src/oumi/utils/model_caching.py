@@ -12,7 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
+
+import re
+import shutil
 from pathlib import Path
+from typing import Sequence
 
 from huggingface_hub import hf_hub_download
 
@@ -21,43 +26,65 @@ from oumi.utils.logging import logger
 HUGGINGFACE_CACHE = ".cache/huggingface"
 
 
-def get_local_filepath_for_gguf(
-    repo_id: str, filename: str, cache_dir=HUGGINGFACE_CACHE
-) -> str:
-    """Return a local path for the provided GGUF file, downloading it if necessary.
-
-    Args:
-        repo_id: HuggingFace Hub repo ID (e.g., `bartowski/Llama-3.2-3B-Instruct-GGUF`)
-        filename: HuggingFace Hub filename (e.g., `Llama-3.2-3B-Instruct-Q8_0.gguf`)
-        cache_dir: Local path to cached models. Defaults to `HUGGINGFACE_CACHE`.
-
-    Returns:
-        A local path caching the GGUF file.
-    """
-    # Ensure that the filename corresponds to a `GGUF` file.
+def _download_gguf_part(repo_id: str, filename: str, cache_dir: Path) -> Path:
     if Path(filename).suffix != ".gguf":
         raise ValueError(f"The `filename` provided is not a `.gguf` file: `{filename}`")
-
-    # Ensure the cache directory exists. If not, create it.
-    cache_dir = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
-    gguf_local_file_path = cache_dir / filename
+    part_path = cache_dir / filename
+    if part_path.exists():
+        logger.info(f"Loading GGUF part from cache ({part_path}).")
+        return part_path
+    logger.info(f"Downloading GGUF file `{filename}` from HuggingFace.")
+    try:
+        return Path(
+            hf_hub_download(repo_id=repo_id, filename=filename, local_dir=cache_dir.as_posix())
+        )
+    except Exception:
+        logger.exception(
+            f"Failed to download the GGUF file `{filename}` from HuggingFace Hub repo `{repo_id}`."
+        )
+        raise
 
-    # Check if the file is already cached; if not, download it.
-    if gguf_local_file_path.exists():
-        logger.info(f"Loading GGUF file from cache ({str(gguf_local_file_path)}).")
-        return gguf_local_file_path.absolute().as_posix()
+
+def _assemble_sharded_gguf(repo_id: str, parts: Sequence[str], cache_dir: Path) -> Path:
+    first = Path(parts[0]).name
+    match = re.search(r"-(\d+)-of-(\d+)(\.gguf)$", first)
+    if match:
+        assembled_name = first[: match.start()] + match.group(3)
     else:
-        logger.info(f"Downloading GGUF file `{filename}` from HuggingFace.")
-        try:
-            gguf_local_file_path = Path(
-                hf_hub_download(
-                    repo_id=repo_id, filename=filename, local_dir=cache_dir.as_posix()
-                )
-            )
-        except Exception:
-            logger.exception(
-                f"Failed to download the GGUF file `{filename}` from HuggingFace "
-                f"Hub's repo id `{repo_id}`."
-            )
-        return gguf_local_file_path.absolute().as_posix()
+        assembled_name = first
+    target_path = cache_dir / assembled_name
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    # Skip recomposition if assembled file already exists.
+    if target_path.exists():
+        logger.info(f"Reusing assembled GGUF file ({target_path}).")
+        return target_path
+
+    logger.info(
+        "Assembling sharded GGUF file into %s", target_path
+    )
+    with open(target_path, "wb") as merged:
+        for part_name in parts:
+            part_path = _download_gguf_part(repo_id, part_name, cache_dir)
+            with open(part_path, "rb") as src:
+                shutil.copyfileobj(src, merged)
+
+    return target_path
+
+
+def get_local_filepath_for_gguf(
+    repo_id: str, filename: str | Sequence[str], cache_dir=HUGGINGFACE_CACHE
+) -> str:
+    """Return a local path for the provided GGUF file(s), downloading if needed."""
+
+    cache_path = Path(cache_dir)
+
+    if isinstance(filename, (list, tuple, set)):
+        parts = sorted(str(part) for part in filename)
+        if not parts:
+            raise ValueError("Expected at least one GGUF filename")
+        assembled = _assemble_sharded_gguf(repo_id, parts, cache_path)
+        return assembled.absolute().as_posix()
+
+    part_path = _download_gguf_part(repo_id, str(filename), cache_path)
+    return part_path.absolute().as_posix()

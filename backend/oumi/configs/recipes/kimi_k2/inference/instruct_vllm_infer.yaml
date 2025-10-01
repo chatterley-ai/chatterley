@@ -1,0 +1,21 @@
+# vLLM Inference config for Kimi-K2-Instruct-0905.
+#
+# Requirements:
+#   - Run `pip install oumi[gpu]`
+#
+# Usage:
+#   oumi infer -i -c configs/recipes/kimi_k2/inference/instruct_vllm_infer.yaml
+
+model:
+  model_name: "moonshotai/Kimi-K2-Instruct-0905"
+  model_max_length: 131072
+  torch_dtype_str: "bfloat16"
+  trust_remote_code: True
+  attn_implementation: "sdpa"
+
+generation:
+  max_new_tokens: 4096
+  temperature: 0.7
+  top_p: 0.9
+
+engine: VLLM

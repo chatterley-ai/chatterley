@@ -2,6 +2,7 @@
 
 model:
   model_name: "openai/gpt-oss-20b"
+  model_max_length: 131072
   trust_remote_code: true
 
 remote_params:

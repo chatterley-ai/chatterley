@@ -1,0 +1,35 @@
+# LlamaCPP Inference config for Kimi-K2-Instruct-0905 GGUF (macOS compatible).
+#
+# Requirements:
+#   - Run `pip install oumi[llama_cpp]`
+#
+# Usage:
+#   oumi infer -i -c configs/recipes/kimi_k2/inference/instruct_gguf_macos_infer.yaml
+
+model:
+  model_name: "unsloth/Kimi-K2-Instruct-0905-GGUF"
+  tokenizer_name: "moonshotai/Kimi-K2-Instruct-0905"
+  model_max_length: 131072
+  torch_dtype_str: "float16"
+  trust_remote_code: True
+  model_kwargs:
+    filenames:
+      - "Kimi-K2-Instruct-0905-UD-Q3_K_XL-00001-of-00010.gguf"
+      - "Kimi-K2-Instruct-0905-UD-Q3_K_XL-00002-of-00010.gguf"
+      - "Kimi-K2-Instruct-0905-UD-Q3_K_XL-00003-of-00010.gguf"
+      - "Kimi-K2-Instruct-0905-UD-Q3_K_XL-00004-of-00010.gguf"
+      - "Kimi-K2-Instruct-0905-UD-Q3_K_XL-00005-of-00010.gguf"
+      - "Kimi-K2-Instruct-0905-UD-Q3_K_XL-00006-of-00010.gguf"
+      - "Kimi-K2-Instruct-0905-UD-Q3_K_XL-00007-of-00010.gguf"
+      - "Kimi-K2-Instruct-0905-UD-Q3_K_XL-00008-of-00010.gguf"
+      - "Kimi-K2-Instruct-0905-UD-Q3_K_XL-00009-of-00010.gguf"
+      - "Kimi-K2-Instruct-0905-UD-Q3_K_XL-00010-of-00010.gguf"
+    n_gpu_layers: -1
+    flash_attn: True
+
+generation:
+  max_new_tokens: 2048
+  temperature: 0.7
+  top_p: 0.9
+
+engine: LLAMACPP

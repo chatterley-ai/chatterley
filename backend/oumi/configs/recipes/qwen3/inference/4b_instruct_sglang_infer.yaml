@@ -2,6 +2,7 @@
 
 model:
   model_name: "Qwen/Qwen3-4B-Instruct-2507"
+  model_max_length: 131072
   trust_remote_code: true
 
 remote_params:

@@ -1,0 +1,22 @@
+# Inference config for DeepSeek-V3.2-Exp.
+#
+# Usage:
+#   oumi infer -i -c configs/recipes/deepseek_r1/inference/v3_2_exp_infer.yaml
+#
+# See Also:
+#   - Documentation: https://oumi.ai/docs/en/latest/user_guides/infer/infer.html
+#   - Config class: oumi.core.configs.InferenceConfig
+#   - Config source: https://github.com/oumi-ai/oumi/blob/main/src/oumi/core/configs/inference_config.py
+#   - Other inference configs: configs/**/inference/
+
+model:
+  model_name: "deepseek-ai/DeepSeek-V3.2-Exp"
+  model_max_length: 131072
+  torch_dtype_str: "bfloat16"
+  attn_implementation: "sdpa"
+  trust_remote_code: True
+
+generation:
+  max_new_tokens: 2048
+
+engine: NATIVE

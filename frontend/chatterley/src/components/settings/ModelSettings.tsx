@@ -19,6 +19,8 @@ interface SliderProps {
   description?: string;
   icon?: React.ReactNode;
   formatValue?: (value: number) => string;
+  ticks?: number[];            // Optional tick marks to show on the slider
+  snapToTicks?: boolean;       // When true, value snaps to nearest tick
 }
 
 const Slider: React.FC<SliderProps> = ({
@@ -31,9 +33,25 @@ const Slider: React.FC<SliderProps> = ({
   description,
   icon,
   formatValue = (v) => v.toString(),
+  ticks,
+  snapToTicks = false,
 }) => {
+  const idSafe = label.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    onChange(parseFloat(e.target.value));
+    const raw = parseFloat(e.target.value);
+    if (snapToTicks && ticks && ticks.length > 0) {
+      // Snap to nearest tick value
+      const snapped = ticks.reduce((prev, curr) => {
+        return Math.abs(curr - raw) < Math.abs(prev - raw) ? curr : prev;
+      }, ticks[0]);
+      onChange(snapped);
+      return;
+    }
+    // Default behavior: round to nearest step increment to avoid float drift
+    const precision = step < 1 ? Math.ceil(Math.abs(Math.log10(step))) : 0;
+    const rounded = parseFloat(raw.toFixed(precision));
+    onChange(rounded);
   };
 
   const percentage = ((value - min) / (max - min)) * 100;
@@ -65,11 +83,19 @@ const Slider: React.FC<SliderProps> = ({
           step={step}
           value={value}
           onChange={handleChange}
+          list={ticks && ticks.length ? `${idSafe}-ticks` : undefined}
           className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer slider"
           style={{
             background: `linear-gradient(to right, hsl(var(--primary)) 0%, hsl(var(--primary)) ${percentage}%, hsl(var(--muted)) ${percentage}%, hsl(var(--muted)) 100%)`
           }}
         />
+        {ticks && ticks.length > 0 && (
+          <datalist id={`${idSafe}-ticks`}>
+            {ticks.map((t) => (
+              <option key={t} value={t} />
+            ))}
+          </datalist>
+        )}
         <div className="flex justify-between text-xs text-muted-foreground mt-1">
           <span>{formatValue(min)}</span>
           <span>{formatValue(max)}</span>
@@ -131,19 +157,22 @@ export default function ModelSettings({ className = '' }: ModelSettingsProps) {
           description="Controls randomness in responses"
           icon={<Thermometer size={14} />}
           formatValue={(v) => v.toFixed(1)}
+          ticks={Array.from({ length: 21 }, (_, i) => parseFloat((i * 0.1).toFixed(1)))}
         />
 
         {/* Max Tokens Slider */}
         <Slider
           label="Max Tokens"
           value={generationParams.maxTokens ?? 2048}
-          min={1}
+          min={64}
           max={8192}
-          step={32}
+          step={64}
           onChange={(value) => updateGenerationParam('maxTokens', Math.round(value))}
           description="Maximum length of response"
           icon={<Hash size={14} />}
           formatValue={(v) => Math.round(v).toLocaleString()}
+          ticks={[64,128,256,512,1024,2048,4096,8192]}
+          snapToTicks
         />
 
         {/* Top-p Slider */}
@@ -157,6 +186,7 @@ export default function ModelSettings({ className = '' }: ModelSettingsProps) {
           description="Controls diversity of token selection"
           icon={<Target size={14} />}
           formatValue={(v) => v.toFixed(2)}
+          ticks={Array.from({ length: 21 }, (_, i) => parseFloat((i * 0.05).toFixed(2)))}
         />
 
         {/* Context Length Slider */}
@@ -170,6 +200,8 @@ export default function ModelSettings({ className = '' }: ModelSettingsProps) {
           description="Maximum tokens the model can process (input + output)"
           icon={<FileText size={14} />}
           formatValue={(v) => Math.round(v).toLocaleString() + ' tokens'}
+          ticks={[512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072]}
+          snapToTicks
         />
 
         {/* Streaming Toggle */}

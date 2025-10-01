@@ -15,7 +15,7 @@
 model:
   model_name: "unsloth/Qwen3-8B-GGUF"
   tokenizer_name: "Qwen/Qwen3-8B"
-  model_max_length: 32768
+  model_max_length: 131072
   torch_dtype_str: "float16"
   trust_remote_code: True
   attn_implementation: "sdpa"

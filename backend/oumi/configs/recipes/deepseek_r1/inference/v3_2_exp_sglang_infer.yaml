@@ -1,0 +1,11 @@
+# SGLang Inference config for DeepSeek-V3.2-Exp.
+
+model:
+  model_name: "deepseek-ai/DeepSeek-V3.2-Exp"
+  model_max_length: 131072
+  trust_remote_code: true
+
+remote_params:
+  api_url: "http://127.0.0.1:6864/generate"
+
+engine: SGLANG

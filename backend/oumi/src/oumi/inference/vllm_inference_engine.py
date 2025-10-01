@@ -112,6 +112,8 @@ class VLLMInferenceEngine(BaseInferenceEngine):
             )
 
         # Infer the `quantization` type from the model's kwargs.
+        gguf_source: str | list[str] | None = None
+        gguf_filename: str | None = None
         if model_params.model_kwargs:
             if not quantization:
                 # Check if quantization is BitsAndBytes.
@@ -130,11 +132,27 @@ class VLLMInferenceEngine(BaseInferenceEngine):
                         and quant_config.get("quant_method") == "mxfp4"
                     ):
                         quantization = "mxfp4"
+            if not quantization and model_params.model_kwargs.get("filenames"):
+                filenames = model_params.model_kwargs.get("filenames")
+                if isinstance(filenames, (list, tuple)):
+                    gguf_source = [str(name) for name in filenames]
+                else:
+                    gguf_source = [str(filenames)]
+                quantization = "gguf"
+                if (
+                    not model_params.tokenizer_name
+                    or model_params.tokenizer_name == model_params.model_name
+                ):
+                    raise ValueError(
+                        "GGUF quantization with the VLLM engine requires that you "
+                        "explicitly set the `tokenizer_name` in `model_params`."
+                    )
             if not quantization and model_params.model_kwargs.get("filename"):
                 # Check if quantization is GGUF.
                 gguf_filename = str(model_params.model_kwargs.get("filename"))
                 if gguf_filename.lower().endswith(".gguf"):
                     quantization = "gguf"
+                    gguf_source = gguf_filename
                     if (
                         not model_params.tokenizer_name
                         or model_params.tokenizer_name == model_params.model_name
@@ -160,9 +178,12 @@ class VLLMInferenceEngine(BaseInferenceEngine):
             logger.info("VLLM engine loading a `MXFP4` quantized model.")
         elif quantization and quantization == "gguf":
             # Download the GGUF file from HuggingFace to a local cache.
+            gguf_input = gguf_source if gguf_source is not None else gguf_filename
+            if gguf_input is None:
+                raise ValueError("GGUF quantization requested but no filename(s) provided")
             gguf_local_path = get_local_filepath_for_gguf(
                 repo_id=model_params.model_name,
-                filename=gguf_filename,
+                filename=gguf_input,
             )
             # Overwrite `model_name` with the locally cached GGUF model.
             model_params = copy.deepcopy(model_params)

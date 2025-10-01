@@ -143,6 +143,50 @@ export class PythonServerManager {
     }
   }
 
+  /** Install FlashAttention 2 (attempt) */
+  public async installFlashAttention2(): Promise<{ success: boolean; message: string }> {
+    try {
+      await this.ensurePythonEnvironment();
+      if (this.setupProgressCallback) {
+        this.envManager.setProgressCallback(this.setupProgressCallback);
+      }
+      await this.envManager.installFlashAttention2();
+      return { success: true, message: 'FlashAttention 2 installation attempted' };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      log.error('[PythonServerManager] Failed to install FlashAttention 2:', msg);
+      return { success: false, message: msg };
+    }
+  }
+
+  /** Install flashinfer (attempt) */
+  public async installFlashInfer(): Promise<{ success: boolean; message: string }> {
+    try {
+      await this.ensurePythonEnvironment();
+      if (this.setupProgressCallback) {
+        this.envManager.setProgressCallback(this.setupProgressCallback);
+      }
+      await this.envManager.installFlashInfer();
+      return { success: true, message: 'flashinfer installation attempted' };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      log.error('[PythonServerManager] Failed to install flashinfer:', msg);
+      return { success: false, message: msg };
+    }
+  }
+
+  /** Return which optional backends are installed */
+  public async getInstalledBackends(): Promise<{ sglang: boolean; vllm: boolean; llamacpp: boolean }> {
+    try {
+      await this.ensurePythonEnvironment();
+      const installed = await this.envManager.getInstalledBackends();
+      return installed;
+    } catch (error) {
+      log.warn('[PythonServerManager] getInstalledBackends failed; assuming none installed:', error);
+      return { sglang: false, vllm: false, llamacpp: false };
+    }
+  }
+
   /**
    * Stop the Python backend server
    */

@@ -15,7 +15,7 @@
 model:
   model_name: "ibm-granite/granite-3.3-8b-instruct-GGUF"
   tokenizer_name: "ibm-granite/granite-3.3-8b-instruct"
-  model_max_length: 8192
+  model_max_length: 131072
   torch_dtype_str: "float16"
   trust_remote_code: True
   model_kwargs:

@@ -11,5 +11,6 @@
 
 model:
   model_name: "openai/gpt-oss-120b"
+  model_max_length: 131072
 
 engine: TOGETHER

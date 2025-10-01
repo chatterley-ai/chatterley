@@ -95,6 +95,7 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
   const [currentModelConfigMetadata, setCurrentModelConfigMetadata] = React.useState<ModelConfigMetadata | null>(null);
   const dropdownRef = React.useRef<HTMLDivElement>(null);
   const searchInputRef = React.useRef<HTMLInputElement>(null);
+  const [installedBackends, setInstalledBackends] = React.useState<{ sglang: boolean; vllm: boolean; llamacpp: boolean } | null>(null);
 
   // Load current model and available configs on mount
   React.useEffect(() => {
@@ -177,6 +178,31 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
       searchInputRef.current.focus();
     }
   }, [isDropdownOpen]);
+
+  // Determine which optional backends are installed (Electron only)
+  React.useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        if (apiClient.isElectronApp()) {
+          const installed = await apiClient.getInstalledBackends();
+          if (mounted) setInstalledBackends(installed);
+        }
+      } catch {
+        if (mounted) setInstalledBackends(null);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
+
+  const isEngineAvailable = (engine: string): boolean => {
+    const e = (engine || '').toLowerCase();
+    if (!apiClient.isElectronApp() || !installedBackends) return true; // allow if web or not yet known
+    if (e === 'sglang') return !!installedBackends.sglang;
+    if (e === 'vllm') return !!installedBackends.vllm;
+    if (e === 'llamacpp') return !!installedBackends.llamacpp;
+    return true;
+  };
 
   // Filter configs based on search term
   const filteredConfigs = React.useMemo(() => {
@@ -533,11 +559,15 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
                         {getFamilyIcon(family)} {family} Models
                       </div>
                       <div className="space-y-1">
-                        {configs.map((config) => (
+                        {configs.map((config) => {
+                          const enabled = isEngineAvailable(config.engine);
+                          return (
                           <button
                             key={config.id}
-                            onClick={() => handleModelSwitch(config.config_path)}
-                            className="w-full flex items-center justify-between p-2 hover:bg-muted rounded text-left transition-colors"
+                            onClick={() => enabled && handleModelSwitch(config.config_path)}
+                            disabled={!enabled}
+                            title={enabled ? undefined : `Install ${config.engine} in Settings to enable`}
+                            className={`w-full flex items-center justify-between p-2 rounded text-left transition-colors ${enabled ? 'hover:bg-muted' : 'opacity-50 cursor-not-allowed'}`}
                           >
                             <div className="flex items-center gap-3 flex-1">
                               <div className="flex-1">
@@ -561,7 +591,7 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
                               )}
                             </div>
                           </button>
-                        ))}
+                        )})}
                       </div>
                     </div>
                     ))

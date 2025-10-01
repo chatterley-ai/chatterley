@@ -14,6 +14,7 @@
 
 model:
   model_name: "deepseek-ai/DeepSeek-R1"
+  model_max_length: 131072
 
 generation:
   max_new_tokens: 2048

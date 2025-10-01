@@ -143,6 +143,8 @@ export interface ElectronAPI {
     getEnvironmentSystemInfo: () => Promise<any>;
     getBasicSystemInfo: () => Promise<any>;
     installSGLang: () => Promise<{ success: boolean; message: string }>;
+    installFlashAttn2: () => Promise<{ success: boolean; message: string }>;
+    installFlashInfer: () => Promise<{ success: boolean; message: string }>;
     onSetupProgress: (callback: (progress: any) => void) => void;
     offSetupProgress: (callback: (progress: any) => void) => void;
     onSetupError: (callback: (error: string) => void) => void;
@@ -332,6 +334,9 @@ const electronAPI: ElectronAPI = {
     getEnvironmentSystemInfo: () => ipcRenderer.invoke('python:get-environment-system-info'),
     getBasicSystemInfo: () => ipcRenderer.invoke('python:get-basic-system-info'),
     installSGLang: () => ipcRenderer.invoke('python:install-sglang'),
+    installFlashAttn2: () => ipcRenderer.invoke('python:install-flash-attn2'),
+    installFlashInfer: () => ipcRenderer.invoke('python:install-flash-infer'),
+    getInstalledBackends: () => ipcRenderer.invoke('python:get-installed-backends'),
     onSetupProgress: (callback: (progress: any) => void) => {
       const wrappedCallback = (_: IpcRendererEvent, progress: any) => callback(progress);
       ipcRenderer.on('python:setup-progress', wrappedCallback);

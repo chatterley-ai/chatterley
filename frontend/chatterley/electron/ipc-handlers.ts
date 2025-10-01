@@ -723,6 +723,40 @@ function setupPythonEnvironmentHandlers(pythonManager: PythonServerManager): voi
     }
   });
 
+  // Install FlashAttention 2 (attempt)
+  ipcMain.handle('python:install-flash-attn2', async () => {
+    try {
+      log.info('Installing FlashAttention 2 via IPC');
+      const result = await pythonManager.installFlashAttention2();
+      return result;
+    } catch (error) {
+      log.error('Failed to install FlashAttention 2:', error);
+      return { success: false, message: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  });
+
+  // Install flashinfer (attempt)
+  ipcMain.handle('python:install-flash-infer', async () => {
+    try {
+      log.info('Installing flashinfer via IPC');
+      const result = await pythonManager.installFlashInfer();
+      return result;
+    } catch (error) {
+      log.error('Failed to install flashinfer:', error);
+      return { success: false, message: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  });
+
+  // Query installed optional backends
+  ipcMain.handle('python:get-installed-backends', async () => {
+    try {
+      return await pythonManager.getInstalledBackends();
+    } catch (error) {
+      log.error('Failed to get installed backends:', error);
+      return { sglang: false, vllm: false, llamacpp: false };
+    }
+  });
+
   // Get user data path
   ipcMain.handle('python:get-user-data-path', async () => {
     try {

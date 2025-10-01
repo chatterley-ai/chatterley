@@ -7,7 +7,6 @@
 import React from 'react';
 import { PanelLeft, PanelLeftClose, ChevronDown, ChevronRight } from 'lucide-react';
 import SystemMonitor from '@/components/monitoring/SystemMonitor';
-import ModelSettings from '@/components/settings/ModelSettings';
 import ModelSwitcher from '@/components/settings/ModelSwitcher';
 import DiffusionWorkbench from '@/components/diffusion/DiffusionWorkbench';
 
@@ -17,7 +16,7 @@ interface ControlPanelProps {
   onToggleCollapse?: () => void;
 }
 
-type SectionKey = 'systemStats' | 'modelSwitcher' | 'modelSettings' | 'diffusionWorkbench';
+type SectionKey = 'systemStats' | 'modelSwitcher' | 'diffusionWorkbench';
 
 type SectionConfig = {
   key: SectionKey;
@@ -47,13 +46,6 @@ export default function ControlPanel({
         indicatorClass: 'bg-blue-500',
         defaultOpen: false,
         render: () => <ModelSwitcher />
-      },
-      {
-        key: 'modelSettings',
-        title: 'Model Settings',
-        indicatorClass: 'bg-purple-500',
-        defaultOpen: false,
-        render: () => <ModelSettings />
       },
       {
         key: 'diffusionWorkbench',

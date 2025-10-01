@@ -97,6 +97,7 @@ export default function WelcomeScreen({ onConfigSelected, systemCapabilities }: 
     completedFiles: 0,
     hasError: false
   });
+  const [installedBackends, setInstalledBackends] = React.useState<{ sglang: boolean; vllm: boolean; llamacpp: boolean } | null>(null);
   // Keep a live ref of download state for async waits
   const downloadStateRef = React.useRef<DownloadState>(downloadState);
   React.useEffect(() => {
@@ -138,6 +139,22 @@ export default function WelcomeScreen({ onConfigSelected, systemCapabilities }: 
         resolve();
       }, maxWaitMs);
     });
+  }, []);
+
+  // Detect installed backends (Electron only)
+  React.useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        if (apiClient.isElectronApp()) {
+          const installed = await apiClient.getInstalledBackends();
+          if (mounted) setInstalledBackends(installed);
+        }
+      } catch {
+        if (mounted) setInstalledBackends(null);
+      }
+    })();
+    return () => { mounted = false; };
   }, []);
 
   // Python environment setup state
@@ -1074,16 +1091,23 @@ export default function WelcomeScreen({ onConfigSelected, systemCapabilities }: 
               {/* Model Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {filteredConfigs.map((config) => {
+                  const engine = (config.engine || '').toLowerCase();
+                  const enabled = !apiClient.isElectronApp() || !installedBackends ? true : (
+                    engine === 'sglang' ? !!installedBackends.sglang :
+                    engine === 'vllm' ? !!installedBackends.vllm :
+                    engine === 'llamacpp' ? !!installedBackends.llamacpp : true
+                  );
                   const isRecommended = config.recommendation?.goodMatch;
                   return (
                   <div 
                     key={config.id}
-                    className={`rounded-lg shadow-lg p-6 hover:shadow-xl transition-shadow cursor-pointer relative ${
+                    className={`rounded-lg shadow-lg p-6 transition-shadow relative ${
                       isRecommended 
                         ? 'bg-blue-900/20 dark:bg-blue-900/30 border border-blue-500/30' 
                         : 'bg-card'
-                    }`}
-                    onClick={() => handleConfigSelect(config.id)}
+                    } ${enabled ? 'hover:shadow-xl cursor-pointer' : 'opacity-50 cursor-not-allowed'}`}
+                    onClick={() => enabled && handleConfigSelect(config.id)}
+                    title={enabled ? undefined : `Install ${config.engine} in Settings to enable`}
                   >
                     {/* Recommendation badges */}
                     <div className="absolute top-2 right-2 flex gap-1">

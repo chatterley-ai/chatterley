@@ -1233,6 +1233,24 @@ class UnifiedApiClient {
     }
   }
 
+  // Attempt to install FlashAttention 2 (Electron only)
+  async installFlashAttention2(): Promise<{ success: boolean; message: string }> {
+    if (this.isElectron()) {
+      return this.electronClient.installFlashAttention2();
+    } else {
+      return { success: false, message: 'FlashAttention 2 install not available in web version' };
+    }
+  }
+
+  // Attempt to install flashinfer (Electron only)
+  async installFlashInfer(): Promise<{ success: boolean; message: string }> {
+    if (this.isElectron()) {
+      return this.electronClient.installFlashInfer();
+    } else {
+      return { success: false, message: 'flashinfer install not available in web version' };
+    }
+  }
+
   async getSystemChangeInfo(): Promise<{ hasChanged: boolean; changes: string[]; shouldRebuild: boolean } | null> {
     if (this.isElectron()) {
       return this.electronClient.getSystemChangeInfo();
@@ -1257,6 +1275,14 @@ class UnifiedApiClient {
       return this.electronClient.getSystemInfo();
     } else {
       return null;
+    }
+  }
+
+  async getInstalledBackends(): Promise<{ sglang: boolean; vllm: boolean; llamacpp: boolean }> {
+    if (this.isElectron()) {
+      return this.electronClient.getInstalledBackends();
+    } else {
+      return { sglang: false, vllm: false, llamacpp: false };
     }
   }
 

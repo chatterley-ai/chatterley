@@ -14,7 +14,7 @@
 
 model:
   model_name: "ibm-granite/granite-3.3-8b-instruct"
-  model_max_length: 8192
+  model_max_length: 131072
   torch_dtype_str: "bfloat16"
   attn_implementation: "sdpa"
   trust_remote_code: True

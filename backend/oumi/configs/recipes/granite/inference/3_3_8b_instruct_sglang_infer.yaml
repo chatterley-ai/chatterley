@@ -2,6 +2,7 @@
 
 model:
   model_name: "ibm-granite/granite-3.3-8b-instruct"
+  model_max_length: 131072
   trust_remote_code: true
 
 remote_params:

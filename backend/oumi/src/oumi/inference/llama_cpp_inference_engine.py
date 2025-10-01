@@ -23,6 +23,7 @@ from oumi.core.configs import GenerationParams, InferenceConfig, ModelParams
 from oumi.core.inference import BaseInferenceEngine
 from oumi.core.types.conversation import Conversation, Message, Role
 from oumi.utils.logging import logger
+from oumi.utils.model_caching import get_local_filepath_for_gguf
 
 try:
     from llama_cpp import Llama  # pyright: ignore[reportMissingImports]
@@ -133,8 +134,40 @@ class LlamaCppInferenceEngine(BaseInferenceEngine):
         model_kwargs = model_params.model_kwargs.copy()
         kwargs.update(model_kwargs)
 
+        local_model_path: Path | None = None
+        filenames = kwargs.pop("filenames", None)
+        if filenames:
+            if isinstance(filenames, (list, tuple)):
+                files_arg = [str(name) for name in filenames]
+            else:
+                files_arg = [str(filenames)]
+            local_model_path = Path(
+                get_local_filepath_for_gguf(
+                    repo_id=model_params.model_name,
+                    filename=files_arg,
+                )
+            )
+            kwargs.pop("filename", None)
+        elif kwargs.get("filename"):
+            filename_value = str(kwargs["filename"])
+            if filename_value.endswith(".gguf") and "*" not in filename_value:
+                local_model_path = Path(
+                    get_local_filepath_for_gguf(
+                        repo_id=model_params.model_name,
+                        filename=filename_value,
+                    )
+                )
+                kwargs.pop("filename", None)
+
         # Load model
-        if Path(model_params.model_name).exists():
+        if local_model_path and local_model_path.exists():
+            logger.info(f"Loading model from assembled GGUF: {local_model_path}.")
+            self._llm = Llama(
+                model_path=local_model_path.as_posix(),
+                n_ctx=model_max_length,
+                **kwargs,
+            )
+        elif Path(model_params.model_name).exists():
             logger.info(f"Loading model from disk: {model_params.model_name}.")
             kwargs.pop("filename", None)  # only needed if downloading from hub
             self._llm = Llama(

@@ -1,0 +1,36 @@
+# LlamaCPP Inference config for GLM-4.6 GGUF (macOS compatible).
+#
+# Requirements:
+#   - Run `pip install oumi[llama_cpp]`
+#
+# Usage:
+#   # 1. Download the GGUF file to current working directory:
+#   # hf download [GGUF_REPO] [GGUF_FILENAME] --local-dir .
+#   #
+#   # 2. Run inference:
+#   oumi infer -i -c configs/recipes/glm4/inference/glm46_gguf_macos_infer.yaml
+#
+# See Also:
+#   - Documentation: https://oumi.ai/docs/en/latest/user_guides/infer/infer.html
+#   - Config class: oumi.core.configs.InferenceConfig
+#   - Config source: https://github.com/oumi-ai/oumi/blob/main/src/oumi/core/configs/inference_config.py
+#   - Other inference configs: configs/**/inference/
+#
+# Note: This is a placeholder config. GGUF version for GLM-4.6 is not available yet.
+# Update this file when GGUF versions become available.
+
+model:
+  model_name: "zai-org/GLM-4.6"  # Update with GGUF repo when available
+  tokenizer_name: "zai-org/GLM-4.6"  # May need adjustment based on GGUF implementation
+  model_max_length: 131072
+  torch_dtype_str: "float16"
+  trust_remote_code: True
+  model_kwargs:
+    filename: "GLM-4.6-Q2_K_XL.gguf"  # Update with actual filename when available
+
+generation:
+  max_new_tokens: 4096
+  temperature: 0.7
+  top_p: 0.9
+
+engine: LLAMACPP

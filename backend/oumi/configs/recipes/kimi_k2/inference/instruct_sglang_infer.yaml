@@ -1,0 +1,16 @@
+# SGLang Inference config for Kimi-K2-Instruct-0905.
+#
+# Requirements:
+#   - Install and run an SGLang server (https://docs.sglang.ai/start/install.html)
+#
+# Usage:
+#   oumi infer -i -c configs/recipes/kimi_k2/inference/instruct_sglang_infer.yaml
+
+model:
+  model_name: "moonshotai/Kimi-K2-Instruct-0905"
+  trust_remote_code: True
+
+remote_params:
+  api_url: "http://127.0.0.1:6864/generate"
+
+engine: SGLANG

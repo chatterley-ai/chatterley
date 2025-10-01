@@ -2,6 +2,7 @@
 
 model:
   model_name: "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B"
+  model_max_length: 131072
   trust_remote_code: true
 
 remote_params:

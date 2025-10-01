@@ -222,6 +222,31 @@ function SystemSettings() {
     });
   };
 
+  // Optional installs state
+  const [installing, setInstalling] = useState<{ sglang?: boolean; flashattn2?: boolean; flashinfer?: boolean }>({});
+  const [installMsg, setInstallMsg] = useState<string | null>(null);
+  const platformInfo = apiClient.getPlatform();
+
+  const handleInstall = async (kind: 'sglang' | 'flashattn2' | 'flashinfer') => {
+    try {
+      setInstalling(prev => ({ ...prev, [kind]: true }));
+      let result: { success: boolean; message: string } = { success: false, message: '' };
+      if (kind === 'sglang') {
+        result = await apiClient.installSGLangBackend();
+      } else if (kind === 'flashattn2') {
+        result = await apiClient.installFlashAttention2();
+      } else {
+        result = await apiClient.installFlashInfer();
+      }
+      setInstallMsg(result.message || (result.success ? 'Install completed' : 'Install failed'));
+    } catch (e) {
+      setInstallMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setInstalling(prev => ({ ...prev, [kind]: false }));
+      setTimeout(() => setInstallMsg(null), 5000);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Profile */}
@@ -574,6 +599,63 @@ function NotificationSettings() {
           </div>
           <input type="checkbox" defaultChecked className="rounded" disabled />
         </label>
+      </div>
+
+      {/* Optional Installs */}
+      <div className="bg-card border rounded-lg p-4 space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold">Optional Installs (Advanced)</h3>
+          {installMsg && <div className="text-xs text-muted-foreground">{installMsg}</div>}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          These packages can enable faster inference on supported hardware. Installs occur inside Chatterley’s managed Python environment and may fail on unsupported systems.
+        </p>
+
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="font-medium text-sm">SGLang</div>
+              <div className="text-xs text-muted-foreground">High‑performance server/runtime for LLM inference</div>
+            </div>
+            <button
+              className="px-3 py-1 text-sm rounded bg-primary text-primary-foreground disabled:opacity-50"
+              disabled={!!installing.sglang}
+              onClick={() => handleInstall('sglang')}
+            >
+              {installing.sglang ? 'Installing…' : 'Install'}
+            </button>
+          </div>
+
+          {platformInfo.os === 'linux' && (
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="font-medium text-sm">FlashAttention 2</div>
+                <div className="text-xs text-muted-foreground">Optimized attention kernels (CUDA-only, Linux)</div>
+              </div>
+              <button
+                className="px-3 py-1 text-sm rounded bg-primary text-primary-foreground disabled:opacity-50"
+                disabled={!!installing.flashattn2}
+                onClick={() => handleInstall('flashattn2')}
+              >
+                {installing.flashattn2 ? 'Installing…' : 'Install'}
+              </button>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="font-medium text-sm">flashinfer</div>
+              <div className="text-xs text-muted-foreground">Fast decoding primitives (GPU-accelerated, limited platforms)</div>
+            </div>
+            <button
+              className="px-3 py-1 text-sm rounded bg-primary text-primary-foreground disabled:opacity-50"
+              disabled={!!installing.flashinfer}
+              onClick={() => handleInstall('flashinfer')}
+            >
+              {installing.flashinfer ? 'Installing…' : 'Install'}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

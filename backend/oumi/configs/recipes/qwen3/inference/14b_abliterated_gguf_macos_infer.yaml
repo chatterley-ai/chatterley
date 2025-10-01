@@ -15,7 +15,7 @@
 model:
   model_name: "bartowski/mlabonne_Qwen3-14B-abliterated-GGUF"
   tokenizer_name: "mlabonne/Qwen3-14B-abliterated"
-  model_max_length: 32768
+  model_max_length: 131072
   torch_dtype_str: "float16"
   trust_remote_code: True
   model_kwargs:

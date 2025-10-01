@@ -843,6 +843,38 @@ export class PythonEnvironmentManager {
   }
 
   /**
+   * Query which backends are installed inside the managed environment
+   */
+  public async getInstalledBackends(): Promise<{ sglang: boolean; vllm: boolean; llamacpp: boolean }> {
+    const envInfo = await this.checkEnvironment();
+    const result = { sglang: false, vllm: false, llamacpp: false };
+
+    if (!envInfo.isValid || !envInfo.pythonPath) {
+      return result;
+    }
+
+    return await new Promise((resolve) => {
+      const code = `import json, importlib.util as u;\nprint(json.dumps({\n  'sglang': bool(u.find_spec('sglang')),\n  'vllm': bool(u.find_spec('vllm')),\n  'llamacpp': bool(u.find_spec('llama_cpp'))\n}))`;
+      const p = spawn(envInfo.pythonPath, ['-c', code], { stdio: 'pipe' });
+      let out = '';
+      p.stdout?.on('data', (d) => out += String(d));
+      p.on('close', () => {
+        try {
+          const parsed = JSON.parse(out.trim());
+          resolve({
+            sglang: !!parsed.sglang,
+            vllm: !!parsed.vllm,
+            llamacpp: !!parsed.llamacpp
+          });
+        } catch {
+          resolve(result);
+        }
+      });
+      p.on('error', () => resolve(result));
+    });
+  }
+
+  /**
    * Force rebuild the Python environment
    * This will delete the existing environment and recreate it from scratch
    */
@@ -958,6 +990,147 @@ export class PythonEnvironmentManager {
 
       installProcess.on('error', (error) => {
         log.error('[PythonEnvManager] SGLang installation error:', error);
+        reject(error);
+      });
+    });
+  }
+
+  /**
+   * Attempt to install FlashAttention 2 (CUDA-only on supported platforms)
+   */
+  public async installFlashAttention2(): Promise<void> {
+    if (process.platform !== 'linux') {
+      throw new Error('FlashAttention 2 install is only supported on Linux');
+    }
+    const envInfo = await this.checkEnvironment();
+    let pythonPath = envInfo.pythonPath;
+    const envPath = this.getEnvironmentPath();
+
+    if (!envInfo.isValid || !pythonPath) {
+      const setup = await this.setupEnvironment();
+      pythonPath = setup.pythonPath;
+    }
+
+    const uvPath = process.platform === 'win32'
+      ? path.join(envPath, 'Scripts', 'uv.exe')
+      : path.join(envPath, 'bin', 'uv');
+
+    if (!fs.existsSync(uvPath)) {
+      await this.reportProgress('flash-attn2', 5, 'Installing uv package manager...');
+      await this.installUv(pythonPath);
+    }
+
+    await this.reportProgress('flash-attn2', 15, 'Installing FlashAttention 2 (flash-attn)...');
+
+    await new Promise<void>((resolve, reject) => {
+      const installProcess = spawn(uvPath, [
+        'pip', 'install',
+        'flash-attn',
+        '--no-build-isolation',
+        '-v'
+      ], {
+        stdio: 'pipe',
+        env: {
+          ...process.env,
+          VIRTUAL_ENV: envPath,
+          PATH: `${path.dirname(uvPath)}:${process.env.PATH}`,
+        }
+      });
+
+      let stderr = '';
+      
+      installProcess.stderr?.on('data', (data) => {
+        stderr += data.toString();
+        const line = data.toString().trim();
+        if (line) log.info(`[PythonEnvManager] flash-attn stderr: ${line}`);
+      });
+
+      installProcess.stdout?.on('data', (data) => {
+        const line = data.toString().trim();
+        if (line) log.info(`[PythonEnvManager] flash-attn: ${line}`);
+      });
+
+      installProcess.on('close', async (code) => {
+        if (code === 0) {
+          await this.reportProgress('flash-attn2', 100, 'FlashAttention 2 installation attempted', true);
+          resolve();
+        } else {
+          log.error('[PythonEnvManager] flash-attn install failed:', stderr);
+          reject(new Error(stderr || 'Failed to install flash-attn'));
+        }
+      });
+
+      installProcess.on('error', (error) => {
+        log.error('[PythonEnvManager] flash-attn installation error:', error);
+        reject(error);
+      });
+    });
+  }
+
+  /**
+   * Attempt to install flashinfer
+   */
+  public async installFlashInfer(): Promise<void> {
+    const envInfo = await this.checkEnvironment();
+    let pythonPath = envInfo.pythonPath;
+    const envPath = this.getEnvironmentPath();
+
+    if (!envInfo.isValid || !pythonPath) {
+      const setup = await this.setupEnvironment();
+      pythonPath = setup.pythonPath;
+    }
+
+    const uvPath = process.platform === 'win32'
+      ? path.join(envPath, 'Scripts', 'uv.exe')
+      : path.join(envPath, 'bin', 'uv');
+
+    if (!fs.existsSync(uvPath)) {
+      await this.reportProgress('flash-infer', 5, 'Installing uv package manager...');
+      await this.installUv(pythonPath);
+    }
+
+    await this.reportProgress('flash-infer', 15, 'Installing flashinfer-python...');
+
+    await new Promise<void>((resolve, reject) => {
+      const installProcess = spawn(uvPath, [
+        'pip', 'install',
+        'flashinfer-python',
+        '--no-build-isolation',
+        '-v'
+      ], {
+        stdio: 'pipe',
+        env: {
+          ...process.env,
+          VIRTUAL_ENV: envPath,
+          PATH: `${path.dirname(uvPath)}:${process.env.PATH}`,
+        }
+      });
+
+      let stderr = '';
+
+      installProcess.stderr?.on('data', (data) => {
+        stderr += data.toString();
+        const line = data.toString().trim();
+        if (line) log.info(`[PythonEnvManager] flashinfer stderr: ${line}`);
+      });
+
+      installProcess.stdout?.on('data', (data) => {
+        const line = data.toString().trim();
+        if (line) log.info(`[PythonEnvManager] flashinfer: ${line}`);
+      });
+
+      installProcess.on('close', async (code) => {
+        if (code === 0) {
+          await this.reportProgress('flash-infer', 100, 'flashinfer installation attempted', true);
+          resolve();
+        } else {
+          log.error('[PythonEnvManager] flashinfer install failed:', stderr);
+          reject(new Error(stderr || 'Failed to install flashinfer'));
+        }
+      });
+
+      installProcess.on('error', (error) => {
+        log.error('[PythonEnvManager] flashinfer installation error:', error);
         reject(error);
       });
     });

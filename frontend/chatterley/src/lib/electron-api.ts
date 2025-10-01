@@ -496,6 +496,22 @@ class ElectronApiClient {
     return window.electronAPI.python.installSGLang();
   }
 
+  // Attempt to install FlashAttention 2
+  public async installFlashAttention2(): Promise<{ success: boolean; message: string }> {
+    if (!this.isElectron) {
+      throw new Error('FlashAttention 2 installation only available in Electron app');
+    }
+    return window.electronAPI.python.installFlashAttn2();
+  }
+
+  // Attempt to install flashinfer
+  public async installFlashInfer(): Promise<{ success: boolean; message: string }> {
+    if (!this.isElectron) {
+      throw new Error('flashinfer installation only available in Electron app');
+    }
+    return window.electronAPI.python.installFlashInfer();
+  }
+
   public async getPythonUserDataPath(): Promise<string> {
     if (!this.isElectron) return '';
     return window.electronAPI.python.getUserDataPath();
@@ -524,6 +540,12 @@ class ElectronApiClient {
   public async getEnvironmentSystemInfo(): Promise<Record<string, unknown> | null> {
     if (!this.isElectron) return null;
     return window.electronAPI.python.getEnvironmentSystemInfo();
+  }
+
+  // Optional backends
+  public async getInstalledBackends(): Promise<{ sglang: boolean; vllm: boolean; llamacpp: boolean }> {
+    if (!this.isElectron) return { sglang: false, vllm: false, llamacpp: false };
+    return window.electronAPI.python.getInstalledBackends();
   }
 
   // Get basic system information using lightweight Python script (fallback when main backend isn't ready)
