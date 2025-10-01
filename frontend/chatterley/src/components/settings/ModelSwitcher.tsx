@@ -469,8 +469,10 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
       };
     }
 
-    // Prefer server's active config metadata if available
-    if (currentModelConfigMetadata) {
+    // Prefer server's active config metadata if it matches the active config
+    if (currentModelConfigMetadata && (
+      !activeConfigPath || currentModelConfigMetadata.config_path === activeConfigPath
+    )) {
       debugLog(`✅ Using server's active config metadata:`, currentModelConfigMetadata);
       return {
         displayName: currentModelConfigMetadata.display_name,
