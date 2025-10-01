@@ -99,6 +99,7 @@ export interface ModelConfigMetadata {
   model_name?: string;
   filename?: string;
   config_path?: string;
+  config_id?: string;
 }
 
 export interface GenerationParams {

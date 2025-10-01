@@ -8,6 +8,7 @@ import React from 'react';
 import { Activity, Cpu, HardDrive, Zap, MessageSquare, Wifi, WifiOff, Clock, Bot, Play, Square, RefreshCw } from 'lucide-react';
 import apiClient from '@/lib/unified-api';
 import { useChatStore } from '@/lib/store';
+import { ModelConfigMetadata, AppSettings } from '@/lib/types';
 
 interface SystemStats {
   cpu_percent?: number;
@@ -113,7 +114,11 @@ export default function SystemMonitor({
   className = '',
   updateInterval = 2000 // 2 seconds
 }: SystemMonitorProps) {
-  const { getCurrentSessionId, isLoading: chatIsLoading, isTyping: chatIsTyping } = useChatStore();
+  const getCurrentSessionId = useChatStore((state) => state.getCurrentSessionId);
+  const chatIsLoading = useChatStore((state) => state.isLoading);
+  const chatIsTyping = useChatStore((state) => state.isTyping);
+  const updateSettings = useChatStore((state) => state.updateSettings);
+  const selectedModelFromStore = useChatStore((state) => state.settings.selectedModel);
   const [stats, setStats] = React.useState<SystemStats | null>(null);
   const [networkActivity, setNetworkActivity] = React.useState<NetworkActivity>({
     activeRequests: 0,
@@ -228,22 +233,54 @@ export default function SystemMonitor({
       const modelResponse = await apiClient.getModels();
       if (modelResponse.success && modelResponse.data?.data?.[0]) {
         const model = modelResponse.data.data[0];
+        const metadata = model.config_metadata
+          ? (model.config_metadata as unknown as ModelConfigMetadata)
+          : undefined;
+        const displayName = (metadata?.display_name && metadata.display_name.length > 0)
+          ? metadata.display_name
+          : metadata?.model_name || model.id;
+        const engine = metadata?.engine;
+        const effectiveModelName = displayName || model.id || undefined;
+
         console.log('[SystemMonitor] checkModelStatus response', {
-          modelName: model.id,
-          configMetadata: model.config_metadata,
+          modelName: effectiveModelName,
+          rawModelId: model.id,
+          configMetadata: metadata,
           selectedConfig: selectedConfigRef.current,
           lastSuccessfulTest: lastSuccessfulTestRef.current,
         });
 
         setModelStatus(prev => ({
           ...prev,
-          modelName: model.id,
+          modelName: effectiveModelName,
+          loaded: true,
         }));
+
+        const nextSettings: Partial<AppSettings> = {};
+        if (effectiveModelName) {
+          nextSettings.selectedModel = effectiveModelName;
+        }
+        if (engine && engine.length > 0) {
+          nextSettings.selectedProvider = engine;
+        }
+        if (Object.keys(nextSettings).length > 0) {
+          updateSettings(nextSettings);
+        }
+
+        if (metadata?.config_id || metadata?.config_path) {
+          const configIdentifier = metadata.config_id || metadata.config_path;
+          selectedConfigRef.current = configIdentifier || selectedConfigRef.current;
+          try {
+            await apiClient.setStorageItem('selectedConfig', selectedConfigRef.current);
+          } catch (storageError) {
+            console.warn('[SystemMonitor] Failed to persist selectedConfig during status check:', storageError);
+          }
+        }
 
         const now = Date.now();
         const lastRecord = lastSuccessfulTestRef.current;
         const isRecent = !!(lastRecord && now - lastRecord.timestamp < RECENT_TEST_WINDOW_MS);
-        const matchesModel = !!(lastRecord?.modelName && lastRecord.modelName === model.id);
+        const matchesModel = !!(lastRecord?.modelName && effectiveModelName && lastRecord.modelName === effectiveModelName);
         const matchesConfig = !!(
           lastRecord?.configId &&
           selectedConfigRef.current &&
@@ -270,10 +307,10 @@ export default function SystemMonitor({
               lastTested: lastRecord?.timestamp ?? prev.lastTested,
             }));
 
-            if (lastRecord && !lastRecord.modelName) {
+            if (lastRecord && !lastRecord.modelName && effectiveModelName) {
               const updatedRecord: StoredModelTestRecord = {
                 ...lastRecord,
-                modelName: model.id,
+                modelName: effectiveModelName,
               };
               lastSuccessfulTestRef.current = updatedRecord;
               try {
@@ -602,6 +639,7 @@ export default function SystemMonitor({
   // Format file size
   const formatGB = (gb: number) => `${gb.toFixed(1)}GB`;
   const formatTokens = (tokens: number) => tokens.toLocaleString();
+  const displayedModelName = modelStatus.modelName || selectedModelFromStore || '';
 
   if (useFallback && capabilities) {
     return (
@@ -793,13 +831,13 @@ export default function SystemMonitor({
           </div>
           
           <div className="grid grid-cols-1 gap-2 text-xs">
-            {modelStatus.modelName && (
+            {displayedModelName && (
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Model:</span>
-                <span className="font-mono text-right truncate ml-2" title={modelStatus.modelName}>
-                  {modelStatus.modelName.length > 20 
-                    ? `${modelStatus.modelName.slice(0, 17)}...`
-                    : modelStatus.modelName
+                <span className="font-mono text-right truncate ml-2" title={displayedModelName}>
+                  {displayedModelName.length > 20 
+                    ? `${displayedModelName.slice(0, 17)}...`
+                    : displayedModelName
                   }
                 </span>
               </div>
@@ -826,7 +864,7 @@ export default function SystemMonitor({
           <div className="flex gap-1 pt-1">
             <button
               onClick={() => testModel(undefined, 'manual-button')}
-              disabled={!modelStatus.modelName || isModelActionLoading}
+              disabled={!displayedModelName || isModelActionLoading}
               className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 rounded disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               title="Test model functionality"
             >

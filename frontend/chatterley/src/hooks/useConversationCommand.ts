@@ -226,7 +226,7 @@ interface BackendBranch {
       try {
         const { currentConversationId, currentBranchId, setMessages, setCurrentConversationId, settings, getBranchMessages } = useChatStore.getState();
         const snap = response?.data && typeof response.data === 'object' ? 
-          ('conversation' in response.data ? response.data.conversation as any[] : undefined) : undefined;
+          ('conversation' in response.data ? response.data.conversation as Record<string, unknown>[] : undefined) : undefined;
         const snapConvId: string | undefined = response?.data && typeof response.data === 'object' ?
           ('conversation_id' in response.data ? response.data.conversation_id as string : undefined) : undefined;
         const snapBranchId: string | undefined = response?.data && typeof response.data === 'object' ?
@@ -484,12 +484,5 @@ export const COMMAND_CONFIGS = {
     errorPrefix: 'Failed to switch model'
   },
 
-  // Branch operations
-  branch_from: {
-    waitMs: 1500, // Wait for branch creation to complete
-    refreshConversation: false, // Don't refresh current conversation
-    refreshBranches: true, // Update branch list
-    successMessage: 'New branch created successfully',
-    errorPrefix: 'Failed to create branch from this point'
-  }
+  // Branch operations (no client-side branch_from action)
 } as const;

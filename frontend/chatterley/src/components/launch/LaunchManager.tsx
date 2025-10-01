@@ -18,6 +18,7 @@ import { configPathResolver } from '@/lib/config-path-resolver';
 import { SystemCapabilities } from '@/lib/config-matcher';
 import { logger } from '@/lib/logger';
 
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 interface LaunchManagerProps {}
 
 type LaunchState = 'welcome' | 'initializing' | 'ready' | 'error';

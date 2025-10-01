@@ -6,7 +6,7 @@
 
 import React from 'react';
 import { Message } from '@/lib/types';
-import { User, Bot, Copy, Check, Trash2, RefreshCw, Edit3, Save, GitBranch, Image as ImageIcon, Paperclip, Globe, Mic, Video } from 'lucide-react';
+import { User, Bot, Copy, Check, Trash2, RefreshCw, Edit3, Save, Image as ImageIcon, Paperclip, Globe, Mic, Video } from 'lucide-react';
 import MarkdownRenderer from '@/components/ui/MarkdownRenderer';
 import { useChatStore } from '@/lib/store';
 import { useConversationCommand, COMMAND_CONFIGS } from '@/hooks/useConversationCommand';
@@ -183,49 +183,7 @@ export default function ChatMessage({ message, isLatest = false, messageIndex }:
     setEditContent(message.content);
   };
 
-  const handleCreateBranch = async () => {
-    // Check branch limit (currently limited to 5 branches total)
-    if (branches.length >= 5) {
-      alert(
-        '🌳 Branch Limit Reached\n\n' +
-        'You can only have up to 5 active branches at a time for now. ' +
-        'This limit may be increased in future versions after further development.\n\n' +
-        'Please delete an existing branch before creating a new one.'
-      );
-      return;
-    }
-
-    if (messageIndex === undefined) {
-      alert('❌ Cannot create branch: Message position unknown');
-      return;
-    }
-    
-    console.log(`🌿 ChatMessage: Creating branch from message index ${messageIndex}`);
-    setActionInProgress('branch');
-    try {
-      const result = await executeCommand(
-        'branch_from', 
-        [messageIndex.toString()], 
-        COMMAND_CONFIGS.branch_from
-      );
-      
-      console.log(`🌿 ChatMessage: Branch creation result:`, result);
-      
-      if (!result.success && result.message) {
-        alert(`❌ ${result.message}`);
-      } else if (result.success) {
-        // Show success message briefly
-        setTimeout(() => {
-          alert('✅ New branch created! Switch to it from the branch panel to continue this conversation thread.');
-        }, 100);
-      }
-    } catch (error) {
-      console.error('Error creating branch:', error);
-      alert('❌ Failed to create branch: An unexpected error occurred');
-    } finally {
-      setActionInProgress(null);
-    }
-  };
+  // Branch-from action removed from frontend UI per request
 
 
   const attachmentsArray = Array.isArray(message.attachments) ? message.attachments : [];
@@ -503,16 +461,6 @@ export default function ChatMessage({ message, isLatest = false, messageIndex }:
                       disabled={actionInProgress === 'regen' || isExecuting}
                     >
                       <RefreshCw size={14} className={actionInProgress === 'regen' ? 'text-gray-400 animate-spin' : 'text-blue-600'} />
-                    </button>
-
-                    {/* Branch from this point button */}
-                    <button
-                      onClick={handleCreateBranch}
-                      className="p-1 rounded hover:bg-purple-100"
-                      title="Create new branch from this assistant response"
-                      disabled={actionInProgress === 'branch' || isExecuting || messageIndex === undefined}
-                    >
-                      <GitBranch size={14} className={actionInProgress === 'branch' ? 'text-gray-400' : 'text-purple-600'} />
                     </button>
                   </>
                 )}

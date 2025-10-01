@@ -8,7 +8,7 @@ import React from 'react';
 import { Bot, ChevronDown, RefreshCw, Check, AlertTriangle, Search, X, Zap, Brain, Cpu, Gem, Waves, FlaskConical, Building2 } from 'lucide-react';
 import { useChatStore } from '@/lib/store';
 import apiClient from '@/lib/unified-api';
-import { ModelConfigMetadata } from '@/lib/types';
+import { ModelConfigMetadata, AppSettings } from '@/lib/types';
 import { formatContextLength } from '@/lib/api-model-context';
 
 const debugLog = (...args: unknown[]) => {
@@ -83,7 +83,9 @@ interface ModelSwitcherProps {
 }
 
 export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
-  const { currentBranchId } = useChatStore();
+  const currentBranchId = useChatStore((state) => state.currentBranchId);
+  const updateSettings = useChatStore((state) => state.updateSettings);
+  const persistedSelectedModel = useChatStore((state) => state.settings.selectedModel);
   const [currentModel, setCurrentModel] = React.useState<string>('');
   const [availableConfigs, setAvailableConfigs] = React.useState<ConfigOption[]>([]);
   const [isDropdownOpen, setIsDropdownOpen] = React.useState(false);
@@ -96,6 +98,36 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
   const dropdownRef = React.useRef<HTMLDivElement>(null);
   const searchInputRef = React.useRef<HTMLInputElement>(null);
   const [installedBackends, setInstalledBackends] = React.useState<{ sglang: boolean; vllm: boolean; llamacpp: boolean } | null>(null);
+
+  const syncModelSelection = React.useCallback(async (
+    modelId: string | undefined,
+    metadata?: ModelConfigMetadata | null,
+    fallbackConfigPath?: string
+  ) => {
+    const nextSettings: Partial<AppSettings> = {};
+    const displayName = (metadata?.display_name && metadata.display_name.length > 0)
+      ? metadata.display_name
+      : metadata?.model_name || modelId || fallbackConfigPath || '';
+    if (displayName) {
+      nextSettings.selectedModel = displayName;
+    }
+    const engine = metadata?.engine;
+    if (engine && engine.length > 0) {
+      nextSettings.selectedProvider = engine;
+    }
+    if (Object.keys(nextSettings).length > 0) {
+      updateSettings(nextSettings);
+    }
+
+    const storageKey = metadata?.config_id || metadata?.config_path || fallbackConfigPath || modelId;
+    if (storageKey) {
+      try {
+        await apiClient.setStorageItem('selectedConfig', storageKey);
+      } catch (storageError) {
+        console.warn('[ModelSwitcher] Failed to persist selected config', storageError);
+      }
+    }
+  }, [updateSettings]);
 
   // Load current model and available configs on mount
   React.useEffect(() => {
@@ -125,15 +157,21 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
         const modelResponse = await apiClient.getModels();
         if (modelResponse.success && modelResponse.data?.data?.[0]) {
           const model = modelResponse.data.data[0];
-          setCurrentModel(model.id);
-          
-          // CRITICAL FIX: Extract and cache config metadata from server
-          if (model.config_metadata) {
-            setCurrentModelConfigMetadata(model.config_metadata as unknown as ModelConfigMetadata);
-            debugLog('🎯 Current model with metadata:', model.id, model.config_metadata);
+          const metadata = model.config_metadata
+            ? (model.config_metadata as unknown as ModelConfigMetadata)
+            : undefined;
+          const activeConfigPath = metadata?.config_path;
+
+          setCurrentModel(activeConfigPath || model.id);
+
+          if (metadata) {
+            setCurrentModelConfigMetadata(metadata);
+            debugLog('🎯 Current model with metadata:', model.id, metadata);
+            await syncModelSelection(model.id, metadata, activeConfigPath || model.id);
           } else {
             setCurrentModelConfigMetadata(null);
             debugLog(`🎯 Current model (no metadata): ${model.id}`);
+            await syncModelSelection(model.id, null, activeConfigPath || model.id);
           }
         }
 
@@ -147,6 +185,12 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
 
     loadData();
   }, []);
+
+  React.useEffect(() => {
+    if (!currentModel && persistedSelectedModel) {
+      setCurrentModel(persistedSelectedModel);
+    }
+  }, [currentModel, persistedSelectedModel]);
 
   // Refresh model info when currentModel changes
   React.useEffect(() => {
@@ -281,15 +325,21 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
           if (modelResponse.success && modelResponse.data?.data?.[0]) {
             const model = modelResponse.data.data[0];
             const prev = currentModel;
-            setCurrentModel(model.id);
+            const metadata = model.config_metadata
+              ? (model.config_metadata as unknown as ModelConfigMetadata)
+              : undefined;
+            const activeConfigPath = metadata?.config_path;
+            setCurrentModel(activeConfigPath || model.id);
             
             // Extract and cache updated config metadata after swap
-            if (model.config_metadata) {
-              setCurrentModelConfigMetadata(model.config_metadata as unknown as ModelConfigMetadata);
-              debugLog('🔄 Updated model with metadata:', model.id, model.config_metadata);
+            if (metadata) {
+              setCurrentModelConfigMetadata(metadata);
+              debugLog('🔄 Updated model with metadata:', model.id, metadata);
+              await syncModelSelection(model.id, metadata, activeConfigPath || configPath);
             } else {
               setCurrentModelConfigMetadata(null);
               debugLog(`🔄 Updated model (no metadata): ${model.id}`);
+              await syncModelSelection(model.id, null, activeConfigPath || configPath);
             }
 
             // Toast only when the active model actually changed
@@ -306,6 +356,7 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
             setCurrentModel(configPath);
             setCurrentModelConfigMetadata(null);
             console.warn('⚠️ Could not refresh model info from server, using config path');
+            await syncModelSelection(configPath, null, configPath);
             try { const { showToast } = await import('@/lib/toastBus'); showToast({ message: '⚠️ Swap completed, but could not refresh model info', variant: 'warning' }); } catch {}
           }
         } catch (refreshError) {
@@ -313,6 +364,7 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
           // Fallback to config path if refresh fails
           setCurrentModel(configPath);
           setCurrentModelConfigMetadata(null);
+          await syncModelSelection(configPath, null, configPath);
           try { const { showToast } = await import('@/lib/toastBus'); showToast({ message: '⚠️ Swap completed, but refresh failed', variant: 'warning' }); } catch {}
         }
         
@@ -331,6 +383,7 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
       console.error('❌ Model switch error:', err);
       setError(err instanceof Error ? err.message : 'Failed to switch model');
       try { const { showToast } = await import('@/lib/toastBus'); showToast({ message: '❌ Model switch failed', variant: 'error' }); } catch {}
+      await syncModelSelection(currentModel || configPath, currentModelConfigMetadata, configPath);
     } finally {
       setIsLoading(false);
       setLoadingMessage('');

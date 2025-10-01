@@ -612,7 +612,7 @@ export default function WelcomeScreen({ onConfigSelected, systemCapabilities }: 
           setTestProgress('Model test timed out, but downloads are in progress. Waiting for downloads to complete...');
           await waitForDownloadsToFinish();
           setTestProgress('Downloads complete. Retrying model test...');
-          result = await runTest();
+          await runTest(); // Capture not needed as we only care about errors here
         } else {
           throw err;
         }
