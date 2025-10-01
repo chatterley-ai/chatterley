@@ -334,6 +334,42 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
 
   // Ensure model is loaded, attempt auto-reload if not
   const ensureModelLoaded = React.useCallback(async () => {
+    // Guarded store sync helper: only write to settings if metadata matches selectedConfig
+    const safeSyncSettings = async (
+      modelEntry: { id?: string; config_metadata?: Record<string, unknown> },
+      md?: Record<string, unknown>
+    ) => {
+      try {
+        const metaAny = (md || {}) as Record<string, unknown>;
+        const displayName = (metaAny.display_name as string) || (modelEntry?.id as string) || '';
+        const engine = (metaAny.engine as string) || '';
+        const cfgPath = (metaAny.config_path as string | undefined);
+        const selectedCfg = await apiClient.getStorageItem<string | null>('selectedConfig', null);
+
+        const accept = !selectedCfg || (cfgPath && cfgPath === selectedCfg);
+        if (!accept) {
+          console.warn('[ChatInterface] Ignoring stale getModels metadata; config_path does not match selectedConfig', {
+            config_path: cfgPath,
+            selectedConfig: selectedCfg,
+            displayName,
+            engine,
+          });
+          return;
+        }
+
+        console.log('[ChatInterface] Syncing settings from getModels', { displayName, engine, config_path: cfgPath });
+        useChatStore.getState().updateSettings({
+          selectedModel: displayName,
+          selectedProvider: engine,
+        });
+        if (cfgPath) {
+          await apiClient.setStorageItem('selectedConfig', cfgPath);
+        }
+      } catch (e) {
+        console.warn('[ChatInterface] Failed to sync model info to settings:', e);
+      }
+    };
+
     try {
       // Check if model is currently loaded
       const modelResponse = await apiClient.getModels();
@@ -352,24 +388,7 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
             console.log('[ChatInterface] Setting isOmniCapable from getModels:', derived);
             setIsOmniCapable(derived);
           }
-
-          // Push active model/provider into global settings so UI reflects immediately
-          try {
-            const metaAny = (md || {}) as Record<string, unknown>;
-            const displayName = (metaAny.display_name as string) || modelEntry.id || '';
-            const engine = (metaAny.engine as string) || '';
-            console.log('[ChatInterface] Syncing settings from getModels', { displayName, engine });
-            useChatStore.getState().updateSettings({
-              selectedModel: displayName,
-              selectedProvider: engine,
-            });
-            const cfgPath = (metaAny.config_path as string | undefined);
-            if (cfgPath) {
-              await apiClient.setStorageItem('selectedConfig', cfgPath);
-            }
-          } catch (e) {
-            console.warn('[ChatInterface] Failed to sync model info to settings:', e);
-          }
+          await safeSyncSettings(modelEntry as any, md as any);
         } catch (metaError) {
           console.warn('[ChatInterface] Failed to interpret config metadata from getModels:', metaError);
         }
@@ -413,24 +432,7 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
             console.log('[ChatInterface] Setting isOmniCapable from recheck:', derived);
             setIsOmniCapable(derived);
           }
-
-          // Sync to global settings after recheck
-          try {
-            const metaAny = (md || {}) as Record<string, unknown>;
-            const displayName = (metaAny.display_name as string) || modelEntry.id || '';
-            const engine = (metaAny.engine as string) || '';
-            console.log('[ChatInterface] Syncing settings from recheck', { displayName, engine });
-            useChatStore.getState().updateSettings({
-              selectedModel: displayName,
-              selectedProvider: engine,
-            });
-            const cfgPath = (metaAny.config_path as string | undefined);
-            if (cfgPath) {
-              await apiClient.setStorageItem('selectedConfig', cfgPath);
-            }
-          } catch (e) {
-            console.warn('[ChatInterface] Failed to sync rechecked model info to settings:', e);
-          }
+          await safeSyncSettings(modelEntry as any, md as any);
         } catch (metaError) {
           console.warn('[ChatInterface] Failed to interpret config metadata from recheck:', metaError);
         }

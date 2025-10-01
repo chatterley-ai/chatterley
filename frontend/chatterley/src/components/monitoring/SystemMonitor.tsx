@@ -256,25 +256,32 @@ export default function SystemMonitor({
           loaded: true,
         }));
 
-        const nextSettings: Partial<AppSettings> = {};
-        if (effectiveModelName) {
-          nextSettings.selectedModel = effectiveModelName;
-        }
-        if (engine && engine.length > 0) {
-          nextSettings.selectedProvider = engine;
-        }
-        if (Object.keys(nextSettings).length > 0) {
-          updateSettings(nextSettings);
-        }
-
-        if (metadata?.config_id || metadata?.config_path) {
-          const configIdentifier = metadata.config_id || metadata.config_path;
-          selectedConfigRef.current = configIdentifier || selectedConfigRef.current;
-          try {
-            await apiClient.setStorageItem('selectedConfig', selectedConfigRef.current);
-          } catch (storageError) {
-            console.warn('[SystemMonitor] Failed to persist selectedConfig during status check:', storageError);
+        // Guarded settings update: only write if metadata matches selectedConfig (or none set)
+        try {
+          const cfgPath = metadata?.config_path as string | undefined;
+          const selectedCfg = await apiClient.getStorageItem<string | null>('selectedConfig', null);
+          const accept = !selectedCfg || (cfgPath && cfgPath === selectedCfg);
+          if (accept) {
+            const nextSettings: Partial<AppSettings> = {};
+            if (effectiveModelName) nextSettings.selectedModel = effectiveModelName;
+            if (engine && engine.length > 0) nextSettings.selectedProvider = engine;
+            if (Object.keys(nextSettings).length > 0) {
+              updateSettings(nextSettings);
+            }
+            if (cfgPath) {
+              selectedConfigRef.current = cfgPath;
+              try { await apiClient.setStorageItem('selectedConfig', cfgPath); } catch {}
+            }
+          } else {
+            console.warn('[SystemMonitor] Ignoring stale getModels metadata in status check', {
+              config_path: cfgPath,
+              selectedConfig: selectedCfg,
+              effectiveModelName,
+              engine,
+            });
           }
+        } catch (e) {
+          console.warn('[SystemMonitor] Failed guarded settings update:', e);
         }
 
         const now = Date.now();
