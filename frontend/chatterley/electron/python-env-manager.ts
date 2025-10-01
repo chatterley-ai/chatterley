@@ -918,9 +918,7 @@ export class PythonEnvironmentManager {
     }
 
     // Determine uv path inside the venv
-    const uvPath = process.platform === 'win32'
-      ? path.join(envPath, 'Scripts', 'uv.exe')
-      : path.join(envPath, 'bin', 'uv');
+    const uvPath = path.join(envPath, 'bin', 'uv');
 
     // Install uv if missing
     if (!fs.existsSync(uvPath)) {
@@ -1011,9 +1009,7 @@ export class PythonEnvironmentManager {
       pythonPath = setup.pythonPath;
     }
 
-    const uvPath = process.platform === 'win32'
-      ? path.join(envPath, 'Scripts', 'uv.exe')
-      : path.join(envPath, 'bin', 'uv');
+    const uvPath = path.join(envPath, 'bin', 'uv');
 
     if (!fs.existsSync(uvPath)) {
       await this.reportProgress('flash-attn2', 5, 'Installing uv package manager...');
@@ -1080,9 +1076,7 @@ export class PythonEnvironmentManager {
       pythonPath = setup.pythonPath;
     }
 
-    const uvPath = process.platform === 'win32'
-      ? path.join(envPath, 'Scripts', 'uv.exe')
-      : path.join(envPath, 'bin', 'uv');
+    const uvPath = path.join(envPath, 'bin', 'uv');
 
     if (!fs.existsSync(uvPath)) {
       await this.reportProgress('flash-infer', 5, 'Installing uv package manager...');

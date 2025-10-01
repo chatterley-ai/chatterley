@@ -57,9 +57,10 @@ function lighten(hex: string, amount: number): string {
   return mixColors(hex, '#ffffff', amount);
 }
 
-function darken(hex: string, amount: number): string {
-  return mixColors(hex, '#000000', amount);
-}
+// Commented out to fix linting error as it's not currently used
+// function darken(hex: string, amount: number): string {
+//   return mixColors(hex, '#000000', amount);
+// }
 
 function relativeLuminance(hex: string): number {
   const rgb = hexToRgb(hex);

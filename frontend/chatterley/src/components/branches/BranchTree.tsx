@@ -53,7 +53,6 @@ export default function BranchTree({ className = '' }: BranchTreeProps) {
   // No need to update branch message counts manually since branches are now derived on demand
   
   const [isCreating, setIsCreating] = React.useState(false);
-  const [newBranchName, setNewBranchName] = React.useState('');
   const [viewMode, setViewMode] = React.useState<'list' | 'tree' | 'inheritance'>('list');
   const [contextMenu, setContextMenu] = React.useState<{
     branch: IBranchData;
@@ -139,7 +138,7 @@ export default function BranchTree({ className = '' }: BranchTreeProps) {
     };
   }, [loadBranches]);
 
-  const handleCreateBranch = async (branchName?: string, fromBranchId?: string) => {
+  const handleCreateBranch = async (proposedName?: string, fromBranchId?: string) => {
     // Check branch limit (currently limited to 5 branches total)
     if (branches.length >= 5) {
       alert(
@@ -151,7 +150,7 @@ export default function BranchTree({ className = '' }: BranchTreeProps) {
       return;
     }
 
-    const name = branchName || newBranchName.trim() || `branch_${Date.now()}`;
+    const name = (proposedName || '').trim() || `branch_${Date.now()}`;
     const parentId = fromBranchId || currentBranchId;
 
     setIsCreating(true);
@@ -163,13 +162,10 @@ export default function BranchTree({ className = '' }: BranchTreeProps) {
         const branchData = response.data.branch;
         // Get the branch ID and data from the response
         const branchId = branchData.id || `branch_${Date.now()}`;
-        const branchName = branchData.name || name;
-        
+        const resolvedName = branchData.name || name;
+
         // Call addBranch with the correct parameters (branchId, name, parentId)
-        addBranch(branchId, branchName, parentId);
-        if (!branchName) {
-          setNewBranchName(''); // Only clear input if it came from list view
-        }
+        addBranch(branchId, resolvedName, parentId);
         
         // Reload branches to get accurate data
         await loadBranches();
@@ -460,31 +456,17 @@ export default function BranchTree({ className = '' }: BranchTreeProps) {
         </div>
       )}
 
-      {/* Create new branch - only show in list view */}
+      {/* Create new branch button (default naming) - only show in list view */}
       {viewMode === 'list' && (
         <div className="p-4 border-t border-border">
-          <div className="space-y-2">
-            <input
-              type="text"
-              value={newBranchName}
-              onChange={(e) => setNewBranchName(e.target.value)}
-              placeholder="Branch name..."
-              className="w-full px-3 py-2 text-sm border border-border bg-input text-input-foreground placeholder:text-muted-foreground rounded focus:outline-none focus:ring-2 focus:ring-primary"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  handleCreateBranch();
-                }
-              }}
-            />
-            <button
-              onClick={() => handleCreateBranch()}
-              disabled={isCreating}
-              className="w-full bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground py-2 px-3 rounded text-sm font-medium transition-colors flex items-center justify-center gap-2"
-            >
-              <Plus size={16} />
-              {isCreating ? 'Creating...' : 'New Branch'}
-            </button>
-          </div>
+          <button
+            onClick={() => handleCreateBranch()}
+            disabled={isCreating}
+            className="w-full bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground py-2 px-3 rounded text-sm font-medium transition-colors flex items-center justify-center gap-2"
+          >
+            <Plus size={16} />
+            {isCreating ? 'Creating...' : 'New Branch'}
+          </button>
         </div>
       )}
 

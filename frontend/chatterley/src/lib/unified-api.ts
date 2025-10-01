@@ -310,8 +310,8 @@ class UnifiedApiClient {
       // Normalize and sort by last modified (newest first)
       const normalized = Array.isArray(conversations) ? conversations : [];
       normalized.sort((a, b) => {
-        const bDate = new Date((b as any).lastModified || (b as any).updatedAt || 0).getTime();
-        const aDate = new Date((a as any).lastModified || (a as any).updatedAt || 0).getTime();
+        const bDate = new Date((b as { lastModified?: string; updatedAt?: string }).lastModified || (b as { lastModified?: string; updatedAt?: string }).updatedAt || 0).getTime();
+        const aDate = new Date((a as { lastModified?: string; updatedAt?: string }).lastModified || (a as { lastModified?: string; updatedAt?: string }).updatedAt || 0).getTime();
         return bDate - aDate;
       });
 
@@ -356,8 +356,8 @@ class UnifiedApiClient {
       
       // Sort all conversations by lastModified (newest first)
       allConversations.sort((a, b) => {
-        const bDate = new Date((b as any).lastModified || (b as any).updatedAt || 0).getTime();
-        const aDate = new Date((a as any).lastModified || (a as any).updatedAt || 0).getTime();
+        const bDate = new Date((b as { lastModified?: string; updatedAt?: string }).lastModified || (b as { lastModified?: string; updatedAt?: string }).updatedAt || 0).getTime();
+        const aDate = new Date((a as { lastModified?: string; updatedAt?: string }).lastModified || (a as { lastModified?: string; updatedAt?: string }).updatedAt || 0).getTime();
         return bDate - aDate;
       });
       
@@ -396,11 +396,11 @@ class UnifiedApiClient {
       const nodes: Record<string, unknown>[] = [];
       if (Array.isArray(conversations)) {
         for (const conv of conversations) {
-          const convId = (conv as any).id || (conv as any).filename;
-          const convName = (conv as any).name || (conv as any).filename || 'Untitled Conversation';
-          const convLast = (conv as any).lastModified || (conv as any).updatedAt || new Date().toISOString();
-          const convPreview = (conv as any).preview || 'No preview available';
-          const convCount = (conv as any).messageCount || 0;
+          const convId = (conv as { id?: string; filename?: string }).id || (conv as { id?: string; filename?: string }).filename;
+          const convName = (conv as { name?: string; filename?: string }).name || (conv as { name?: string; filename?: string }).filename || 'Untitled Conversation';
+          const convLast = (conv as { lastModified?: string; updatedAt?: string }).lastModified || (conv as { lastModified?: string; updatedAt?: string }).updatedAt || new Date().toISOString();
+          const convPreview = (conv as { preview?: string }).preview || 'No preview available';
+          const convCount = (conv as { messageCount?: number }).messageCount || 0;
 
           // Always include main/root node even if no branches array is present
           nodes.push({
@@ -414,7 +414,7 @@ class UnifiedApiClient {
             isRoot: true,
           });
 
-          const branches = Array.isArray((conv as any).branches) ? (conv as any).branches : [];
+          const branches = Array.isArray((conv as { branches?: unknown[] }).branches) ? (conv as { branches: unknown[] }).branches : [];
           for (const br of branches) {
             // Skip duplicating main if present in branches
             if (br.id === 'main') continue;
@@ -464,10 +464,10 @@ class UnifiedApiClient {
           ((Array.isArray(conversationData.messages) ? conversationData.messages : []) || 
           (Array.isArray(conversationData.conversation) ? conversationData.conversation : [])) : [];
         const nodeGraph = (conversationData && typeof conversationData === 'object') ? 
-          ((conversationData as any).nodeGraph as Record<string, unknown> || undefined) : undefined;
+          ((conversationData as { nodeGraph?: Record<string, unknown> }).nodeGraph || undefined) : undefined;
         const currentBranchId = (conversationData && typeof conversationData === 'object') ?
-          ((conversationData as any).currentBranchId as string || 
-           (conversationData as any).current_branch as string || 
+          ((conversationData as { currentBranchId?: string; current_branch?: string }).currentBranchId || 
+           (conversationData as { currentBranchId?: string; current_branch?: string }).current_branch || 
            undefined) : undefined;
 
         // If targetBranchId is provided, we would normally load into that branch
@@ -501,10 +501,10 @@ class UnifiedApiClient {
           ((Array.isArray(conversationData.messages) ? conversationData.messages : []) || 
           (Array.isArray(conversationData.conversation) ? conversationData.conversation : [])) : [];
         const nodeGraph = (conversationData && typeof conversationData === 'object') ? 
-          ((conversationData as any).nodeGraph as Record<string, unknown> || undefined) : undefined;
+          ((conversationData as { nodeGraph?: Record<string, unknown> }).nodeGraph || undefined) : undefined;
         const currentBranchId = (conversationData && typeof conversationData === 'object') ?
-          ((conversationData as any).currentBranchId as string || 
-           (conversationData as any).current_branch as string || 
+          ((conversationData as { currentBranchId?: string; current_branch?: string }).currentBranchId || 
+           (conversationData as { currentBranchId?: string; current_branch?: string }).current_branch || 
            undefined) : undefined;
 
         // If targetBranchId is provided, we would normally load into that branch
@@ -918,7 +918,7 @@ class UnifiedApiClient {
       const conversationIndex = (existingConversations as unknown as Record<string, unknown>[]).findIndex((c) => c.id === conversationId);
 
       // Derive message count and preview from branches first, falling back to flat messages
-      let messageCount = conversationData && typeof conversationData === 'object' && Array.isArray((conversationData as any).messages) ? (conversationData as any).messages.length : 0;
+      let messageCount = conversationData && typeof conversationData === 'object' && Array.isArray((conversationData as { messages?: unknown[] }).messages) ? (conversationData as { messages: unknown[] }).messages.length : 0;
       let preview = 'No messages';
       const branchSummaries: Array<{
         id: string;
@@ -930,10 +930,10 @@ class UnifiedApiClient {
       }> = [];
       
       if (conversationData && typeof conversationData === 'object' && 
-          (conversationData as any).branches && typeof (conversationData as any).branches === 'object') {
+          (conversationData as { branches?: Record<string, unknown> }).branches && typeof (conversationData as { branches: Record<string, unknown> }).branches === 'object') {
         let latestMsg: { timestamp?: number; content?: string } | null = null;
         let total = 0;
-        for (const [branchId, branch] of Object.entries((conversationData as any).branches) as [string, { messages?: unknown[]; metadata?: Record<string, unknown> }][]) {
+        for (const [branchId, branch] of Object.entries((conversationData as { branches: Record<string, { messages?: unknown[]; metadata?: Record<string, unknown> }> }).branches) as [string, { messages?: unknown[]; metadata?: Record<string, unknown> }][]) {
           const msgs: Array<Record<string, unknown>> = Array.isArray(branch?.messages) ? branch.messages : [];
           total += msgs.length;
           if (msgs.length > 0) {
@@ -963,7 +963,7 @@ class UnifiedApiClient {
           preview = text.slice(0, 100);
         }
       } else if (messageCount > 0) {
-        const messages = (conversationData as any).messages;
+        const messages = (conversationData as { messages: unknown[] }).messages;
         const last = messages[messages.length - 1];
         if (last?.content) preview = String(last.content).slice(0, 100);
       }

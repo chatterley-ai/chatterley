@@ -1118,5 +1118,77 @@
     "error": "fetch failed",
     "lastUpdated": "2025-09-26T00:16:08.649Z",
     "expires": "2025-09-26T01:16:08.652Z"
+  },
+  "unsloth/DeepSeek-V3.1-Terminus-GGUF": {
+    "parameterCount": 0,
+    "tags": [],
+    "isSpecialist": false,
+    "error": "Invalid username or password.. URL: https://huggingface.co/api/models/undefined/revision/HEAD?expand=pipeline_tag&expand=private&expand=gated&expand=downloads&expand=likes&expand=lastModified. Request ID: Root=1-68dd2e8f-7c4af3290d351853440e7cde",
+    "lastUpdated": "2025-10-01T13:37:19.506Z",
+    "expires": "2025-10-01T14:37:19.507Z"
+  },
+  "deepseek-ai/DeepSeek-V3.1-Terminus": {
+    "parameterCount": 0,
+    "tags": [],
+    "isSpecialist": false,
+    "error": "Invalid username or password.. URL: https://huggingface.co/api/models/undefined/revision/HEAD?expand=pipeline_tag&expand=private&expand=gated&expand=downloads&expand=likes&expand=lastModified. Request ID: Root=1-68dd2e8f-4f9b3ed5005d9ab048f81d93",
+    "lastUpdated": "2025-10-01T13:37:19.571Z",
+    "expires": "2025-10-01T14:37:19.571Z"
+  },
+  "unsloth/DeepSeek-V3.2-Exp-GGUF": {
+    "parameterCount": 0,
+    "tags": [],
+    "isSpecialist": false,
+    "error": "Invalid username or password.. URL: https://huggingface.co/api/models/undefined/revision/HEAD?expand=pipeline_tag&expand=private&expand=gated&expand=downloads&expand=likes&expand=lastModified. Request ID: Root=1-68dd2e8f-67f18f12278365b204dee7fe",
+    "lastUpdated": "2025-10-01T13:37:19.724Z",
+    "expires": "2025-10-01T14:37:19.724Z"
+  },
+  "deepseek-ai/DeepSeek-V3.2-Exp": {
+    "parameterCount": 0,
+    "tags": [],
+    "isSpecialist": false,
+    "error": "Invalid username or password.. URL: https://huggingface.co/api/models/undefined/revision/HEAD?expand=pipeline_tag&expand=private&expand=gated&expand=downloads&expand=likes&expand=lastModified. Request ID: Root=1-68dd2e8f-37229add0ecc4b294d09fb25",
+    "lastUpdated": "2025-10-01T13:37:19.909Z",
+    "expires": "2025-10-01T14:37:19.909Z"
+  },
+  "zai-org/GLM-4.6": {
+    "parameterCount": 0,
+    "tags": [],
+    "isSpecialist": false,
+    "error": "Invalid username or password.. URL: https://huggingface.co/api/models/undefined/revision/HEAD?expand=pipeline_tag&expand=private&expand=gated&expand=downloads&expand=likes&expand=lastModified. Request ID: Root=1-68dd2e93-3c06c284528aab505be3928a",
+    "lastUpdated": "2025-10-01T13:37:23.733Z",
+    "expires": "2025-10-01T14:37:23.733Z"
+  },
+  "unsloth/Kimi-K2-Instruct-0905-GGUF": {
+    "parameterCount": 0,
+    "tags": [],
+    "isSpecialist": false,
+    "error": "Invalid username or password.. URL: https://huggingface.co/api/models/undefined/revision/HEAD?expand=pipeline_tag&expand=private&expand=gated&expand=downloads&expand=likes&expand=lastModified. Request ID: Root=1-68dd2e95-2ee75fb61344cdb103a11f02",
+    "lastUpdated": "2025-10-01T13:37:25.329Z",
+    "expires": "2025-10-01T14:37:25.329Z"
+  },
+  "moonshotai/Kimi-K2-Instruct-0905": {
+    "parameterCount": 0,
+    "tags": [],
+    "isSpecialist": false,
+    "error": "Invalid username or password.. URL: https://huggingface.co/api/models/undefined/revision/HEAD?expand=pipeline_tag&expand=private&expand=gated&expand=downloads&expand=likes&expand=lastModified. Request ID: Root=1-68dd2e95-555f584a1c4608f06bc203b0",
+    "lastUpdated": "2025-10-01T13:37:25.521Z",
+    "expires": "2025-10-01T14:37:25.521Z"
+  },
+  "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF": {
+    "parameterCount": 0,
+    "tags": [],
+    "isSpecialist": false,
+    "error": "Invalid username or password.. URL: https://huggingface.co/api/models/undefined/revision/HEAD?expand=pipeline_tag&expand=private&expand=gated&expand=downloads&expand=likes&expand=lastModified. Request ID: Root=1-68dd2e96-759608103fb03bcf4e472a7b",
+    "lastUpdated": "2025-10-01T13:37:26.307Z",
+    "expires": "2025-10-01T14:37:26.307Z"
+  },
+  "unsloth/Llama-3.3-70B-Instruct-GGUF": {
+    "parameterCount": 0,
+    "tags": [],
+    "isSpecialist": false,
+    "error": "Invalid username or password.. URL: https://huggingface.co/api/models/undefined/revision/HEAD?expand=pipeline_tag&expand=private&expand=gated&expand=downloads&expand=likes&expand=lastModified. Request ID: Root=1-68dd2e97-28d77add6ae2b7917717f90c",
+    "lastUpdated": "2025-10-01T13:37:27.316Z",
+    "expires": "2025-10-01T14:37:27.316Z"
   }
 }

@@ -142,6 +142,7 @@ export interface ElectronAPI {
     getSystemChangeInfo: () => Promise<any>;
     getEnvironmentSystemInfo: () => Promise<any>;
     getBasicSystemInfo: () => Promise<any>;
+    getInstalledBackends: () => Promise<{ sglang: boolean; vllm: boolean; llamacpp: boolean }>;
     installSGLang: () => Promise<{ success: boolean; message: string }>;
     installFlashAttn2: () => Promise<{ success: boolean; message: string }>;
     installFlashInfer: () => Promise<{ success: boolean; message: string }>;
