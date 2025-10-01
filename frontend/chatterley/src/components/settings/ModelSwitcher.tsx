@@ -323,6 +323,33 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
     }, 2000);
 
     try {
+      // Optimistic UI/state update so the switcher reflects selection immediately
+      setActiveConfigPath(configPath);
+      if (selectedConfig) {
+        setCurrentModel(selectedConfig.display_name || configPath);
+        try {
+          await apiClient.setStorageItem('selectedConfig', configPath);
+        } catch {}
+        // Also push into global settings early so other panels update
+        try {
+          await syncModelSelection(undefined, {
+            display_name: selectedConfig.display_name,
+            description: selectedConfig.model_name || selectedConfig.filename || selectedConfig.display_name,
+            engine: selectedConfig.engine,
+            context_length: selectedConfig.context_length || 0,
+            model_family: selectedConfig.model_family || 'unknown',
+            model_name: selectedConfig.model_name,
+            filename: selectedConfig.filename,
+            config_path: configPath,
+            config_id: selectedConfig.id,
+          } as unknown as ModelConfigMetadata, configPath);
+        } catch {}
+      } else {
+        // Fallback minimal optimistic update
+        setCurrentModel(configPath);
+        try { await apiClient.setStorageItem('selectedConfig', configPath); } catch {}
+      }
+
       // Clear model from memory before switching to ensure clean state
       debugLog('🧹 Clearing model before model switch...');
       const clearResult = await apiClient.clearModel();
@@ -363,6 +390,9 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
               await syncModelSelection(model.id, null, activeConfigPath || configPath);
             }
 
+            // Fire a one-off refresh request for SystemMonitor listeners
+            try { window.dispatchEvent(new Event('oumi-models-refresh')); } catch {}
+
             // Toast only when the active model actually changed
             try {
               const { showToast } = await import('@/lib/toastBus');
@@ -379,6 +409,7 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
             setCurrentModelConfigMetadata(null);
             console.warn('⚠️ Could not refresh model info from server, using config path');
             await syncModelSelection(configPath, null, configPath);
+            try { window.dispatchEvent(new Event('oumi-models-refresh')); } catch {}
             try { const { showToast } = await import('@/lib/toastBus'); showToast({ message: '⚠️ Swap completed, but could not refresh model info', variant: 'warning' }); } catch {}
           }
         } catch (refreshError) {
@@ -388,6 +419,7 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
           setActiveConfigPath(configPath);
           setCurrentModelConfigMetadata(null);
           await syncModelSelection(configPath, null, configPath);
+          try { window.dispatchEvent(new Event('oumi-models-refresh')); } catch {}
           try { const { showToast } = await import('@/lib/toastBus'); showToast({ message: '⚠️ Swap completed, but refresh failed', variant: 'warning' }); } catch {}
         }
         

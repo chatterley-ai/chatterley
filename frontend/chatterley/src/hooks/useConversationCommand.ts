@@ -398,6 +398,9 @@ interface BackendBranch {
 
       const resultMessage = successMessage || response.message || 'Command completed successfully';
       console.log(`✅ Command '${command}' completed successfully`);
+
+      // Signal a one-off model refresh for any listeners (e.g., SystemMonitor)
+      try { window.dispatchEvent(new Event('oumi-models-refresh')); } catch {}
       
       return { 
         success: true, 

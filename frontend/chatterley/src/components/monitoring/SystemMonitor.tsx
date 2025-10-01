@@ -219,7 +219,7 @@ export default function SystemMonitor({
   }, []);
 
   // Model status and control functions
-  const checkModelStatus = async () => {
+  const checkModelStatus = React.useCallback(async () => {
     try {
       try {
         const storedConfigId = await apiClient.getStorageItem('selectedConfig', null);
@@ -341,7 +341,16 @@ export default function SystemMonitor({
     } catch (error) {
       console.error('Failed to check model status:', error);
     }
-  };
+  }, [updateSettings]);
+
+  // Single-shot getModels refresh trigger from other parts of the app
+  React.useEffect(() => {
+    const handler = () => {
+      void checkModelStatus();
+    };
+    window.addEventListener('oumi-models-refresh', handler);
+    return () => window.removeEventListener('oumi-models-refresh', handler);
+  }, [checkModelStatus]);
 
   // Allow explicit model name for fresh reads after status checks
   const testModel = async (explicitModelName?: string, reason: string = 'unspecified') => {

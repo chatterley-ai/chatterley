@@ -463,6 +463,8 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
 
   React.useEffect(() => {
     void ensureModelLoaded();
+    // One-off model metadata refresh for initialization
+    try { window.dispatchEvent(new Event('oumi-models-refresh')); } catch {}
   }, [ensureModelLoaded]);
 
   React.useEffect(() => {
