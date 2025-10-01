@@ -5,7 +5,7 @@
 "use client";
 
 import React from 'react';
-import { Activity, Cpu, HardDrive, Zap, MessageSquare, Wifi, WifiOff, Clock, Bot, Play, Square, RefreshCw } from 'lucide-react';
+import { Activity, Cpu, HardDrive, Zap, MessageSquare, Wifi, WifiOff, Clock } from 'lucide-react';
 import apiClient from '@/lib/unified-api';
 import { useChatStore } from '@/lib/store';
 import { ModelConfigMetadata, AppSettings } from '@/lib/types';
@@ -648,7 +648,6 @@ export default function SystemMonitor({
   // Format file size
   const formatGB = (gb: number) => `${gb.toFixed(1)}GB`;
   const formatTokens = (tokens: number) => tokens.toLocaleString();
-  const displayedModelName = modelStatus.modelName || selectedModelFromStore || '';
 
   if (useFallback && capabilities) {
     return (
@@ -816,114 +815,7 @@ export default function SystemMonitor({
           )}
         </div>
 
-        {/* Model Status */}
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <div className="p-1 rounded bg-blue-100">
-              <Bot size={12} className="text-blue-600" />
-            </div>
-            <span className="text-sm font-medium text-foreground">Model Status</span>
-            <div className="ml-auto flex items-center gap-1">
-              <div 
-                className={`w-2 h-2 rounded-full ${
-                  modelStatus.testResult === 'success' ? 'bg-green-500' :
-                  modelStatus.testResult === 'failure' ? 'bg-red-500' :
-                  'bg-gray-400'
-                }`} 
-              />
-              <span className={`text-xs capitalize ${
-                modelStatus.loaded ? 'text-green-600' : 'text-red-600'
-              }`}>
-                {modelStatus.loaded ? 'Loaded' : 'Unloaded'}
-              </span>
-            </div>
-          </div>
-          
-          <div className="grid grid-cols-1 gap-2 text-xs">
-            {displayedModelName && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Model:</span>
-                <span className="font-mono text-right truncate ml-2" title={displayedModelName}>
-                  {displayedModelName.length > 20 
-                    ? `${displayedModelName.slice(0, 17)}...`
-                    : displayedModelName
-                  }
-                </span>
-              </div>
-            )}
-            
-            {modelStatus.lastTested && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Last Test:</span>
-                <span className={`font-mono ${
-                  modelStatus.testResult === 'success' ? 'text-green-600' :
-                  modelStatus.testResult === 'failure' ? 'text-red-600' :
-                  'text-gray-600'
-                }`}>
-                  {new Date(modelStatus.lastTested).toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit'
-                  })}
-                </span>
-              </div>
-            )}
-          </div>
-          
-          {/* Model Control Buttons */}
-          <div className="flex gap-1 pt-1">
-            <button
-              onClick={() => testModel(undefined, 'manual-button')}
-              disabled={!displayedModelName || isModelActionLoading}
-              className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 rounded disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              title="Test model functionality"
-            >
-              {isModelActionLoading ? (
-                <RefreshCw size={10} className="animate-spin" />
-              ) : (
-                <Play size={10} />
-              )}
-              Test
-            </button>
-            
-            <button
-              onClick={modelStatus.loaded ? unloadModel : reloadModel}
-              disabled={isModelActionLoading}
-              className={`flex items-center gap-1 px-2 py-1 text-xs rounded disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${
-                modelStatus.loaded 
-                  ? 'bg-red-100 hover:bg-red-200 text-red-700'
-                  : 'bg-green-100 hover:bg-green-200 text-green-700'
-              }`}
-              title={modelStatus.loaded ? 'Unload model from memory' : 'Reload model into memory'}
-            >
-              {isModelActionLoading ? (
-                <RefreshCw size={10} className="animate-spin" />
-              ) : modelStatus.loaded ? (
-                <Square size={10} />
-              ) : (
-                <Play size={10} />
-              )}
-              {modelStatus.loaded ? 'Unload' : 'Reload'}
-            </button>
-          </div>
-        </div>
 
-        {/* Conversation Stats */}
-        {stats.conversation_turns !== undefined && (
-          <div className="flex items-center justify-between pt-2 border-t">
-            <div className="flex items-center gap-2">
-              <MessageSquare size={12} className="text-muted-foreground" />
-              <span className="text-xs text-muted-foreground">Conversation Turns</span>
-            </div>
-            <span className="text-xs font-mono text-foreground">
-              {stats.conversation_turns}
-            </span>
-          </div>
-        )}
-      </div>
-
-      {/* Last update indicator */}
-      <div className="text-xs text-muted-foreground text-center pt-2 border-t">
-        Updates every {updateInterval / 1000}s
       </div>
     </div>
   );

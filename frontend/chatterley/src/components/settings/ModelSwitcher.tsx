@@ -5,7 +5,7 @@
 "use client";
 
 import React from 'react';
-import { Bot, ChevronDown, RefreshCw, Check, AlertTriangle, Search, X, Zap, Brain, Cpu, Gem, Waves, FlaskConical, Building2 } from 'lucide-react';
+import { Bot, ChevronDown, RefreshCw, Check, AlertTriangle, Search, X, Zap, Brain, Cpu, Gem, Waves, FlaskConical, Building2, Play, Square } from 'lucide-react';
 import { useChatStore } from '@/lib/store';
 import apiClient from '@/lib/unified-api';
 import { ModelConfigMetadata, AppSettings } from '@/lib/types';
@@ -102,6 +102,8 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
   const dropdownRef = React.useRef<HTMLDivElement>(null);
   const searchInputRef = React.useRef<HTMLInputElement>(null);
   const [installedBackends, setInstalledBackends] = React.useState<{ sglang: boolean; vllm: boolean; llamacpp: boolean } | null>(null);
+  const [isModelActionLoading, setIsModelActionLoading] = React.useState(false);
+  const [modelStatus, setModelStatus] = React.useState<{ loaded: boolean; modelName?: string; lastTested?: number; testResult?: 'success'|'failure'|'unknown' }>({ loaded: false, testResult: 'unknown' });
 
   const syncModelSelection = React.useCallback(async (
     modelId: string | undefined,
@@ -120,6 +122,7 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
       nextSettings.selectedProvider = engine;
     }
     if (Object.keys(nextSettings).length > 0) {
+      console.log('[ModelSwitcher] syncModelSelection -> updating settings', { displayName, engine, modelId, fallbackConfigPath });
       updateSettings(nextSettings);
     }
 
@@ -200,6 +203,7 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
 
   React.useEffect(() => {
     if (!currentModel && persistedSelectedModel) {
+      console.log('[ModelSwitcher] Hydrating currentModel from persisted', persistedSelectedModel);
       setCurrentModel(persistedSelectedModel);
     }
   }, [currentModel, persistedSelectedModel]);
@@ -207,9 +211,10 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
   // Also update currentModel when settings-selected model changes later
   React.useEffect(() => {
     if (persistedSelectedModel && persistedSelectedModel !== currentModel) {
+      console.log('[ModelSwitcher] persistedSelectedModel changed', persistedSelectedModel);
       setCurrentModel(persistedSelectedModel);
     }
-  }, [persistedSelectedModel]);
+  }, [persistedSelectedModel, currentModel]);
 
   // Refresh model info when currentModel changes
   React.useEffect(() => {
@@ -257,6 +262,66 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
     })();
     return () => { mounted = false; };
   }, []);
+
+  // Hydrate model status from storage and current model
+  const hydrateModelStatus = React.useCallback(async () => {
+    try {
+      const record = await apiClient.getStorageItem<{ modelName?: string; configId?: string; configPath?: string; timestamp: number } | null>('lastSuccessfulModelTest', null);
+      const models = await apiClient.getModels();
+      const activeName = models.success ? models.data?.data?.[0]?.id : undefined;
+      const recent = record && Date.now() - record.timestamp < 30 * 60 * 1000;
+      setModelStatus(prev => ({
+        ...prev,
+        loaded: Boolean(recent),
+        modelName: activeName || record?.modelName || prev.modelName,
+        lastTested: record?.timestamp || prev.lastTested,
+        testResult: recent ? 'success' : 'unknown',
+      }));
+    } catch {
+      // no-op
+    }
+  }, []);
+
+  React.useEffect(() => {
+    void hydrateModelStatus();
+    const handler = () => void hydrateModelStatus();
+    window.addEventListener('oumi-models-refresh', handler);
+    return () => window.removeEventListener('oumi-models-refresh', handler);
+  }, [hydrateModelStatus]);
+
+  const testActiveModel = async () => {
+    setIsModelActionLoading(true);
+    try {
+      const selectedCfg = await apiClient.getStorageItem<string | null>('selectedConfig', null);
+      if (!selectedCfg) throw new Error('No selected config available to test');
+      const resp = await apiClient.testModel(selectedCfg);
+      const ok = resp.success && (resp.data as any)?.success !== false;
+      setModelStatus({
+        loaded: Boolean(ok),
+        modelName: modelStatus.modelName,
+        lastTested: Date.now(),
+        testResult: ok ? 'success' : 'failure',
+      });
+      try { window.dispatchEvent(new Event('oumi-models-refresh')); } catch {}
+    } catch (e) {
+      setModelStatus({ loaded: false, modelName: modelStatus.modelName, lastTested: Date.now(), testResult: 'failure' });
+    } finally {
+      setIsModelActionLoading(false);
+    }
+  };
+
+  const unloadActiveModel = async () => {
+    setIsModelActionLoading(true);
+    try {
+      const resp = await apiClient.clearModel();
+      if (resp.success) {
+        setModelStatus({ loaded: false, modelName: modelStatus.modelName, testResult: 'unknown' });
+        try { await apiClient.deleteStorageItem('lastSuccessfulModelTest'); } catch {}
+      }
+    } finally {
+      setIsModelActionLoading(false);
+    }
+  };
 
   const isEngineAvailable = (engine: string): boolean => {
     const e = (engine || '').toLowerCase();
@@ -378,18 +443,19 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
             const activeConfigPath = metadata?.config_path;
             setCurrentModel(activeConfigPath || model.id);
             if (activeConfigPath) setActiveConfigPath(activeConfigPath);
-            
-            // Extract and cache updated config metadata after swap
-            if (metadata) {
+
+            const metadataMatches = Boolean(metadata && activeConfigPath && metadata.config_path === activeConfigPath);
+            if (metadata && metadataMatches) {
               setCurrentModelConfigMetadata(metadata);
               debugLog('🔄 Updated model with metadata:', model.id, metadata);
               await syncModelSelection(model.id, metadata, activeConfigPath || configPath);
             } else {
-              setCurrentModelConfigMetadata(null);
-              debugLog(`🔄 Updated model (no metadata): ${model.id}`);
+              setCurrentModelConfigMetadata(metadataMatches ? metadata : null);
+              debugLog(`🔄 Updated model (metadata ${metadataMatches ? 'matched' : 'stale or missing'}): ${model.id}`);
               await syncModelSelection(model.id, null, activeConfigPath || configPath);
             }
 
+            console.log('[ModelSwitcher] post-swap metadata', { modelId: model.id, metadata, activeConfigPath, metadataMatches, currentModel: activeConfigPath || model.id });
             // Fire a one-off refresh request for SystemMonitor listeners
             try { window.dispatchEvent(new Event('oumi-models-refresh')); } catch {}
 
@@ -736,6 +802,60 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
             <div className="font-mono text-sm text-foreground">
               {getEngineAbbreviation(currentModelInfo.engine)}
             </div>
+          </div>
+        </div>
+
+        {/* Model Status (migrated from System Monitor) */}
+        <div className="space-y-2 pt-2 border-t">
+          <div className="flex items-center gap-2">
+            <div className="p-1 rounded bg-blue-100">
+              <Bot size={12} className="text-blue-600" />
+            </div>
+            <span className="text-sm font-medium text-foreground">Model Status</span>
+            <div className="ml-auto flex items-center gap-1">
+              <div className={`w-2 h-2 rounded-full ${modelStatus.testResult === 'success' ? 'bg-green-500' : modelStatus.testResult === 'failure' ? 'bg-red-500' : 'bg-gray-400'}`} />
+              <span className={`text-xs capitalize ${modelStatus.loaded ? 'text-green-600' : 'text-red-600'}`}>
+                {modelStatus.loaded ? 'Loaded' : 'Unloaded'}
+              </span>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 gap-2 text-xs">
+            {modelStatus.modelName && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Model:</span>
+                <span className="font-mono text-right truncate ml-2" title={modelStatus.modelName}>
+                  {modelStatus.modelName.length > 20 ? `${modelStatus.modelName.slice(0,17)}...` : modelStatus.modelName}
+                </span>
+              </div>
+            )}
+            {modelStatus.lastTested && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Last Test:</span>
+                <span className={`font-mono ${modelStatus.testResult === 'success' ? 'text-green-600' : modelStatus.testResult === 'failure' ? 'text-red-600' : 'text-gray-600'}`}>
+                  {new Date(modelStatus.lastTested).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+            )}
+          </div>
+          <div className="flex gap-1 pt-1">
+            <button
+              onClick={testActiveModel}
+              disabled={!activeConfigPath || isModelActionLoading}
+              className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 rounded disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              title="Test model functionality"
+            >
+              {isModelActionLoading ? <RefreshCw size={10} className="animate-spin" /> : <Play size={10} />}
+              Test
+            </button>
+            <button
+              onClick={modelStatus.loaded ? unloadActiveModel : testActiveModel}
+              disabled={isModelActionLoading}
+              className={`flex items-center gap-1 px-2 py-1 text-xs rounded disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${modelStatus.loaded ? 'bg-red-100 hover:bg-red-200 text-red-700' : 'bg-green-100 hover:bg-green-200 text-green-700'}`}
+              title={modelStatus.loaded ? 'Unload model from memory' : 'Reload/Test model'}
+            >
+              {isModelActionLoading ? <RefreshCw size={10} className="animate-spin" /> : modelStatus.loaded ? <Square size={10} /> : <Play size={10} />}
+              {modelStatus.loaded ? 'Unload' : 'Reload'}
+            </button>
           </div>
         </div>
       </div>

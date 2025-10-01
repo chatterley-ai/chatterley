@@ -358,6 +358,7 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
             const metaAny = (md || {}) as Record<string, unknown>;
             const displayName = (metaAny.display_name as string) || modelEntry.id || '';
             const engine = (metaAny.engine as string) || '';
+            console.log('[ChatInterface] Syncing settings from getModels', { displayName, engine });
             useChatStore.getState().updateSettings({
               selectedModel: displayName,
               selectedProvider: engine,
@@ -418,6 +419,7 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
             const metaAny = (md || {}) as Record<string, unknown>;
             const displayName = (metaAny.display_name as string) || modelEntry.id || '';
             const engine = (metaAny.engine as string) || '';
+            console.log('[ChatInterface] Syncing settings from recheck', { displayName, engine });
             useChatStore.getState().updateSettings({
               selectedModel: displayName,
               selectedProvider: engine,
