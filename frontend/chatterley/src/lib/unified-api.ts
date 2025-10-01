@@ -417,15 +417,16 @@ class UnifiedApiClient {
           const branches = Array.isArray((conv as { branches?: unknown[] }).branches) ? (conv as { branches: unknown[] }).branches : [];
           for (const br of branches) {
             // Skip duplicating main if present in branches
-            if (br.id === 'main') continue;
+            const branchObj = br as Record<string, unknown>;
+            if (branchObj.id === 'main') continue;
             nodes.push({
               conversationId: convId,
-              branchId: br.id,
-              name: br.name || br.id,
-              lastActive: br.lastActive || convLast,
-              messageCount: br.messageCount || 0,
-              preview: br.preview || '',
-              parentId: br.parentId,
+              branchId: branchObj.id as string,
+              name: (branchObj.name as string) || (branchObj.id as string),
+              lastActive: (branchObj.lastActive as string) || convLast,
+              messageCount: (branchObj.messageCount as number) || 0,
+              preview: (branchObj.preview as string) || '',
+              parentId: branchObj.parentId as string | undefined,
               sessionId,
               isRoot: false,
             });
@@ -461,8 +462,8 @@ class UnifiedApiClient {
         }
 
         const messages = (conversationData && typeof conversationData === 'object') ? 
-          ((Array.isArray(conversationData.messages) ? conversationData.messages : []) || 
-          (Array.isArray(conversationData.conversation) ? conversationData.conversation : [])) : [];
+          ((Array.isArray((conversationData as Record<string, unknown>).messages) ? (conversationData as Record<string, unknown>).messages : []) || 
+          (Array.isArray((conversationData as Record<string, unknown>).conversation) ? (conversationData as Record<string, unknown>).conversation : [])) : [];
         const nodeGraph = (conversationData && typeof conversationData === 'object') ? 
           ((conversationData as { nodeGraph?: Record<string, unknown> }).nodeGraph || undefined) : undefined;
         const currentBranchId = (conversationData && typeof conversationData === 'object') ?
@@ -498,8 +499,8 @@ class UnifiedApiClient {
 
         const conversationData = JSON.parse(storedConversation);
         const messages = (conversationData && typeof conversationData === 'object') ? 
-          ((Array.isArray(conversationData.messages) ? conversationData.messages : []) || 
-          (Array.isArray(conversationData.conversation) ? conversationData.conversation : [])) : [];
+          ((Array.isArray((conversationData as Record<string, unknown>).messages) ? (conversationData as Record<string, unknown>).messages : []) || 
+          (Array.isArray((conversationData as Record<string, unknown>).conversation) ? (conversationData as Record<string, unknown>).conversation : [])) : [];
         const nodeGraph = (conversationData && typeof conversationData === 'object') ? 
           ((conversationData as { nodeGraph?: Record<string, unknown> }).nodeGraph || undefined) : undefined;
         const currentBranchId = (conversationData && typeof conversationData === 'object') ?
@@ -934,7 +935,7 @@ class UnifiedApiClient {
         let latestMsg: { timestamp?: number; content?: string } | null = null;
         let total = 0;
         for (const [branchId, branch] of Object.entries((conversationData as { branches: Record<string, { messages?: unknown[]; metadata?: Record<string, unknown> }> }).branches) as [string, { messages?: unknown[]; metadata?: Record<string, unknown> }][]) {
-          const msgs: Array<Record<string, unknown>> = Array.isArray(branch?.messages) ? branch.messages : [];
+          const msgs: Array<Record<string, unknown>> = Array.isArray((branch as Record<string, unknown>)?.messages) ? (branch as Record<string, unknown>).messages as Record<string, unknown>[] : [];
           total += msgs.length;
           if (msgs.length > 0) {
             const candidate = msgs[msgs.length - 1];
@@ -965,7 +966,7 @@ class UnifiedApiClient {
       } else if (messageCount > 0) {
         const messages = (conversationData as { messages: unknown[] }).messages;
         const last = messages[messages.length - 1];
-        if (last?.content) preview = String(last.content).slice(0, 100);
+        if ((last as Record<string, unknown>)?.content) preview = String((last as Record<string, unknown>).content).slice(0, 100);
       }
 
       // Do not index empty conversations in the summary list
@@ -1010,9 +1011,9 @@ class UnifiedApiClient {
       }
 
       if (conversationIndex >= 0) {
-        existingConversations[conversationIndex] = conversationEntry;
+        (existingConversations as Record<string, unknown>[])[conversationIndex] = conversationEntry;
       } else {
-        existingConversations.push(conversationEntry);
+        (existingConversations as Record<string, unknown>[]).push(conversationEntry);
       }
 
       await this.setStorageItem(conversationsKey, existingConversations);

@@ -225,12 +225,12 @@ function SystemSettings() {
   };
 
   // Optional installs state
-  const [, setInstalling] = useState<{ sglang?: boolean; flashattn2?: boolean; flashinfer?: boolean }>({});
-  const [, setInstallMsg] = useState<string | null>(null);
-  // const platformInfo = apiClient.getPlatform();
+  const [installing, setInstalling] = useState<{ sglang?: boolean; flashattn2?: boolean; flashinfer?: boolean }>({});
+  const [installMsg, setInstallMsg] = useState<string | null>(null);
+  const platformInfo = apiClient.getPlatform();
 
   // Unused function due to UI redesign - keeping for future reference
-const _handleInstall = async (kind: 'sglang' | 'flashattn2' | 'flashinfer') => {
+const handleInstall = async (kind: 'sglang' | 'flashattn2' | 'flashinfer') => {
     try {
       setInstalling(prev => ({ ...prev, [kind]: true }));
       let result: { success: boolean; message: string } = { success: false, message: '' };

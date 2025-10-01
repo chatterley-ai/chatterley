@@ -86,7 +86,11 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
   const currentBranchId = useChatStore((state) => state.currentBranchId);
   const updateSettings = useChatStore((state) => state.updateSettings);
   const persistedSelectedModel = useChatStore((state) => state.settings.selectedModel);
+  const persistedSelectedProvider = useChatStore((state) => state.settings.selectedProvider);
+  // Display label of the active model (can be a human-friendly name)
   const [currentModel, setCurrentModel] = React.useState<string>('');
+  // Canonical active config path used for equality checks and checkmarks
+  const [activeConfigPath, setActiveConfigPath] = React.useState<string>('');
   const [availableConfigs, setAvailableConfigs] = React.useState<ConfigOption[]>([]);
   const [isDropdownOpen, setIsDropdownOpen] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(false);
@@ -163,6 +167,14 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
           const activeConfigPath = metadata?.config_path;
 
           setCurrentModel(activeConfigPath || model.id);
+          if (activeConfigPath) {
+            setActiveConfigPath(activeConfigPath);
+          } else {
+            try {
+              const stored = await apiClient.getStorageItem<string | null>('selectedConfig', null);
+              if (stored) setActiveConfigPath(stored);
+            } catch {}
+          }
 
           if (metadata) {
             setCurrentModelConfigMetadata(metadata);
@@ -191,6 +203,13 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
       setCurrentModel(persistedSelectedModel);
     }
   }, [currentModel, persistedSelectedModel]);
+
+  // Also update currentModel when settings-selected model changes later
+  React.useEffect(() => {
+    if (persistedSelectedModel && persistedSelectedModel !== currentModel) {
+      setCurrentModel(persistedSelectedModel);
+    }
+  }, [persistedSelectedModel]);
 
   // Refresh model info when currentModel changes
   React.useEffect(() => {
@@ -278,7 +297,8 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
   }, [filteredConfigs]);
 
   const handleModelSwitch = async (configPath: string) => {
-    if (configPath === currentModel) {
+    // Compare against canonical path, not the display label
+    if (configPath === activeConfigPath) {
       setIsDropdownOpen(false);
       return;
     }
@@ -330,6 +350,7 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
               : undefined;
             const activeConfigPath = metadata?.config_path;
             setCurrentModel(activeConfigPath || model.id);
+            if (activeConfigPath) setActiveConfigPath(activeConfigPath);
             
             // Extract and cache updated config metadata after swap
             if (metadata) {
@@ -354,6 +375,7 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
           } else {
             // Fallback to config path if server response fails
             setCurrentModel(configPath);
+            setActiveConfigPath(configPath);
             setCurrentModelConfigMetadata(null);
             console.warn('⚠️ Could not refresh model info from server, using config path');
             await syncModelSelection(configPath, null, configPath);
@@ -363,6 +385,7 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
           console.error('❌ Error refreshing model info:', refreshError);
           // Fallback to config path if refresh fails
           setCurrentModel(configPath);
+          setActiveConfigPath(configPath);
           setCurrentModelConfigMetadata(null);
           await syncModelSelection(configPath, null, configPath);
           try { const { showToast } = await import('@/lib/toastBus'); showToast({ message: '⚠️ Swap completed, but refresh failed', variant: 'warning' }); } catch {}
@@ -414,7 +437,7 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
       };
     }
 
-    // CRITICAL FIX: Use cached config metadata from server if available
+    // Prefer server's active config metadata if available
     if (currentModelConfigMetadata) {
       debugLog(`✅ Using server's active config metadata:`, currentModelConfigMetadata);
       return {
@@ -423,6 +446,17 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
         engine: (currentModelConfigMetadata.engine || 'UNKNOWN').toUpperCase(),
         contextLength: currentModelConfigMetadata.context_length,
         modelFamily: currentModelConfigMetadata.model_family,
+      };
+    }
+
+    // If no metadata, reflect the globally selected model/provider so the UI updates immediately
+    if (persistedSelectedModel) {
+      return {
+        displayName: persistedSelectedModel,
+        description: 'Active model',
+        engine: (persistedSelectedProvider || 'UNKNOWN').toUpperCase(),
+        contextLength: 0,
+        modelFamily: 'unknown',
       };
     }
 
@@ -639,7 +673,7 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
                               <span className={`px-2 py-1 rounded text-xs font-medium ${getEngineColor(config.engine)}`}>
                                 {getEngineAbbreviation(config.engine)}
                               </span>
-                              {config.config_path === currentModel && (
+                              {config.config_path === activeConfigPath && (
                                 <Check size={14} className="text-green-600" />
                               )}
                             </div>
