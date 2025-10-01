@@ -876,7 +876,7 @@ export default function SettingsScreen() {
   };
 
   return (
-    <div className="h-full flex">
+    <div className="h-full min-h-0 flex">
       {/* Sidebar */}
       <div className="w-64 border-r bg-card/50 p-4">
         <div className="mb-6">
@@ -906,7 +906,7 @@ export default function SettingsScreen() {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 min-h-0 overflow-y-auto">
         <div className="p-6 max-w-4xl">
           {renderContent()}
         </div>

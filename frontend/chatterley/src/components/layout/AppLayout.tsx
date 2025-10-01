@@ -819,8 +819,8 @@ React.useEffect(() => {
         {/* Settings Modal */}
         {showSettings && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            <div className="w-full h-full max-w-7xl max-h-[90vh] bg-background border border-border rounded-lg shadow-2xl overflow-hidden">
-              <div className="flex items-center justify-between p-4 border-b border-border">
+            <div className="w-full h-full max-w-7xl max-h-[90vh] bg-background border border-border rounded-lg shadow-2xl overflow-hidden flex flex-col">
+              <div className="flex items-center justify-between p-4 border-b border-border shrink-0">
                 <h2 className="text-lg font-semibold">Settings</h2>
                 <button
                   onClick={() => setShowSettings(false)}
@@ -830,7 +830,7 @@ React.useEffect(() => {
                   <X size={18} />
                 </button>
               </div>
-              <div className="h-full overflow-hidden">
+              <div className="flex-1 min-h-0 overflow-hidden">
                 <SettingsScreen />
               </div>
             </div>
