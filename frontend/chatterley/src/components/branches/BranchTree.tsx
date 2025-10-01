@@ -7,10 +7,8 @@
 import React from 'react';
 import { useChatStore } from '@/lib/store';
 import { ConversationBranch } from '@/lib/types';
-import { Plus, GitBranch, Trash2, TreePine, List, MoreVertical, Shuffle } from 'lucide-react';
+import { Plus, GitBranch, Trash2, MoreVertical } from 'lucide-react';
 import apiClient from '@/lib/unified-api';
-import BranchTreeVisualization from './BranchTreeVisualization';
-import BranchInheritanceView from './BranchInheritanceView';
 import BranchContextMenu from './BranchContextMenu';
 import { ConversationBranch as IBranchData } from '@/lib/types';
 import BranchMergeDialog from './BranchMergeDialog';
@@ -53,7 +51,6 @@ export default function BranchTree({ className = '' }: BranchTreeProps) {
   // No need to update branch message counts manually since branches are now derived on demand
   
   const [isCreating, setIsCreating] = React.useState(false);
-  const [viewMode, setViewMode] = React.useState<'list' | 'tree' | 'inheritance'>('list');
   const [contextMenu, setContextMenu] = React.useState<{
     branch: IBranchData;
     position: { x: number; y: number };
@@ -301,43 +298,6 @@ export default function BranchTree({ className = '' }: BranchTreeProps) {
             <GitBranch size={18} />
             Conversation Branches
           </h3>
-          
-          {/* View mode toggle */}
-          <div className="flex bg-muted rounded p-1">
-            <button
-              onClick={() => setViewMode('list')}
-              className={`p-1 rounded text-xs transition-colors ${
-                viewMode === 'list' 
-                  ? 'bg-card text-foreground shadow-sm' 
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-              title="List view"
-            >
-              <List size={14} />
-            </button>
-            <button
-              onClick={() => setViewMode('tree')}
-              className={`p-1 rounded text-xs transition-colors ${
-                viewMode === 'tree' 
-                  ? 'bg-card text-foreground shadow-sm' 
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-              title="Tree view"
-            >
-              <TreePine size={14} />
-            </button>
-            <button
-              onClick={() => setViewMode('inheritance')}
-              className={`p-1 rounded text-xs transition-colors ${
-                viewMode === 'inheritance' 
-                  ? 'bg-card text-foreground shadow-sm' 
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-              title="Inheritance view"
-            >
-              <Shuffle size={14} />
-            </button>
-          </div>
         </div>
 
         {/* Conversation management buttons removed per request */}
@@ -350,10 +310,8 @@ export default function BranchTree({ className = '' }: BranchTreeProps) {
         )}
       </div>
 
-      {/* Main content area - List, Tree, or Inheritance view */}
-      {viewMode === 'list' ? (
-        /* Branch list view */
-        <div className="flex-1 overflow-y-auto">
+      {/* Main content area - List view */}
+      <div className="flex-1 overflow-y-auto">
           {branches.map((branch) => (
             <div
               key={branch.id}
@@ -420,55 +378,19 @@ export default function BranchTree({ className = '' }: BranchTreeProps) {
               </div>
             </div>
           ))}
-        </div>
-      ) : viewMode === 'tree' ? (
-        /* Tree visualization view */
-        <div className="flex-1">
-          <BranchTreeVisualization
-            onBranchSelect={handleSwitchBranch}
-            onCreateBranch={(fromBranchId, name) => {
-              // Create branch from the selected parent
-              handleCreateBranch(name, fromBranchId);
-            }}
-            onDeleteBranch={handleDeleteBranch}
-            className="h-full"
-          />
-        </div>
-      ) : (
-        /* Inheritance view */
-        <div className="flex-1">
-          {currentBranch ? (
-            <BranchInheritanceView
-              currentBranch={currentBranch}
-              allBranches={branches}
-              messages={messages}
-              onSwitchBranch={handleSwitchBranch}
-              className="h-full"
-            />
-          ) : (
-            <div className="flex items-center justify-center h-full text-gray-500">
-              <div className="text-center">
-                <Shuffle size={32} className="mx-auto mb-2 opacity-50" />
-                <div className="text-sm">No current branch selected</div>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+      </div>
 
       {/* Create new branch button (default naming) - only show in list view */}
-      {viewMode === 'list' && (
-        <div className="p-4 border-t border-border">
-          <button
-            onClick={() => handleCreateBranch()}
-            disabled={isCreating}
-            className="w-full bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground py-2 px-3 rounded text-sm font-medium transition-colors flex items-center justify-center gap-2"
-          >
-            <Plus size={16} />
-            {isCreating ? 'Creating...' : 'New Branch'}
-          </button>
-        </div>
-      )}
+      <div className="p-4 border-t border-border">
+        <button
+          onClick={() => handleCreateBranch()}
+          disabled={isCreating}
+          className="w-full bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground py-2 px-3 rounded text-sm font-medium transition-colors flex items-center justify-center gap-2"
+        >
+          <Plus size={16} />
+          {isCreating ? 'Creating...' : 'New Branch'}
+        </button>
+      </div>
 
       {/* Context Menu */}
       {contextMenu && (

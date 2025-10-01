@@ -373,13 +373,23 @@ function setupChatHandlers(pythonManager: PythonServerManager): void {
     let lastError: any = null;
     for (let i = 0; i < attempts; i++) {
       try {
-        return await fetch(url, {
+        // Node's undici fetch may require duplex: 'half' for requests with a body
+        const method = (options.method || 'GET').toUpperCase();
+        const hasBody = typeof (options as any).body !== 'undefined' && (options as any).body !== null;
+        const needsDuplex = typeof process !== 'undefined' && !!(process as any).versions?.node && hasBody && method !== 'GET' && method !== 'HEAD';
+
+        const reqInit: any = {
           headers: {
             'Content-Type': 'application/json',
             ...options.headers,
           },
           ...options,
-        });
+        };
+        if (needsDuplex && !('duplex' in reqInit)) {
+          reqInit.duplex = 'half';
+        }
+
+        return await fetch(url, reqInit);
       } catch (err: any) {
         lastError = err;
         // Only retry on network-level failures (e.g., ECONNREFUSED / 'fetch failed')

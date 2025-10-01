@@ -124,7 +124,7 @@ export default function BranchTreeVisualization({
   };
 
   // Custom node rendering
-  const renderCustomNode = ({ nodeDatum, toggleNode }: any) => {
+  const renderCustomNode = ({ nodeDatum }: { nodeDatum: Record<string, unknown> }) => {
     const isRoot = !nodeDatum.attributes;
     const isActive = nodeDatum.attributes?.isActive;
     const isSelected = selectedNode === nodeDatum.attributes?.id;

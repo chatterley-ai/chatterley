@@ -23,9 +23,8 @@ export default function ChatMessage({ message, isLatest = false, messageIndex }:
   const [isEditing, setIsEditing] = React.useState(false);
   const [editContent, setEditContent] = React.useState(message.content);
   const [actionInProgress, setActionInProgress] = React.useState<string | null>(null);
-  const { updateMessage, /* deleteMessage, addMessage, */ getBranches, currentConversationId, currentBranchId } = useChatStore();
-  // Get branches using the selector
-  const branches = getBranches();
+  const { updateMessage, /* deleteMessage, addMessage, */ currentConversationId, currentBranchId } = useChatStore();
+  // No need to get branches anymore
   const { executeCommand, isExecuting, refreshConversation, refreshBranches } = useConversationCommand();
 
   const handleCopy = async () => {
@@ -92,8 +91,8 @@ export default function ChatMessage({ message, isLatest = false, messageIndex }:
         alert(resp.message || 'Failed to regenerate');
       } else {
         // Apply only the node update locally; do not refresh entire conversation
-        const newContent = (resp.data as any)?.assistant?.content as string | undefined;
-        const modelInfo = (resp.data as any)?.assistant?.metadata as { model_name?: string; engine?: string; duration_ms?: number } | undefined;
+        const newContent = (resp.data as Record<string, unknown>)?.assistant?.content as string | undefined;
+        const modelInfo = (resp.data as Record<string, unknown>)?.assistant?.metadata as { model_name?: string; engine?: string; duration_ms?: number } | undefined;
         if (newContent && currentConversationId) {
           updateMessage(
             currentConversationId,
@@ -103,8 +102,8 @@ export default function ChatMessage({ message, isLatest = false, messageIndex }:
               content: newContent,
               timestamp: Date.now(),
               __commit: true,
-              meta: modelInfo ? { modelName: modelInfo.model_name, engine: modelInfo.engine, durationMs: modelInfo.duration_ms } as any : undefined,
-            } as any
+              meta: modelInfo ? { modelName: modelInfo.model_name, engine: modelInfo.engine, durationMs: modelInfo.duration_ms } as Record<string, unknown> : undefined,
+            } as Record<string, unknown>
           );
           try { console.log(`🔄 Regenerated assistant message applied locally: ${message.id}`); } catch {}
         }
@@ -140,13 +139,13 @@ export default function ChatMessage({ message, isLatest = false, messageIndex }:
         if (result.success) {
           // Create a local version for the edit so version UI reflects immediately
           if (currentConversationId) {
-            const baseMeta = !isUser ? { modelName: (message as any)?.meta?.modelName, engine: (message as any)?.meta?.engine } : undefined;
+            const baseMeta = !isUser ? { modelName: (message as Record<string, unknown>)?.meta?.modelName, engine: (message as Record<string, unknown>)?.meta?.engine } : undefined;
             updateMessage(currentConversationId, currentBranchId || 'main', message.id, {
               content: editContent.trim(),
               timestamp: Date.now(),
               __commit: true,
-              ...(baseMeta ? { meta: baseMeta as any } : {}),
-            } as any);
+              ...(baseMeta ? { meta: baseMeta as Record<string, unknown> } : {}),
+            } as Record<string, unknown>);
           }
           // Also refresh authoritative state to align with backend
           await refreshConversation();

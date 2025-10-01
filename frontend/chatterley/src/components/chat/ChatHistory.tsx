@@ -14,6 +14,7 @@ interface ChatHistoryProps {
   isTyping?: boolean;
   isLoading?: boolean;
   className?: string;
+  onStop?: () => void;
 }
 
 export default function ChatHistory({
@@ -21,6 +22,7 @@ export default function ChatHistory({
   isTyping = false,
   isLoading = false,
   className = '',
+  onStop,
 }: ChatHistoryProps) {
   const scrollAreaRef = React.useRef<HTMLDivElement>(null);
   const isAtBottomRef = React.useRef(true);
@@ -93,7 +95,7 @@ export default function ChatHistory({
             {/* Typing indicator */}
             {isTyping && (
               <div className="px-4 py-6">
-                <TypingIndicator />
+                <TypingIndicator onStop={onStop} />
               </div>
             )}
           </div>

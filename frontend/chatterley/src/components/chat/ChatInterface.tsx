@@ -81,15 +81,45 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
   // Ref to track current streaming message ID
   const currentStreamingMessageId = React.useRef<string | null>(null);
   
-  // Forward declaration for functions used in useEffect
-  const handleStopGeneration = React.useCallback(() => {
+  // Stop generation: interrupt stream and produce an interruption message
+  const _handleStopGeneration = React.useCallback(() => {
     setShouldStop(true);
     setLoading(false);
     setTyping(false);
-    
-    // Clear streaming state
+
+    const conversationId = useChatStore.getState().currentConversationId || '';
+    const branchId = useChatStore.getState().currentBranchId;
+
+    // If a streaming assistant message exists, overwrite it; otherwise add a new assistant turn
+    const streamingId = currentStreamingMessageId.current;
+    const interruptionMeta = {
+      authorType: 'ai',
+      authorName: 'AI',
+      modelName: 'Not found',
+      engine: undefined,
+      interrupted: true,
+      createdAt: Date.now(),
+    } as Record<string, unknown>;
+
+    if (streamingId && conversationId) {
+      updateMessage(conversationId, branchId, streamingId, {
+        content: 'model response interrupted',
+        meta: interruptionMeta,
+      } as Record<string, unknown>);
+    } else {
+      const msg: Message = {
+        id: `assistant-interrupt-${Date.now()}`,
+        role: 'assistant',
+        content: 'model response interrupted',
+        timestamp: Date.now(),
+        meta: interruptionMeta,
+      };
+      addMessage(msg);
+    }
+
+    // Clear streaming state so further chunks are ignored
     currentStreamingMessageId.current = null;
-  }, [setShouldStop, setLoading, setTyping]);
+  }, [setShouldStop, setLoading, setTyping, updateMessage, addMessage]);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const handleSendMessage = React.useCallback(async (content: string, attachments?: PreparedAttachment[]) => {
@@ -192,7 +222,9 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
   }, [getCurrentSessionId]);
 
   // Handler for regenerating the last response (id-first, backend regen_node)
-  const handleRegenerateLastResponse = React.useCallback(async () => {
+  // Unused handler - keeping for reference
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _handleRegenerateLastResponse = React.useCallback(async () => {
     if (isLoading || isTyping) return;
     const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant');
     const lastUser = [...messages].reverse().find(m => m.role === 'user');
@@ -211,8 +243,8 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
         throw new Error(resp.message || 'Regen failed');
       }
       // Apply only the node update locally; do not refresh entire conversation
-      const newContent = (resp.data as any)?.assistant?.content as string | undefined;
-      const modelInfo = (resp.data as any)?.assistant?.metadata as { model_name?: string; engine?: string; duration_ms?: number } | undefined;
+      const newContent = (resp.data as Record<string, unknown>)?.assistant?.content as string | undefined;
+      const modelInfo = (resp.data as Record<string, unknown>)?.assistant?.metadata as { model_name?: string; engine?: string; duration_ms?: number } | undefined;
       if (newContent && currentConversationId && lastAssistant) {
         updateMessage(
           currentConversationId,
@@ -222,8 +254,8 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
             content: newContent,
             timestamp: Date.now(),
             __commit: true,
-            meta: modelInfo ? { modelName: modelInfo.model_name, engine: modelInfo.engine, durationMs: modelInfo.duration_ms } as any : undefined,
-          } as any
+            meta: modelInfo ? { modelName: modelInfo.model_name, engine: modelInfo.engine, durationMs: modelInfo.duration_ms } as Record<string, unknown> : undefined,
+          } as Record<string, unknown>
         );
         try { console.log(`🔄 Regenerated last assistant message applied locally: ${lastAssistant.id}`); } catch {}
       }
@@ -601,6 +633,10 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
         });
 
         if (response.success && response.data) {
+          if (shouldStop) {
+            // User interrupted while waiting for non-streaming response; do not append
+            return;
+          }
           // Add complete assistant response
           const durationMs = Math.max(0, Math.round(performance.now() - start));
           const assistantMessage: Message = {
@@ -690,6 +726,40 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
     addMessage(attachmentMessage);
   };
 
+  // Expose imperative handlers for menu/parent controls
+  // This effect is not needed with our current approach
+  // React.useEffect(() => {
+  //  if (!('onRef' in (arguments as unknown as Record<string, unknown>))) return; 
+  // }, []);
+
+  React.useEffect(() => {
+    // Provide ref-like API if consumer passed onRef
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const refValue: ChatInterfaceRef = {
+      regenerateLastResponse: () => {
+        // Simple helper: re-run last user message if available
+        const msgs = getCurrentMessages();
+        const lastUser = [...msgs].reverse().find(m => m.role === 'user');
+        if (lastUser && typeof lastUser.content === 'string') {
+          void handleChatMessage(lastUser.content as string, undefined, true);
+        }
+      },
+      stopGeneration: _handleStopGeneration,
+      sendMessage: (message: string) => {
+        void handleSendMessage(message);
+      },
+    };
+    // Call onRef if provided
+    if (onRef) onRef(refValue);
+    return () => {
+      if (onRef) onRef({
+        regenerateLastResponse: () => {},
+        stopGeneration: () => {},
+        sendMessage: () => {},
+      });
+    };
+  }, [getCurrentMessages, handleChatMessage, handleSendMessage, _handleStopGeneration, onRef]);
+
   return (
     <div className={`flex flex-col h-full min-h-0 bg-background ${className}`}>
       {/* Chat history (internal scroll) */}
@@ -698,6 +768,7 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
           messages={messages}
           isTyping={isTyping}
           isLoading={isLoading}
+          onStop={_handleStopGeneration}
         />
       </div>
 
