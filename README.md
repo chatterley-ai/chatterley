@@ -1,16 +1,30 @@
 <div align="center">
-  <img alt="Chatterley" width="240" src="frontend/chatterley/public/images/chatterley-logo.png">
+  <img alt="Chatterley" width="120" src="frontend/chatterley/public/images/chatterley-logo.png">
 </div>
 
 # Chatterley
 
-Chatterley is a pretty, private, powerful, local-first desktop AI chat app for MacOS, Windows and Linux, supporting gpt-oss, DeepSeek-R1, Gemma 3, Qwen3 Coder, Qwen3 Omni, GPT-5, Claude Sonnet 4.5, and more. 
+Chatterley is a pretty, private, powerful, local-first desktop AI chat app for MacOS, Windows and Linux, supporting gpt-oss, DeepSeek-R1, Gemma 3, Qwen3 Coder, Qwen3 Omni, GPT-5, Claude Sonnet 4.5, and more.
+
+> **⚠️ macOS Users**: The application is currently unsigned. After installation, if macOS prevents you from opening the app, run this command in Terminal:
+> ```bash
+> xattr -cr /Applications/Chatterley.app
+> ```
+> Then try opening Chatterley again from Applications. 
+
+<div align="center">
+  <img alt="Chatterley" width="720" src="frontend/chatterley/public/images/gallery-01.png">
+</div>
 
 ## Project Philosophy
 
 * **Local-first.** While we love closed models, Chatterley is designed as a local-first experience. We will maintain strong support for local backends.
 * **Private.** We take data privacy seriously. After first-run installation and model downloading, Chatterley works normally when you're offline. We will never add any telemetry, ads, or user tracking, and Chatterley will never require an internet connection to run.
 * **Fully open source.** We are and will remain completely open source. Furthermore, we release our code under the highly permissive Apache 2.0 License to encourage further experimentation.
+
+<div align="center">
+  <img alt="Chatterley" width="720" src="frontend/chatterley/public/images/gallery-02.png">
+</div>
 
 ## Why Chatterley?
 
@@ -22,6 +36,10 @@ Chatterley is a pretty, private, powerful, local-first desktop AI chat app for M
 * **Chat with any type of data.** Why limit yourself to text? Chatterley allows you to attach images, videos, audio, fetch websites, load PDFs ...
 * **Generate images.** Want to generate images too? Chatterley can do that. Run image synthesis (local-only) without leaving the chat interface.
 * **Chat in style.** Chatterley allows extensive customization of the chat experience; design your own color palettes, change the font, change the text size.
+
+<div align="center">
+  <img alt="Chatterley" width="720" src="frontend/chatterley/public/images/gallery-03.png">
+</div>
 
 ## Under the Hood
 
