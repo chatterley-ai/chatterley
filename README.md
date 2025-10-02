@@ -4,13 +4,28 @@
 
 # Chatterley
 
-Chatterley is a pretty, private, powerful, local-first desktop AI chat app for MacOS, Windows and Linux.
+Chatterley is a pretty, private, powerful, local-first desktop AI chat app for MacOS, Windows and Linux, supporting gpt-oss, DeepSeek-R1, Gemma 3, Qwen3 Coder, Qwen3 Omni, GPT-5, Claude Sonnet 4.5, and more. 
 
-## How Does it Work?
+## Project Philosophy
+
+* **Local-first.** While we love closed models, Chatterley is designed as a local-first experience. We will maintain strong support for local backends.
+* **Private.** We take data privacy seriously. After first-run installation and model downloading, Chatterley works normally when you're offline. We will never add any telemetry, ads, or user tracking, and Chatterley will never require an internet connection to run.
+* **Fully open source.** We are and will remain completely open source. Furthermore, we release our code under the highly permissive Apache 2.0 License to encourage further experimentation.
 
 ## Why Chatterley?
 
+* **Any model, any backend, anytime.** Chatterley supports dynamic model swapping mid-chat, allowing for quick experimentation and A/B testing of nearly any open or closed model. Swap between any supported backend (VLLM, SGLang, LlamaCPP, Native) and run speed comparisons in your local environment. Compare GGUF checkpoint response quality. All without leaving the chat.
+* **Branch your chat.** Chatterley supports chat branching. Try out new ideas or follow new threads, without having to start over or leave your active chat.
+* **WYSIWYG edit your chat.** Edit user turns and model responses just like you're editing a Word document.
+* **Save and load your chat.** Save and load chats in compliant JSON for easy transfer to other platforms.
+* **Search your chat.** Chatterley maintains a searchable database of all your old chats so you can find that conversation from three months ago.
+* **Chat with any type of data.** Why limit yourself to text? Chatterley allows you to attach images, videos, audio, fetch websites, load PDFs ...
+* **Generate images.** Want to generate images too? Chatterley can do that. Run image synthesis (local-only) without leaving the chat interface.
+* **Chat in style.** Chatterley allows extensive customization of the chat experience; design your own color palettes, change the font, change the text size.
+
 ## Under the Hood
+
+This section contains some technical details about Chatterley for those who are interested in diving deeper into the interface or becoming contributors.
 
 ### How to Add New Models
 
@@ -85,5 +100,4 @@ See `backend/oumi/src/oumi/webchat/routes.py` for the full set.
 
 ## Contributing
 
-Open an issue or PR with any improvements, especially around packaging and cross‑platform installers.
-
+If you're interested in contributing, please open an issue or submit a PR with improvements. We are particularly interested in contributors with strong backgrounds in Node.JS, frontend devs, UI specialists, UX specialists, and technical writers.

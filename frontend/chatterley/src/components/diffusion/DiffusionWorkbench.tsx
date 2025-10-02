@@ -1,7 +1,7 @@
 "use client";
 
 import React from 'react';
-import { Loader2, Image as ImageIcon, RefreshCw, Wand2, Trash2, Clock, PlugZap, FolderOpen } from 'lucide-react';
+import { Loader2, Image as ImageIcon, RefreshCw, Wand2, Trash2, Clock, PlugZap, FolderOpen, Folder } from 'lucide-react';
 import apiClient from '@/lib/unified-api';
 import type {
   ConfigOption,
@@ -9,6 +9,28 @@ import type {
   DiffusionGenerationResponse,
   DiffusionArtifact,
 } from '@/lib/types';
+
+// Platform-specific default save paths
+const getDefaultSavePath = (): string => {
+  if (typeof window === 'undefined' || !window.electronAPI) {
+    return './generated-images';
+  }
+
+  const platform = window.electronAPI.platform.os;
+
+  // For Electron, we'll use a platform-specific path relative to user home
+  // The actual resolution will happen in the backend
+  switch (platform) {
+    case 'darwin': // macOS
+      return '~/Documents/Chatterley/Generated Images';
+    case 'win32': // Windows
+      return '~/Documents/Chatterley/Generated Images';
+    case 'linux':
+      return '~/Documents/Chatterley/Generated Images';
+    default:
+      return './generated-images';
+  }
+};
 
 const formatDuration = (ms: number | null | undefined): string => {
   if (ms == null) return '';
@@ -45,6 +67,7 @@ export default function DiffusionWorkbench({ className = '' }: DiffusionWorkbenc
   const [width, setWidth] = React.useState(1024);
   const [height, setHeight] = React.useState(1024);
   const [seed, setSeed] = React.useState<string>('');
+  const [savePath, setSavePath] = React.useState<string>(getDefaultSavePath());
   const [isGenerating, setIsGenerating] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [result, setResult] = React.useState<DiffusionGenerationResponse | null>(null);
@@ -207,9 +230,58 @@ export default function DiffusionWorkbench({ className = '' }: DiffusionWorkbenc
     }
   }, [emitToast]);
 
+  // Load saved path from storage on mount
   React.useEffect(() => {
+    const loadSavedPath = async () => {
+      if (apiClient.isElectron()) {
+        try {
+          const saved = await apiClient.getStorageItem<string>('diffusion.savePath');
+          if (saved && typeof saved === 'string') {
+            setSavePath(saved);
+          }
+        } catch (err) {
+          console.warn('Failed to load saved diffusion path:', err);
+        }
+      }
+    };
+    loadSavedPath();
     loadConfigs();
   }, [loadConfigs]);
+
+  // Persist save path changes
+  const handleSavePathChange = React.useCallback(async (newPath: string) => {
+    setSavePath(newPath);
+    if (apiClient.isElectron()) {
+      try {
+        await apiClient.setStorageItem('diffusion.savePath', newPath);
+      } catch (err) {
+        console.warn('Failed to persist diffusion save path:', err);
+      }
+    }
+  }, []);
+
+  const browseSavePath = React.useCallback(async () => {
+    if (!apiClient.isElectron()) {
+      setError('Save path selection is only available in the desktop app.');
+      return;
+    }
+
+    try {
+      const selectedPaths = await apiClient.showOpenDialog({
+        title: 'Select Save Directory for Generated Images',
+        properties: ['openDirectory', 'createDirectory'],
+      });
+
+      if (selectedPaths && selectedPaths.length > 0) {
+        await handleSavePathChange(selectedPaths[0]);
+        await emitToast(`✅ Save path updated to: ${selectedPaths[0]}`, 'success', 2500);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to select save path';
+      console.error('[DiffusionWorkbench] browseSavePath failed', err);
+      await emitToast(`❌ ${message}`, 'error');
+    }
+  }, [handleSavePathChange, emitToast]);
 
   const selectedConfig = React.useMemo(() => {
     return configOptions.find(config => config.id === selectedConfigId) || null;
@@ -234,6 +306,7 @@ export default function DiffusionWorkbench({ className = '' }: DiffusionWorkbenc
       guidance_scale: guidanceScale,
       num_inference_steps: numSteps,
       num_images: 1,
+      output_dir: savePath,
     };
 
     if (seed.trim().length > 0) {
@@ -536,6 +609,29 @@ export default function DiffusionWorkbench({ className = '' }: DiffusionWorkbenc
           </div>
         </div>
 
+        {/* Save Path Configuration */}
+        <div className="space-y-2">
+          <label className="text-xs font-medium text-muted-foreground">Save Directory</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              className="flex-1 rounded-md border bg-background px-3 py-2 text-sm"
+              value={savePath}
+              onChange={event => handleSavePathChange(event.target.value)}
+              placeholder="Path to save generated images..."
+            />
+            <button
+              onClick={browseSavePath}
+              className="inline-flex items-center gap-1 rounded-md border px-3 py-2 text-xs font-medium hover:bg-muted"
+              title="Browse for save directory"
+              type="button"
+            >
+              <Folder className="h-3 w-3" />
+              Browse
+            </button>
+          </div>
+        </div>
+
         {error && (
           <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700">
             {error}
@@ -554,15 +650,7 @@ export default function DiffusionWorkbench({ className = '' }: DiffusionWorkbenc
               <span>Last run {new Date(generatedAt).toLocaleTimeString()}</span>
             )}
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleReset}
-              className="inline-flex items-center gap-1 rounded-md border px-3 py-1 text-xs font-medium hover:bg-muted"
-              type="button"
-            >
-              <Trash2 className="h-3 w-3" />
-              Reset
-            </button>
+          <div className="flex flex-col items-end gap-2">
             <button
               onClick={handleGenerate}
               className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
@@ -575,6 +663,14 @@ export default function DiffusionWorkbench({ className = '' }: DiffusionWorkbenc
                 <Wand2 className="h-3 w-3" />
               )}
               Generate
+            </button>
+            <button
+              onClick={handleReset}
+              className="inline-flex items-center gap-1 rounded-md border px-3 py-1 text-xs font-medium hover:bg-muted"
+              type="button"
+            >
+              <Trash2 className="h-3 w-3" />
+              Reset
             </button>
           </div>
         </div>
