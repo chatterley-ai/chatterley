@@ -348,11 +348,6 @@ export interface AppSettings {
     targetImageWidth: number;
     targetImageHeight: number;
   };
-  notifications: {
-    lowBalance: boolean;
-    highUsage: boolean;
-    keyExpiry: boolean;
-  };
   autoSave: {
     enabled: boolean;
     intervalMinutes: number;

@@ -12,7 +12,7 @@ import SystemChangeWarning from '@/components/monitoring/SystemChangeWarning';
 import { useChatStore } from '@/lib/store';
 import apiClient from '@/lib/unified-api';
 import { useConversationCommand, COMMAND_CONFIGS } from '@/hooks/useConversationCommand';
-import { Maximize2, Minimize2, Settings, RotateCcw, PanelLeft, PanelLeftClose, X, Search, History, ChevronDown, ChevronRight } from 'lucide-react';
+import { Settings, Eraser, PanelLeft, PanelLeftClose, X, Search, History, ChevronDown, ChevronRight } from 'lucide-react';
 import ConfirmationDialog from '@/components/ui/ConfirmationDialog';
 import SettingsScreen from '@/components/settings/SettingsScreen';
 import dynamic from 'next/dynamic';
@@ -29,7 +29,6 @@ import { useActiveModel } from '@/hooks/useActiveModel';
 export default function AppLayout() {
   // Poll active model from backend (single source of truth)
   useActiveModel({ pollInterval: 3000, enabled: true });
-  const [isBranchTreeExpanded, setIsBranchTreeExpanded] = React.useState(false);
   const [isControlPanelExpanded, setIsControlPanelExpanded] = React.useState(true);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = React.useState(false);
   const [showChatHistory, setShowChatHistory] = React.useState(false);
@@ -168,11 +167,6 @@ React.useEffect(() => {
         setShowSettings(true);
       };
 
-      const handleToggleBranchTree = () => {
-        console.log('🔧 [AppLayout] Toggling Branch Tree from menu');
-        setIsBranchTreeExpanded(prev => !prev);
-      };
-
       const handleToggleControlPanel = () => {
         console.log('🔧 [AppLayout] Toggling Model Controls from menu');
         setIsControlPanelExpanded(prev => !prev);
@@ -239,15 +233,30 @@ React.useEffect(() => {
         setShowResetConfirmation(true);
       };
 
+      const handleBrowseConfig = async (configPath: string) => {
+        console.log('🔧 [AppLayout] Browse Config from menu:', configPath);
+        try {
+          // Switch to the selected config using the command system
+          const result = await executeCommandRef.current('swap', [configPath], COMMAND_CONFIGS.swap);
+          if (result.success) {
+            console.log('✅ Model switched successfully to config:', configPath);
+          } else {
+            console.error('❌ Failed to switch model:', result.message);
+          }
+        } catch (error) {
+          console.error('❌ Error switching model from menu:', error);
+        }
+      };
+
       // Register menu handlers
       if (window.electronAPI) {
         window.electronAPI.onMenuMessage('menu:model-settings', handleModelSettings);
-        window.electronAPI.onMenuMessage('menu:toggle-branch-tree', handleToggleBranchTree);
         window.electronAPI.onMenuMessage('menu:toggle-control-panel', handleToggleControlPanel);
         window.electronAPI.onMenuMessage('menu:clear-conversation', handleClearConversationMenu);
         window.electronAPI.onMenuMessage('menu:new-chat', handleNewChat);
         window.electronAPI.onMenuMessage('menu:preferences', handlePreferences);
         window.electronAPI.onMenuMessage('menu:find', handleFind);
+        window.electronAPI.onMenuMessage('menu:browse-config', handleBrowseConfig);
         // Removed: menu:save-conversation handler registration
         window.electronAPI.onMenuMessage('menu:regenerate', handleRegenerateLastResponse);
         window.electronAPI.onMenuMessage('menu:stop-generation', handleStopGeneration);
@@ -261,12 +270,12 @@ React.useEffect(() => {
       return () => {
         if (window.electronAPI) {
           window.electronAPI.removeMenuListener('menu:model-settings', handleModelSettings);
-          window.electronAPI.removeMenuListener('menu:toggle-branch-tree', handleToggleBranchTree);
           window.electronAPI.removeMenuListener('menu:toggle-control-panel', handleToggleControlPanel);
           window.electronAPI.removeMenuListener('menu:clear-conversation', handleClearConversationMenu);
           window.electronAPI.removeMenuListener('menu:new-chat', handleNewChat);
           window.electronAPI.removeMenuListener('menu:preferences', handlePreferences);
           window.electronAPI.removeMenuListener('menu:find', handleFind);
+          window.electronAPI.removeMenuListener('menu:browse-config', handleBrowseConfig);
           // Removed: menu:save-conversation handler cleanup
           window.electronAPI.removeMenuListener('menu:regenerate', handleRegenerateLastResponse);
           window.electronAPI.removeMenuListener('menu:stop-generation', handleStopGeneration);
@@ -676,7 +685,7 @@ React.useEffect(() => {
                 title="Clear conversation"
                 disabled={isExecuting}
               >
-                <RotateCcw size={18} className={isExecuting ? 'animate-spin' : ''} />
+                <Eraser size={18} />
               </button>
 
               {/* Model controls toggle */}
@@ -688,15 +697,6 @@ React.useEffect(() => {
                 title={isControlPanelExpanded ? 'Hide model controls' : 'Show model controls'}
               >
                 {isControlPanelExpanded ? <PanelLeftClose size={18} /> : <PanelLeft size={18} />}
-              </button>
-
-              {/* Branch controls toggle */}
-              <button
-                onClick={() => setIsBranchTreeExpanded(!isBranchTreeExpanded)}
-                className="no-drag p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground"
-                title={isBranchTreeExpanded ? 'Collapse branch tree' : 'Expand branch tree'}
-              >
-                {isBranchTreeExpanded ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
               </button>
               <button
                 onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
@@ -760,26 +760,13 @@ React.useEffect(() => {
 
               <div className="flex-1 overflow-y-auto p-3 space-y-3">
                 <div className="border border-border/60 rounded-lg bg-sidebar">
-                  <button
-                    onClick={() => setIsBranchTreeExpanded(!isBranchTreeExpanded)}
-                    className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-muted transition-colors"
-                    aria-expanded={isBranchTreeExpanded}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-primary" aria-hidden />
-                      <span className="text-sm font-medium text-foreground">Branch Tree</span>
-                    </div>
-                    {isBranchTreeExpanded ? (
-                      <ChevronDown size={16} className="text-muted-foreground" />
-                    ) : (
-                      <ChevronRight size={16} className="text-muted-foreground" />
-                    )}
-                  </button>
-                  {isBranchTreeExpanded && (
-                    <div className="max-h-[55vh] min-h-[240px] overflow-y-auto overscroll-contain p-3">
-                      <BranchTree className="h-full" />
-                    </div>
-                  )}
+                  <div className="flex items-center gap-2 px-3 py-2">
+                    <span className="w-2 h-2 rounded-full bg-primary" aria-hidden />
+                    <span className="text-sm font-medium text-foreground">Branch Tree</span>
+                  </div>
+                  <div className="max-h-[55vh] min-h-[240px] overflow-y-auto overscroll-contain p-3">
+                    <BranchTree className="h-full" />
+                  </div>
                 </div>
 
                 <div className="border border-border/60 rounded-lg bg-sidebar">

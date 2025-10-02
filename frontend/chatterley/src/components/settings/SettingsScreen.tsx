@@ -6,15 +6,13 @@
 
 import React, { useState, useMemo, useCallback } from 'react';
 import { generateDisplayName } from '@/lib/nameGen';
-import { 
+import { BUILD_DATE } from '@/lib/build-info';
+import {
   Settings,
   Key,
   Sliders,
   Monitor,
-  Bell,
   HelpCircle,
-  Eye,
-  EyeOff,
   Clock,
   Save,
   Cpu,
@@ -31,7 +29,7 @@ import { useAutoSave } from '@/hooks/useAutoSave';
 import apiClient from '@/lib/unified-api';
 import { SystemCapabilities } from '@/lib/config-matcher';
 
-type SettingsTab = 'api' | 'model' | 'appearance' | 'system' | 'notifications' | 'about';
+type SettingsTab = 'api' | 'model' | 'appearance' | 'system' | 'about';
 
 interface ExtendedSystemInfo extends SystemCapabilities {
   // Additional browser/frontend detected information
@@ -58,17 +56,17 @@ function getBrowserSystemInfo(): {
     platform?: string;
   } {
   const getNodeVersion = (): string => {
-    // Try to get from process if available (Electron context)
-    if (typeof process !== 'undefined' && process.versions) {
-      return process.versions.node || 'Unknown';
+    // Get from Electron API if available
+    if (typeof window !== 'undefined' && window.electronAPI?.versions?.node) {
+      return window.electronAPI.versions.node;
     }
     return 'Unknown';
   };
 
   const getElectronVersion = (): string | undefined => {
-    // Try to get from process if available (Electron context)
-    if (typeof process !== 'undefined' && process.versions) {
-      return process.versions.electron;
+    // Get from Electron API if available
+    if (typeof window !== 'undefined' && window.electronAPI?.versions?.electron) {
+      return window.electronAPI.versions.electron;
     }
     return undefined;
   };
@@ -197,7 +195,6 @@ function TabButton({ id, icon, label, description, isActive, onClick, badge }: T
 
 function SystemSettings() {
   const { settings, updateSettings } = useChatStore();
-  const [showHfToken, setShowHfToken] = useState(false);
   const { autoSaveInterval, lastSaved, isSaving } = useAutoSave();
   const [tempName, setTempName] = useState(settings.user?.displayName || '');
   const mediaSettings = useMemo(() => settings.media ?? {
@@ -205,6 +202,11 @@ function SystemSettings() {
     targetImageWidth: 640,
     targetImageHeight: 360,
   }, [settings.media]);
+
+  // Optional installs state
+  const [installing, setInstalling] = useState<{ sglang?: boolean; flashattn2?: boolean; flashinfer?: boolean }>({});
+  const [installMsg, setInstallMsg] = useState<string | null>(null);
+  const platformInfo = apiClient.getPlatform();
 
   const handleMediaSettingsChange = useCallback((updates: Partial<typeof mediaSettings>) => {
     updateSettings({
@@ -215,13 +217,24 @@ function SystemSettings() {
     });
   }, [mediaSettings, updateSettings]);
 
-  const handleHuggingFaceUpdate = (field: 'username' | 'token', value: string) => {
-    updateSettings({
-      huggingFace: {
-        ...(settings.huggingFace || {}),
-        [field]: value || undefined,
-      },
-    });
+  const handleInstall = async (kind: 'sglang' | 'flashattn2' | 'flashinfer') => {
+    try {
+      setInstalling(prev => ({ ...prev, [kind]: true }));
+      let result: { success: boolean; message: string } = { success: false, message: '' };
+      if (kind === 'sglang') {
+        result = await apiClient.installSGLangBackend();
+      } else if (kind === 'flashattn2') {
+        result = await apiClient.installFlashAttention2();
+      } else {
+        result = await apiClient.installFlashInfer();
+      }
+      setInstallMsg(result.message || (result.success ? 'Install completed' : 'Install failed'));
+    } catch (e) {
+      setInstallMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setInstalling(prev => ({ ...prev, [kind]: false }));
+      setTimeout(() => setInstallMsg(null), 5000);
+    }
   };
 
   return (
@@ -269,68 +282,6 @@ function SystemSettings() {
           Configure application behavior and performance
         </p>
       </div>
-
-      {/* HuggingFace Integration */}
-      <div className="bg-card border rounded-lg p-4 space-y-4">
-        <div className="flex items-center gap-2">
-          <h3 className="font-semibold">HuggingFace Integration</h3>
-          <div className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded-full">
-            Optional
-          </div>
-        </div>
-        
-        <p className="text-xs text-muted-foreground">
-          ⚠️ Model recommendations work better with HuggingFace authentication. This allows access to more model metadata and improved size detection.
-        </p>
-
-        <div className="space-y-3">
-          <div>
-            <label className="block font-medium text-sm mb-2">
-              HuggingFace Username <span className="text-muted-foreground font-normal">(optional)</span>
-            </label>
-            <input
-              type="text"
-              value={settings.huggingFace?.username || ''}
-              onChange={(e) => handleHuggingFaceUpdate('username', e.target.value)}
-              placeholder="your-username"
-              className="w-full px-3 py-2 bg-background border rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary"
-            />
-          </div>
-
-          <div>
-            <label className="block font-medium text-sm mb-2">
-              Personal Access Token <span className="text-muted-foreground font-normal">(optional)</span>
-            </label>
-            <div className="relative">
-              <input
-                type={showHfToken ? 'text' : 'password'}
-                value={settings.huggingFace?.token || ''}
-                onChange={(e) => handleHuggingFaceUpdate('token', e.target.value)}
-                placeholder="hf_..."
-                className="w-full px-3 py-2 pr-10 bg-background border rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary"
-              />
-              <button
-                type="button"
-                onClick={() => setShowHfToken(!showHfToken)}
-                className="absolute inset-y-0 right-0 px-3 flex items-center text-muted-foreground hover:text-foreground"
-              >
-                {showHfToken ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Create a <a 
-                href="https://huggingface.co/settings/tokens" 
-                target="_blank" 
-                rel="noopener noreferrer" 
-                className="text-primary hover:underline"
-              >
-                personal access token
-              </a> for enhanced model metadata access
-            </p>
-          </div>
-        </div>
-      </div>
-
 
       <div className="bg-card border rounded-lg p-4 space-y-4">
         <h3 className="font-semibold">Storage</h3>
@@ -459,148 +410,6 @@ function SystemSettings() {
             </select>
           </div>
         )}
-
-        <div className="pt-3 border-t">
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">Cache Size <span className="text-xs text-orange-600 bg-orange-100 dark:text-orange-400 dark:bg-orange-900/30 px-1.5 py-0.5 rounded-full font-medium">PLACEHOLDER</span></span>
-            <span className="text-muted-foreground">247 MB</span>
-          </div>
-          <button className="mt-2 text-sm text-muted-foreground cursor-not-allowed" disabled>
-            Clear Cache <span className="text-xs text-orange-600 bg-orange-100 dark:text-orange-400 dark:bg-orange-900/30 px-1 py-0.5 rounded-full font-medium">PLACEHOLDER</span>
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function NotificationSettings() {
-  const { settings, updateSettings } = useChatStore();
-
-  // Optional installs state
-  const [installing, setInstalling] = useState<{ sglang?: boolean; flashattn2?: boolean; flashinfer?: boolean }>({});
-  const [installMsg, setInstallMsg] = useState<string | null>(null);
-  const platformInfo = apiClient.getPlatform();
-
-  const handleInstall = async (kind: 'sglang' | 'flashattn2' | 'flashinfer') => {
-    try {
-      setInstalling(prev => ({ ...prev, [kind]: true }));
-      let result: { success: boolean; message: string } = { success: false, message: '' };
-      if (kind === 'sglang') {
-        result = await apiClient.installSGLangBackend();
-      } else if (kind === 'flashattn2') {
-        result = await apiClient.installFlashAttention2();
-      } else {
-        result = await apiClient.installFlashInfer();
-      }
-      setInstallMsg(result.message || (result.success ? 'Install completed' : 'Install failed'));
-    } catch (e) {
-      setInstallMsg(e instanceof Error ? e.message : String(e));
-    } finally {
-      setInstalling(prev => ({ ...prev, [kind]: false }));
-      setTimeout(() => setInstallMsg(null), 5000);
-    }
-  };
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-lg font-semibold flex items-center gap-2">
-          <Bell size={20} />
-          Notifications
-        </h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          Control when and how you receive notifications
-        </p>
-      </div>
-
-      <div className="bg-card border rounded-lg p-4 space-y-4">
-        <h3 className="font-semibold">API Usage Alerts</h3>
-        
-        <label className="flex items-center justify-between">
-          <div>
-            <div className="font-medium text-sm">Low Balance Warning</div>
-            <div className="text-xs text-muted-foreground">
-              Notify when API credits are running low
-            </div>
-          </div>
-          <input 
-            type="checkbox" 
-            checked={settings.notifications.lowBalance}
-            onChange={(e) => updateSettings({
-              notifications: { ...settings.notifications, lowBalance: e.target.checked }
-            })}
-            className="rounded" 
-          />
-        </label>
-
-        <label className="flex items-center justify-between">
-          <div>
-            <div className="font-medium text-sm">High Usage Alert</div>
-            <div className="text-xs text-muted-foreground">
-              Notify when approaching monthly limits
-            </div>
-          </div>
-          <input 
-            type="checkbox" 
-            checked={settings.notifications.highUsage}
-            onChange={(e) => updateSettings({
-              notifications: { ...settings.notifications, highUsage: e.target.checked }
-            })}
-            className="rounded" 
-          />
-        </label>
-
-        <label className="flex items-center justify-between">
-          <div>
-            <div className="font-medium text-sm">Key Expiry Warnings</div>
-            <div className="text-xs text-muted-foreground">
-              Notify before API keys expire
-            </div>
-          </div>
-          <input 
-            type="checkbox" 
-            checked={settings.notifications.keyExpiry}
-            onChange={(e) => updateSettings({
-              notifications: { ...settings.notifications, keyExpiry: e.target.checked }
-            })}
-            className="rounded" 
-          />
-        </label>
-      </div>
-
-      <div className="bg-card border rounded-lg p-4 space-y-4">
-        <h3 className="font-semibold">System Notifications</h3>
-        
-        <label className="flex items-center justify-between opacity-50">
-          <div>
-            <div className="font-medium text-sm">Model Download Complete <span className="text-xs text-orange-600 bg-orange-100 dark:text-orange-400 dark:bg-orange-900/30 px-1.5 py-0.5 rounded-full font-medium">PLACEHOLDER</span></div>
-            <div className="text-xs text-muted-foreground">
-              Notify when model downloads finish
-            </div>
-          </div>
-          <input type="checkbox" defaultChecked className="rounded" disabled />
-        </label>
-
-        <label className="flex items-center justify-between opacity-50">
-          <div>
-            <div className="font-medium text-sm">Update Available <span className="text-xs text-orange-600 bg-orange-100 dark:text-orange-400 dark:bg-orange-900/30 px-1.5 py-0.5 rounded-full font-medium">PLACEHOLDER</span></div>
-            <div className="text-xs text-muted-foreground">
-              Notify when app updates are available
-            </div>
-          </div>
-          <input type="checkbox" defaultChecked className="rounded" disabled />
-        </label>
-
-        <label className="flex items-center justify-between opacity-50">
-          <div>
-            <div className="font-medium text-sm">System Errors <span className="text-xs text-orange-600 bg-orange-100 dark:text-orange-400 dark:bg-orange-900/30 px-1.5 py-0.5 rounded-full font-medium">PLACEHOLDER</span></div>
-            <div className="text-xs text-muted-foreground">
-              Show notifications for system errors
-            </div>
-          </div>
-          <input type="checkbox" defaultChecked className="rounded" disabled />
-        </label>
       </div>
 
       {/* Optional Installs */}
@@ -610,7 +419,7 @@ function NotificationSettings() {
           {installMsg && <div className="text-xs text-muted-foreground">{installMsg}</div>}
         </div>
         <p className="text-xs text-muted-foreground">
-          These packages can enable faster inference on supported hardware. Installs occur inside Chatterley’s managed Python environment and may fail on unsupported systems.
+          These packages can enable faster inference on supported hardware. Installs occur inside Chatterley's managed Python environment and may fail on unsupported systems.
         </p>
 
         <div className="space-y-3">
@@ -709,20 +518,12 @@ function AboutSettings() {
 
         <div className="space-y-3 text-sm">
           <div className="flex items-center justify-between py-2 border-b">
-            <span className="text-muted-foreground">Built with</span>
-            <span>Oumi AI Platform</span>
-          </div>
-          <div className="flex items-center justify-between py-2 border-b">
-            <span className="text-muted-foreground">Framework</span>
-            <span>Electron + Next.js</span>
-          </div>
-          <div className="flex items-center justify-between py-2 border-b">
             <span className="text-muted-foreground">License</span>
-            <span>Proprietary</span>
+            <span>Apache 2.0</span>
           </div>
           <div className="flex items-center justify-between py-2">
             <span className="text-muted-foreground">Last Update</span>
-            <span>2024-12-31</span>
+            <span>{BUILD_DATE !== '__BUILD_DATE__' ? BUILD_DATE : 'Development'}</span>
           </div>
         </div>
 
@@ -874,23 +675,6 @@ function AboutSettings() {
         )}
       </div>
 
-      <div className="bg-card border rounded-lg p-4">
-        <h3 className="font-semibold mb-4">Resources</h3>
-        <div className="space-y-2 opacity-50">
-          <a href="#" className="block text-sm text-muted-foreground cursor-not-allowed" onClick={(e) => e.preventDefault()}>
-            📖 Documentation <span className="text-xs text-orange-600 bg-orange-100 dark:text-orange-400 dark:bg-orange-900/30 px-1.5 py-0.5 rounded-full font-medium ml-2">PLACEHOLDER</span>
-          </a>
-          <a href="#" className="block text-sm text-muted-foreground cursor-not-allowed" onClick={(e) => e.preventDefault()}>
-            💬 Community Support <span className="text-xs text-orange-600 bg-orange-100 dark:text-orange-400 dark:bg-orange-900/30 px-1.5 py-0.5 rounded-full font-medium ml-2">PLACEHOLDER</span>
-          </a>
-          <a href="#" className="block text-sm text-muted-foreground cursor-not-allowed" onClick={(e) => e.preventDefault()}>
-            🐛 Bug Reports <span className="text-xs text-orange-600 bg-orange-100 dark:text-orange-400 dark:bg-orange-900/30 px-1.5 py-0.5 rounded-full font-medium ml-2">PLACEHOLDER</span>
-          </a>
-          <a href="#" className="block text-sm text-muted-foreground cursor-not-allowed" onClick={(e) => e.preventDefault()}>
-            💡 Feature Requests <span className="text-xs text-orange-600 bg-orange-100 dark:text-orange-400 dark:bg-orange-900/30 px-1.5 py-0.5 rounded-full font-medium ml-2">PLACEHOLDER</span>
-          </a>
-        </div>
-      </div>
     </div>
   );
 }
@@ -935,12 +719,6 @@ export default function SettingsScreen() {
       description: 'Performance and storage settings',
     },
     {
-      id: 'notifications',
-      icon: <Bell size={16} />,
-      label: 'Notifications',
-      description: 'Control alerts and notifications',
-    },
-    {
       id: 'about',
       icon: <HelpCircle size={16} />,
       label: 'About',
@@ -958,8 +736,6 @@ export default function SettingsScreen() {
         return <AppearanceSettingsSection />;
       case 'system':
         return <SystemSettings />;
-      case 'notifications':
-        return <NotificationSettings />;
       case 'about':
         return <AboutSettings />;
       default:

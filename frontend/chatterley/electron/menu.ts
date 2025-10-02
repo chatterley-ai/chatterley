@@ -29,14 +29,6 @@ export function createApplicationMenu(mainWindow: BrowserWindow): Menu {
     {
       label: 'File',
       submenu: [
-        {
-          label: 'New Chat',
-          accelerator: 'CmdOrCtrl+N',
-          click: () => {
-            mainWindow.webContents.send('menu:new-chat');
-          }
-        },
-        { type: 'separator' },
         // Save/Load conversation menu items removed per request
         {
           label: 'Browse for Config...',
@@ -128,21 +120,29 @@ export function createApplicationMenu(mainWindow: BrowserWindow): Menu {
             }
           }
         },
+        { type: 'separator' },
         {
-          label: 'Install SGLang Backend',
+          label: 'Reset Chat Session',
+          accelerator: 'CmdOrCtrl+N',
           click: async () => {
-            log.info('🔧 Menu: Install SGLang Backend clicked');
+            log.info('🔄 Menu: Reset Chat Session clicked');
             const result = await dialog.showMessageBox(mainWindow, {
-              type: 'question',
-              title: 'Install SGLang Backend',
-              message: 'Install SGLang backend into the Chatterley Python environment?',
-              buttons: ['Cancel', 'Install'],
-              defaultId: 1,
+              type: 'warning',
+              title: 'Reset Chat Session',
+              message: 'Are you sure you want to reset the current chat session?',
+              detail: 'This will clear all messages in the current conversation. This action cannot be undone.',
+              buttons: ['Cancel', 'Reset Session'],
+              defaultId: 0,
               cancelId: 0
             });
 
+            log.info(`🔄 Menu: Dialog result - response: ${result.response}`);
             if (result.response === 1) {
-              mainWindow.webContents.send('menu:install-sglang');
+              log.info('🔄 Menu: Sending menu:new-chat message to renderer');
+              mainWindow.webContents.send('menu:new-chat');
+              log.info('🔄 Menu: Message sent successfully');
+            } else {
+              log.info('🔄 Menu: User cancelled reset');
             }
           }
         },
@@ -224,13 +224,6 @@ export function createApplicationMenu(mainWindow: BrowserWindow): Menu {
           }
         },
         { type: 'separator' },
-        {
-          label: 'Toggle Branch Tree',
-          accelerator: 'CmdOrCtrl+B',
-          click: () => {
-            mainWindow.webContents.send('menu:toggle-branch-tree');
-          }
-        },
         {
           label: 'Toggle Model Controls',
           accelerator: 'CmdOrCtrl+T',

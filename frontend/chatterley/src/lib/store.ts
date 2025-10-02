@@ -231,11 +231,6 @@ export const useChatStore = create<ChatStore>()(
           targetImageWidth: 640,
           targetImageHeight: 360,
         },
-        notifications: {
-          lowBalance: true,
-          highUsage: true,
-          keyExpiry: true,
-        },
         autoSave: {
           enabled: true,
           intervalMinutes: 5,

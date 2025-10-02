@@ -160,6 +160,13 @@ export interface ElectronAPI {
     version: string;
   };
 
+  // Version information
+  versions: {
+    node: string;
+    chrome: string;
+    electron: string;
+  };
+
   // Menu message handlers
   onMenuMessage: (channel: string, callback: (...args: any[]) => void) => void;
   removeMenuListener: (channel: string, callback: (...args: any[]) => void) => void;
@@ -360,6 +367,12 @@ const electronAPI: ElectronAPI = {
     os: process.platform,
     arch: process.arch,
     version: process.version
+  },
+
+  versions: {
+    node: process.versions.node,
+    chrome: process.versions.chrome,
+    electron: process.versions.electron
   },
 
   // Menu message handlers
