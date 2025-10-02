@@ -345,15 +345,23 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
         const engine = (metaAny.engine as string) || '';
         const cfgPath = (metaAny.config_path as string | undefined);
         const selectedCfg = await apiClient.getStorageItem<string | null>('selectedConfig', null);
-
+        const lastUpdated = await apiClient.getStorageItem<number>('selectedConfigUpdatedAt', 0);
+        const withinGrace = !!lastUpdated && Date.now() - lastUpdated < 4000;
+        if (!cfgPath) {
+          console.error('[ChatInterface] ERROR: getModels config_metadata missing config_path', {
+            selectedConfig: selectedCfg,
+            modelId: modelEntry?.id,
+            metadata: metaAny,
+          });
+        }
         const accept = !selectedCfg || (cfgPath && cfgPath === selectedCfg);
         if (!accept) {
-          console.warn('[ChatInterface] Ignoring stale getModels metadata; config_path does not match selectedConfig', {
-            config_path: cfgPath,
-            selectedConfig: selectedCfg,
-            displayName,
-            engine,
-          });
+          const msg = `[ChatInterface] Ignoring stale getModels metadata; mismatch cfg_path vs selectedConfig: ${String(cfgPath)} !== ${String(selectedCfg)} (display=${displayName}, engine=${engine})`;
+          if (withinGrace) {
+            console.debug(msg + ' [grace]');
+          } else {
+            console.warn(msg);
+          }
           return;
         }
 

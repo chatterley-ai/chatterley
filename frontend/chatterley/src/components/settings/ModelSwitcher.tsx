@@ -84,63 +84,25 @@ interface ModelSwitcherProps {
 
 export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
   const currentBranchId = useChatStore((state) => state.currentBranchId);
-  const updateSettings = useChatStore((state) => state.updateSettings);
-  const persistedSelectedModel = useChatStore((state) => state.settings.selectedModel);
-  const persistedSelectedProvider = useChatStore((state) => state.settings.selectedProvider);
-  // Display label of the active model (can be a human-friendly name)
-  const [currentModel, setCurrentModel] = React.useState<string>('');
-  // Canonical active config path used for equality checks and checkmarks
-  const [activeConfigPath, setActiveConfigPath] = React.useState<string>('');
+  const selectedModel = useChatStore((state) => state.settings.selectedModel);
+  const selectedProvider = useChatStore((state) => state.settings.selectedProvider);
+
   const [availableConfigs, setAvailableConfigs] = React.useState<ConfigOption[]>([]);
   const [isDropdownOpen, setIsDropdownOpen] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(false);
   const [loadingMessage, setLoadingMessage] = React.useState<string>('');
   const [error, setError] = React.useState<string | null>(null);
-  const [isInitialized, setIsInitialized] = React.useState(false);
   const [searchTerm, setSearchTerm] = React.useState('');
-  const [currentModelConfigMetadata, setCurrentModelConfigMetadata] = React.useState<ModelConfigMetadata | null>(null);
   const dropdownRef = React.useRef<HTMLDivElement>(null);
   const searchInputRef = React.useRef<HTMLInputElement>(null);
   const [installedBackends, setInstalledBackends] = React.useState<{ sglang: boolean; vllm: boolean; llamacpp: boolean } | null>(null);
   const [isModelActionLoading, setIsModelActionLoading] = React.useState(false);
   const [modelStatus, setModelStatus] = React.useState<{ loaded: boolean; modelName?: string; lastTested?: number; testResult?: 'success'|'failure'|'unknown' }>({ loaded: false, testResult: 'unknown' });
 
-  const syncModelSelection = React.useCallback(async (
-    modelId: string | undefined,
-    metadata?: ModelConfigMetadata | null,
-    fallbackConfigPath?: string
-  ) => {
-    const nextSettings: Partial<AppSettings> = {};
-    const displayName = (metadata?.display_name && metadata.display_name.length > 0)
-      ? metadata.display_name
-      : metadata?.model_name || modelId || fallbackConfigPath || '';
-    if (displayName) {
-      nextSettings.selectedModel = displayName;
-    }
-    const engine = metadata?.engine;
-    if (engine && engine.length > 0) {
-      nextSettings.selectedProvider = engine;
-    }
-    if (Object.keys(nextSettings).length > 0) {
-      console.log('[ModelSwitcher] syncModelSelection -> updating settings', { displayName, engine, modelId, fallbackConfigPath });
-      updateSettings(nextSettings);
-    }
-
-    const storageKey = metadata?.config_id || metadata?.config_path || fallbackConfigPath || modelId;
-    if (storageKey) {
-      try {
-        await apiClient.setStorageItem('selectedConfig', storageKey);
-      } catch (storageError) {
-        console.warn('[ModelSwitcher] Failed to persist selected config', storageError);
-      }
-    }
-  }, [updateSettings]);
-
-  // Load current model and available configs on mount
+  // Load available configs on mount
   React.useEffect(() => {
-    const loadData = async () => {
+    const loadConfigs = async () => {
       try {
-        // Load available configs first
         const configsResponse = await apiClient.getConfigs();
         if (configsResponse.success && configsResponse.data?.configs) {
           const sanitized = configsResponse.data.configs.map((c: ConfigOption) => ({
@@ -159,71 +121,14 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
           setAvailableConfigs(sanitized);
           debugLog(`📋 Loaded ${configsResponse.data.configs.length} inference configurations`);
         }
-
-        // Then load current model with enhanced config metadata
-        const modelResponse = await apiClient.getModels();
-        if (modelResponse.success && modelResponse.data?.data?.[0]) {
-          const model = modelResponse.data.data[0];
-          const metadata = model.config_metadata
-            ? (model.config_metadata as unknown as ModelConfigMetadata)
-            : undefined;
-          const activeConfigPath = metadata?.config_path;
-
-          setCurrentModel(activeConfigPath || model.id);
-          if (activeConfigPath) {
-            setActiveConfigPath(activeConfigPath);
-          } else {
-            try {
-              const stored = await apiClient.getStorageItem<string | null>('selectedConfig', null);
-              if (stored) setActiveConfigPath(stored);
-            } catch {}
-          }
-
-          if (metadata) {
-            setCurrentModelConfigMetadata(metadata);
-            debugLog('🎯 Current model with metadata:', model.id, metadata);
-            await syncModelSelection(model.id, metadata, activeConfigPath || model.id);
-          } else {
-            setCurrentModelConfigMetadata(null);
-            debugLog(`🎯 Current model (no metadata): ${model.id}`);
-            await syncModelSelection(model.id, null, activeConfigPath || model.id);
-          }
-        }
-
-        setIsInitialized(true);
       } catch (error) {
-        console.error('Failed to load model data:', error);
-        setError('Failed to load model information');
-        setIsInitialized(true);
+        console.error('Failed to load configs:', error);
+        setError('Failed to load configurations');
       }
     };
 
-    loadData();
+    loadConfigs();
   }, []);
-
-  React.useEffect(() => {
-    if (!currentModel && persistedSelectedModel) {
-      console.log('[ModelSwitcher] Hydrating currentModel from persisted', persistedSelectedModel);
-      setCurrentModel(persistedSelectedModel);
-    }
-  }, [currentModel, persistedSelectedModel]);
-
-  // Also update currentModel when settings-selected model changes later
-  React.useEffect(() => {
-    if (persistedSelectedModel && persistedSelectedModel !== currentModel) {
-      console.log('[ModelSwitcher] persistedSelectedModel changed', persistedSelectedModel);
-      setCurrentModel(persistedSelectedModel);
-    }
-  }, [persistedSelectedModel, currentModel]);
-
-  // Refresh model info when currentModel changes
-  React.useEffect(() => {
-    if (currentModel && availableConfigs.length > 0) {
-      debugLog(`🔄 Updating model info for: ${currentModel}`);
-      // Force re-render by updating the key or triggering state update
-      setIsInitialized(true);
-    }
-  }, [currentModel, availableConfigs]);
 
   // Close dropdown when clicking outside
   React.useEffect(() => {
@@ -362,25 +267,21 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
   }, [filteredConfigs]);
 
   const handleModelSwitch = async (configPath: string) => {
-    // Compare against canonical path, not the display label
-    if (configPath === activeConfigPath) {
-      setIsDropdownOpen(false);
-      return;
-    }
+    console.log('[ModelSwitcher] User-initiated model switch', { configPath });
 
     setIsLoading(true);
     setError(null);
     setIsDropdownOpen(false);
-    
+
     // Show descriptive loading messages
     const selectedConfig = availableConfigs.find(config => config.config_path === configPath);
     if (selectedConfig) {
       setLoadingMessage(`Switching to ${selectedConfig.display_name}...`);
     } else {
-      setLoadingMessage('Loading model from path...');
+      setLoadingMessage('Loading model...');
     }
-    
-    // Add a short delay to show loading message, then update for potential downloading
+
+    // Add a short delay to show loading message for potential downloads
     setTimeout(() => {
       if (isLoading) {
         setLoadingMessage('Downloading model if needed... This may take several minutes.');
@@ -388,123 +289,60 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
     }, 2000);
 
     try {
-      // Optimistic UI/state update so the switcher reflects selection immediately
-      setActiveConfigPath(configPath);
-      if (selectedConfig) {
-        setCurrentModel(selectedConfig.display_name || configPath);
-        try {
-          await apiClient.setStorageItem('selectedConfig', configPath);
-        } catch {}
-        // Also push into global settings early so other panels update
-        try {
-          await syncModelSelection(undefined, {
-            display_name: selectedConfig.display_name,
-            description: selectedConfig.model_name || selectedConfig.filename || selectedConfig.display_name,
-            engine: selectedConfig.engine,
-            context_length: selectedConfig.context_length || 0,
-            model_family: selectedConfig.model_family || 'unknown',
-            model_name: selectedConfig.model_name,
-            filename: selectedConfig.filename,
-            config_path: configPath,
-            config_id: selectedConfig.id,
-          } as unknown as ModelConfigMetadata, configPath);
-        } catch {}
-      } else {
-        // Fallback minimal optimistic update
-        setCurrentModel(configPath);
-        try { await apiClient.setStorageItem('selectedConfig', configPath); } catch {}
-      }
-
-      // Clear model from memory before switching to ensure clean state
+      // Clear model from memory before switching
       debugLog('🧹 Clearing model before model switch...');
       const clearResult = await apiClient.clearModel();
-      if (clearResult.success) {
-        debugLog('✅ Model cleared successfully before model switch');
-      } else {
+      if (!clearResult.success) {
         console.warn('⚠️ Model clear failed, continuing with model switch:', clearResult.message);
       }
 
-      // Use the command API to switch models using config path
+      // Execute swap command - backend will update active model atomically
       debugLog(`🔄 Attempting to switch model using config: ${configPath}`);
       const response = await apiClient.executeCommand('swap', [configPath]);
 
       debugLog('🔄 Model switch response:', response);
-      
+      console.log('[ModelSwitcher] Swap command executed', { success: response.success, message: response.message });
+
       if (response.success) {
-        // CRITICAL FIX: Reload model information from server after successful swap
+        // Trigger refresh event - useActiveModel hook will poll and update UI
         try {
-          const modelResponse = await apiClient.getModels();
-          if (modelResponse.success && modelResponse.data?.data?.[0]) {
-            const model = modelResponse.data.data[0];
-            const prev = currentModel;
-            const metadata = model.config_metadata
-              ? (model.config_metadata as unknown as ModelConfigMetadata)
-              : undefined;
-            const activeConfigPath = metadata?.config_path;
-            setCurrentModel(activeConfigPath || model.id);
-            if (activeConfigPath) setActiveConfigPath(activeConfigPath);
-
-            const metadataMatches = Boolean(metadata && activeConfigPath && metadata.config_path === activeConfigPath);
-            if (metadata && metadataMatches) {
-              setCurrentModelConfigMetadata(metadata);
-              debugLog('🔄 Updated model with metadata:', model.id, metadata);
-              await syncModelSelection(model.id, metadata, activeConfigPath || configPath);
-            } else {
-              setCurrentModelConfigMetadata(metadataMatches ? metadata : null);
-              debugLog(`🔄 Updated model (metadata ${metadataMatches ? 'matched' : 'stale or missing'}): ${model.id}`);
-              await syncModelSelection(model.id, null, activeConfigPath || configPath);
-            }
-
-            console.log('[ModelSwitcher] post-swap metadata', { modelId: model.id, metadata, activeConfigPath, metadataMatches, currentModel: activeConfigPath || model.id });
-            // Fire a one-off refresh request for SystemMonitor listeners
-            try { window.dispatchEvent(new Event('oumi-models-refresh')); } catch {}
-
-            // Toast only when the active model actually changed
-            try {
-              const { showToast } = await import('@/lib/toastBus');
-              if (model.id && prev && model.id !== prev) {
-                showToast({ message: `✅ Switched to ${model.id}`, variant: 'success' });
-              } else {
-                showToast({ message: '⚠️ Model appears unchanged after swap', variant: 'warning' });
-              }
-            } catch {}
-          } else {
-            // Fallback to config path if server response fails
-            setCurrentModel(configPath);
-            setActiveConfigPath(configPath);
-            setCurrentModelConfigMetadata(null);
-            console.warn('⚠️ Could not refresh model info from server, using config path');
-            await syncModelSelection(configPath, null, configPath);
-            try { window.dispatchEvent(new Event('oumi-models-refresh')); } catch {}
-            try { const { showToast } = await import('@/lib/toastBus'); showToast({ message: '⚠️ Swap completed, but could not refresh model info', variant: 'warning' }); } catch {}
-          }
-        } catch (refreshError) {
-          console.error('❌ Error refreshing model info:', refreshError);
-          // Fallback to config path if refresh fails
-          setCurrentModel(configPath);
-          setActiveConfigPath(configPath);
-          setCurrentModelConfigMetadata(null);
-          await syncModelSelection(configPath, null, configPath);
-          try { window.dispatchEvent(new Event('oumi-models-refresh')); } catch {}
-          try { const { showToast } = await import('@/lib/toastBus'); showToast({ message: '⚠️ Swap completed, but refresh failed', variant: 'warning' }); } catch {}
+          console.log('[ModelSwitcher] Dispatching oumi-models-refresh');
+          window.dispatchEvent(new Event('oumi-models-refresh'));
+        } catch (e) {
+          console.error('[ModelSwitcher] Failed to dispatch oumi-models-refresh', e);
         }
-        
+
+        // Show success toast
+        try {
+          const { showToast } = await import('@/lib/toastBus');
+          showToast({ message: `✅ Switched to ${selectedConfig?.display_name || configPath}`, variant: 'success' });
+        } catch (e) {
+          console.error('[ModelSwitcher] Failed to show swap toast', e);
+        }
+
         setIsDropdownOpen(false);
         setSearchTerm('');
-        debugLog(`✅ Successfully switched to config: ${configPath}`);
-        
-        // Show success message temporarily
         setError(null);
+        debugLog(`✅ Successfully switched to config: ${configPath}`);
       } else {
         const msg = response.message || 'Failed to switch model';
-        try { const { showToast } = await import('@/lib/toastBus'); showToast({ message: `❌ ${msg}`, variant: 'error' }); } catch {}
+        try {
+          const { showToast } = await import('@/lib/toastBus');
+          showToast({ message: `❌ ${msg}`, variant: 'error' });
+        } catch (e) {
+          console.error('[ModelSwitcher] Failed to show error toast', e);
+        }
         throw new Error(msg);
       }
     } catch (err) {
       console.error('❌ Model switch error:', err);
       setError(err instanceof Error ? err.message : 'Failed to switch model');
-      try { const { showToast } = await import('@/lib/toastBus'); showToast({ message: '❌ Model switch failed', variant: 'error' }); } catch {}
-      await syncModelSelection(currentModel || configPath, currentModelConfigMetadata, configPath);
+      try {
+        const { showToast } = await import('@/lib/toastBus');
+        showToast({ message: '❌ Model switch failed', variant: 'error' });
+      } catch (e) {
+        console.error('[ModelSwitcher] Failed to show switch-failed toast', e);
+      }
     } finally {
       setIsLoading(false);
       setLoadingMessage('');
@@ -512,20 +350,8 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
   };
 
   const getCurrentModelInfo = () => {
-    // Debug logging disabled to reduce console clutter
-    // console.log(`🔍 Getting model info - isInitialized: ${isInitialized}, currentModel: ${currentModel}, configsCount: ${availableConfigs.length}`);
-    
-    if (!isInitialized) {
-      return {
-        displayName: 'Loading...',
-        description: 'Loading model information',
-        engine: 'UNKNOWN',
-        contextLength: 0,
-        modelFamily: 'unknown',
-      };
-    }
-
-    if (!currentModel) {
+    // Simply read from store - useActiveModel hook keeps it updated
+    if (!selectedModel) {
       return {
         displayName: 'No Model Selected',
         description: 'No model currently loaded',
@@ -535,68 +361,18 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
       };
     }
 
-    // Prefer server's active config metadata if it matches the active config
-    if (currentModelConfigMetadata && (
-      !activeConfigPath || currentModelConfigMetadata.config_path === activeConfigPath
-    )) {
-      debugLog(`✅ Using server's active config metadata:`, currentModelConfigMetadata);
-      return {
-        displayName: currentModelConfigMetadata.display_name,
-        description: currentModelConfigMetadata.description,
-        engine: (currentModelConfigMetadata.engine || 'UNKNOWN').toUpperCase(),
-        contextLength: currentModelConfigMetadata.context_length,
-        modelFamily: currentModelConfigMetadata.model_family,
-      };
-    }
-
-    // If no metadata, reflect the globally selected model/provider so the UI updates immediately
-    if (persistedSelectedModel) {
-      return {
-        displayName: persistedSelectedModel,
-        description: 'Active model',
-        engine: (persistedSelectedProvider || 'UNKNOWN').toUpperCase(),
-        contextLength: 0,
-        modelFamily: 'unknown',
-      };
-    }
-
-    // Fallback: try to find matching config from scanned configs
-    let matchingConfig = availableConfigs.find(config => 
-      config.config_path === currentModel || 
-      config.relative_path === currentModel ||
-      config.model_name === currentModel ||
-      config.id === currentModel
+    // Find matching config for additional metadata
+    const matchingConfig = availableConfigs.find(config =>
+      config.display_name === selectedModel ||
+      config.model_name === selectedModel
     );
 
-    // If no exact match, try partial matching on model name
-    if (!matchingConfig && currentModel.includes('/')) {
-      const modelName = currentModel.split('/').pop() || currentModel;
-      matchingConfig = availableConfigs.find(config => 
-        (typeof config.model_name === 'string' && config.model_name.includes(modelName)) ||
-        (typeof config.display_name === 'string' && config.display_name.toLowerCase().includes(modelName.toLowerCase()))
-      );
-    }
-
-    if (matchingConfig) {
-      debugLog(`✅ Found matching config:`, matchingConfig);
-      return {
-        displayName: matchingConfig.display_name,
-        description: `${matchingConfig.model_name} (${matchingConfig.filename})`,
-        engine: (matchingConfig.engine || 'UNKNOWN').toUpperCase(),
-        contextLength: matchingConfig.context_length,
-        modelFamily: matchingConfig.model_family,
-      };
-    }
-
-    // Final fallback for unknown models
-    debugLog(`⚠️ No matching config found for model: ${currentModel}`);
-    const fallbackName = currentModel.split('/').pop() || currentModel;
     return {
-      displayName: fallbackName,
-      description: 'Custom model (not in config list)',
-      engine: 'NATIVE', // Conservative default
-      contextLength: 8192, // Conservative default
-      modelFamily: 'unknown',
+      displayName: selectedModel,
+      description: matchingConfig?.model_name || 'Active model',
+      engine: (selectedProvider || 'UNKNOWN').toUpperCase(),
+      contextLength: matchingConfig?.context_length || 0,
+      modelFamily: matchingConfig?.model_family || 'unknown',
     };
   };
 
@@ -773,7 +549,7 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
                               <span className={`px-2 py-1 rounded text-xs font-medium ${getEngineColor(config.engine)}`}>
                                 {getEngineAbbreviation(config.engine)}
                               </span>
-                              {config.config_path === activeConfigPath && (
+                              {(config.display_name === selectedModel || config.model_name === selectedModel) && (
                                 <Check size={14} className="text-green-600" />
                               )}
                             </div>

@@ -166,6 +166,23 @@ class ApiClient {
     return this.fetchApi(url);
   }
 
+  async getActiveModel(sessionId?: string): Promise<ApiResponse<{
+    model_id: string;
+    display_name: string;
+    engine: string;
+    config_path: string | null;
+    context_length: number;
+    model_family: string;
+    status: 'loaded' | 'unloaded' | 'loading' | 'failed';
+    loaded_at: number | null;
+    description: string;
+  }>> {
+    const url = sessionId
+      ? `/v1/oumi/active_model?session_id=${encodeURIComponent(sessionId)}`
+      : '/v1/oumi/active_model';
+    return this.fetchApi(url);
+  }
+
   // Branch management
   async getBranches(sessionId: string): Promise<ApiResponse<{ 
     branches: ConversationBranch[];

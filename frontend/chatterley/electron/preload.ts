@@ -61,7 +61,8 @@ export interface ElectronAPI {
 
     // Configuration
     getConfigs: () => Promise<any>;
-    getModels: () => Promise<any>;
+    getModels: (sessionId?: string) => Promise<any>;
+    getActiveModel: (sessionId?: string) => Promise<any>;
 
     // Branch management
     getBranches: (sessionId?: string) => Promise<any>;
@@ -244,7 +245,8 @@ const electronAPI: ElectronAPI = {
     },
 
     getConfigs: () => ipcRenderer.invoke('chat:get-configs'),
-    getModels: () => ipcRenderer.invoke('chat:get-models'),
+    getModels: (sessionId?: string) => ipcRenderer.invoke('chat:get-models', sessionId),
+    getActiveModel: (sessionId?: string) => ipcRenderer.invoke('chat:get-active-model', sessionId),
 
     getBranches: (sessionId) => ipcRenderer.invoke('chat:get-branches', sessionId),
     createBranch: (sessionId, name, parentBranchId) => 

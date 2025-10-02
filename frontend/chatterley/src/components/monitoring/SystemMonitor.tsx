@@ -218,18 +218,10 @@ export default function SystemMonitor({
     }
   }, []);
 
-  // Model status and control functions
+  // Model status and control functions - simplified (no guards, just display)
   const checkModelStatus = React.useCallback(async () => {
+    // SystemMonitor now just displays info - useActiveModel hook updates store
     try {
-      try {
-        const storedConfigId = await apiClient.getStorageItem('selectedConfig', null);
-        if (storedConfigId !== undefined) {
-          selectedConfigRef.current = storedConfigId;
-        }
-      } catch (storageError) {
-        console.warn('[SystemMonitor] Failed to read selectedConfig from storage:', storageError);
-      }
-
       const modelResponse = await apiClient.getModels();
       if (modelResponse.success && modelResponse.data?.data?.[0]) {
         const model = modelResponse.data.data[0];
@@ -239,98 +231,28 @@ export default function SystemMonitor({
         const displayName = (metadata?.display_name && metadata.display_name.length > 0)
           ? metadata.display_name
           : metadata?.model_name || model.id;
-        const engine = metadata?.engine;
-        const effectiveModelName = displayName || model.id || undefined;
-
-        console.log('[SystemMonitor] checkModelStatus response', {
-          modelName: effectiveModelName,
-          rawModelId: model.id,
-          configMetadata: metadata,
-          selectedConfig: selectedConfigRef.current,
-          lastSuccessfulTest: lastSuccessfulTestRef.current,
-        });
 
         setModelStatus(prev => ({
           ...prev,
-          modelName: effectiveModelName,
+          modelName: displayName || model.id || undefined,
           loaded: true,
         }));
 
-        // Guarded settings update: only write if metadata matches selectedConfig (or none set)
-        try {
-          const cfgPath = metadata?.config_path as string | undefined;
-          const selectedCfg = await apiClient.getStorageItem<string | null>('selectedConfig', null);
-          const accept = !selectedCfg || (cfgPath && cfgPath === selectedCfg);
-          if (accept) {
-            const nextSettings: Partial<AppSettings> = {};
-            if (effectiveModelName) nextSettings.selectedModel = effectiveModelName;
-            if (engine && engine.length > 0) nextSettings.selectedProvider = engine;
-            if (Object.keys(nextSettings).length > 0) {
-              updateSettings(nextSettings);
-            }
-            if (cfgPath) {
-              selectedConfigRef.current = cfgPath;
-              try { await apiClient.setStorageItem('selectedConfig', cfgPath); } catch {}
-            }
-          } else {
-            console.warn('[SystemMonitor] Ignoring stale getModels metadata in status check', {
-              config_path: cfgPath,
-              selectedConfig: selectedCfg,
-              effectiveModelName,
-              engine,
-            });
-          }
-        } catch (e) {
-          console.warn('[SystemMonitor] Failed guarded settings update:', e);
-        }
-
+        // Check if we should skip auto-test (already tested recently)
         const now = Date.now();
         const lastRecord = lastSuccessfulTestRef.current;
         const isRecent = !!(lastRecord && now - lastRecord.timestamp < RECENT_TEST_WINDOW_MS);
-        const matchesModel = !!(lastRecord?.modelName && effectiveModelName && lastRecord.modelName === effectiveModelName);
-        const matchesConfig = !!(
-          lastRecord?.configId &&
-          selectedConfigRef.current &&
-          lastRecord.configId === selectedConfigRef.current
-        );
-        const shouldSkipAutoTest = isRecent && (matchesModel || matchesConfig);
 
         if (
           model.id &&
           (!modelStatusRef.current.testResult || modelStatusRef.current.testResult === 'unknown') &&
           lastAutoTestedModelRef.current !== model.id &&
-          !isModelActionLoading
+          !isModelActionLoading &&
+          !isRecent
         ) {
-          if (shouldSkipAutoTest) {
-            console.log('[SystemMonitor] Skipping auto test due to recent successful record', {
-              modelId: model.id,
-              lastRecord,
-            });
-
-            setModelStatus(prev => ({
-              ...prev,
-              loaded: true,
-              testResult: 'success',
-              lastTested: lastRecord?.timestamp ?? prev.lastTested,
-            }));
-
-            if (lastRecord && !lastRecord.modelName && effectiveModelName) {
-              const updatedRecord: StoredModelTestRecord = {
-                ...lastRecord,
-                modelName: effectiveModelName,
-              };
-              lastSuccessfulTestRef.current = updatedRecord;
-              try {
-                await apiClient.setStorageItem('lastSuccessfulModelTest', updatedRecord);
-              } catch (storageError) {
-                console.warn('[SystemMonitor] Failed to persist updated model test record:', storageError);
-              }
-            }
-          } else {
-            lastAutoTestedModelRef.current = model.id;
-            console.log('[SystemMonitor] Auto-triggering testModel from status check for', model.id);
-            void testModel(model.id, 'auto-status-check');
-          }
+          lastAutoTestedModelRef.current = model.id;
+          console.log('[SystemMonitor] Auto-triggering testModel from status check for', model.id);
+          void testModel(model.id, 'auto-status-check');
         }
       } else {
         setModelStatus(prev => {
@@ -348,7 +270,7 @@ export default function SystemMonitor({
     } catch (error) {
       console.error('Failed to check model status:', error);
     }
-  }, [updateSettings]);
+  }, []);
 
   // Single-shot getModels refresh trigger from other parts of the app
   React.useEffect(() => {
@@ -366,41 +288,14 @@ export default function SystemMonitor({
 
     setIsModelActionLoading(true);
     try {
-      // Get the config ID for the current model
-      // First, try to get the currently selected config from storage
-      const selectedConfigId = await apiClient.getStorageItem('selectedConfig', null);
-      let configPath = null;
-      let configId = selectedConfigId;
-
-      // If no selected config, try to find it by matching the model name
-      if (!configId) {
-        const configsResponse = await apiClient.getConfigs();
-        if (configsResponse.success && configsResponse.data?.configs) {
-          const matchingConfig = configsResponse.data.configs.find((config) => {
-            const configId = String(config.id || '');
-            const displayName = String(config.display_name || '');
-            return configId === name || displayName.includes(name) || name.includes(configId);
-          });
-          if (matchingConfig) {
-            configId = null;
-          }
-        }
-      }
-
-      if (configId) {
-        selectedConfigRef.current = configId || null;
-      }
-
-      // Now resolve the config ID to an actual file path using UnifiedConfigPathResolver
-      if (configId) {
-        try {
-          const { configPathResolver } = await import('@/lib/config-path-resolver');
-          const resolvedConfig = await configPathResolver.getConfigById(configId);
-          if (resolvedConfig) {
-            configPath = resolvedConfig.configPath;
-          }
-        } catch (error) {
-          console.warn('Failed to resolve config path for model testing:', error);
+      // Strict mode: require selectedConfig to be a canonical config_path
+      const selectedConfigValue = await apiClient.getStorageItem('selectedConfig', null);
+      let configPath: string | null = null;
+      if (selectedConfigValue && typeof selectedConfigValue === 'string') {
+        const sc = selectedConfigValue as string;
+        if (sc.includes('/') || sc.endsWith('.yaml') || sc.endsWith('.yml')) {
+          configPath = sc;
+          selectedConfigRef.current = sc;
         }
       }
 
@@ -412,7 +307,6 @@ export default function SystemMonitor({
 
       console.log('[SystemMonitor] testModel invoked', {
         modelName: name,
-        configId,
         configPath,
         reason,
         timestamp: new Date().toISOString(),
@@ -434,7 +328,6 @@ export default function SystemMonitor({
       if (success) {
         const record: StoredModelTestRecord = {
           modelName: name,
-          configId: configId ?? undefined,
           configPath: configPath ?? undefined,
           timestamp: completedAt,
         };

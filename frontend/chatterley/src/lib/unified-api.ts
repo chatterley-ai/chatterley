@@ -222,8 +222,25 @@ class UnifiedApiClient {
       timestamp: new Date().toISOString(),
       caller: stack,
     });
-    // Delegate to the active client; session scoping is handled by the backend or elsewhere
-    return this.getClient().getModels();
+    // Prefer scoping by current session when available
+    const ctx = resolveSessionContext();
+    const sessionId = ctx.sessionId as string | undefined;
+    return this.getClient().getModels(sessionId);
+  }
+
+  async getActiveModel(sessionId?: string): Promise<ApiResponse<{
+    model_id: string;
+    display_name: string;
+    engine: string;
+    config_path: string | null;
+    context_length: number;
+    model_family: string;
+    status: 'loaded' | 'unloaded' | 'loading' | 'failed';
+    loaded_at: number | null;
+    description: string;
+  }>> {
+    const ctx = resolveSessionContext();
+    return this.getClient().getActiveModel(sessionId ?? ctx.sessionId);
   }
 
   // Branch management

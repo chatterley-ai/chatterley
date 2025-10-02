@@ -167,7 +167,10 @@ export default function LaunchManager({}: LaunchManagerProps) {
       // If this is an Electron app, we might want to set the initial config
       if (apiClient.isElectron && apiClient.isElectron()) {
         // Store the selected config and system prompt for future use
-        await apiClient.setStorageItem('selectedConfig', configId);
+        // Persist only the resolved backend config path (no legacy/id fallback)
+        if (configPath) {
+          await apiClient.setStorageItem('selectedConfig', configPath);
+        }
         await apiClient.setStorageItem('hasCompletedWelcome', true);
         
         if (systemPrompt) {

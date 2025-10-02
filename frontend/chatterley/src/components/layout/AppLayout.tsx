@@ -24,8 +24,11 @@ const ChatHistorySidebar = dynamic(() => import('@/components/history/ChatHistor
 import SearchHistoryWindow from '@/components/search/SearchHistoryWindow';
 import { ChatInterfaceRef } from '@/components/chat/ChatInterface';
 import ToastContainer from '@/components/ui/ToastContainer';
+import { useActiveModel } from '@/hooks/useActiveModel';
 
 export default function AppLayout() {
+  // Poll active model from backend (single source of truth)
+  useActiveModel({ pollInterval: 3000, enabled: true });
   const [isBranchTreeExpanded, setIsBranchTreeExpanded] = React.useState(false);
   const [isControlPanelExpanded, setIsControlPanelExpanded] = React.useState(true);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = React.useState(false);

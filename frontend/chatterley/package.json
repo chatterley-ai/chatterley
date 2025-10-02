@@ -26,7 +26,7 @@
     "electron:debug": "node scripts/debug-electron.js",
     "electron:debug-build": "node scripts/debug-electron.js --build",
     "clear-electron-cache": "node scripts/clear-electron-cache.js",
-    "electron:build-debug": "npm run prepare-python && OUMI_LOG_LEVEL=DEBUG node scripts/clear-pycache.js && npm run clear-electron-cache && OUMI_LOG_LEVEL=DEBUG npm run build:electron && OUMI_LOG_LEVEL=DEBUG npm run electron:compile && npm run clear-electron-cache && OUMI_LOG_LEVEL=DEBUG npm run electron:debug",
+    "electron:build-debug": "npm run prepare-python && OUMI_LOG_LEVEL=DEBUG node scripts/clear-pycache.js && npm run clear-electron-cache && node scripts/clear-electron-storage.js && OUMI_LOG_LEVEL=DEBUG npm run build:electron && OUMI_LOG_LEVEL=DEBUG npm run electron:compile && npm run clear-electron-cache && node scripts/clear-electron-storage.js && OUMI_LOG_LEVEL=DEBUG npm run electron:debug",
     "electron:pack": "npm run prepare-python && npm run build:electron && npm run electron:compile && electron-builder",
     "electron:dist": "npm run prepare-python && npm run build:electron && npm run electron:compile && electron-builder --publish=never",
     "electron:publish": "npm run prepare-python && npm run build:electron && npm run electron:compile && electron-builder --publish=always",

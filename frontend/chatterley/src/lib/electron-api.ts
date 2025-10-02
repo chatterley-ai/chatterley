@@ -185,11 +185,28 @@ class ElectronApiClient {
     }
   }
 
-  public async getModels(): Promise<ApiResponse<{ data: Array<{ id: string; config_metadata?: Record<string, unknown> }> }>> {
+  public async getModels(sessionId?: string): Promise<ApiResponse<{ data: Array<{ id: string; config_metadata?: Record<string, unknown> }> }>> {
     if (!this.isElectron) {
       throw new Error('Model access only available in Electron app');
     }
-    return window.electronAPI.chat.getModels();
+    return window.electronAPI.chat.getModels(sessionId);
+  }
+
+  public async getActiveModel(sessionId?: string): Promise<ApiResponse<{
+    model_id: string;
+    display_name: string;
+    engine: string;
+    config_path: string | null;
+    context_length: number;
+    model_family: string;
+    status: 'loaded' | 'unloaded' | 'loading' | 'failed';
+    loaded_at: number | null;
+    description: string;
+  }>> {
+    if (!this.isElectron) {
+      throw new Error('Active model access only available in Electron app');
+    }
+    return window.electronAPI.chat.getActiveModel(sessionId);
   }
 
   // System detection methods

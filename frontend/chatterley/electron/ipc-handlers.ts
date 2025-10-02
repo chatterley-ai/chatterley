@@ -593,7 +593,14 @@ function setupChatHandlers(pythonManager: PythonServerManager): void {
 
   // Configuration
   ipcMain.handle('chat:get-configs', () => proxyToPython('/v1/oumi/configs'));
-  ipcMain.handle('chat:get-models', () => proxyToPython('/v1/models'));
+  ipcMain.handle('chat:get-models', (_evt, sessionId?: string) => {
+    const suffix = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : '';
+    return proxyToPython(`/v1/models${suffix}`);
+  });
+  ipcMain.handle('chat:get-active-model', (_evt, sessionId?: string) => {
+    const suffix = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : '';
+    return proxyToPython(`/v1/oumi/active_model${suffix}`);
+  });
 
   // Branch management
   ipcMain.handle('chat:get-branches', (_, sessionId) => 

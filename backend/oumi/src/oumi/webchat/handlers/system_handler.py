@@ -130,6 +130,17 @@ class SystemHandler:
                 logger.warning(f"Active config model_name missing; using fallback '{model_name}'.")
             engine = str(active_config.engine) if active_config.engine else "NATIVE"
             context_length = getattr(active_config.model, "model_max_length", 4096)
+            # Normalize config_path to be relative to configs/
+            try:
+                from oumi.webchat.utils.path_utils import normalize_config_path
+                cfg_attr = getattr(active_config, "config_path", None)
+                if cfg_attr:
+                    rel, _ = normalize_config_path(cfg_attr)
+                    config_path = rel
+                else:
+                    config_path = None
+            except Exception:
+                config_path = getattr(active_config, "config_path", None)
             
             # Create enhanced model info with config metadata
             is_omni = is_qwen_omni_model(model_name)
@@ -147,6 +158,7 @@ class SystemHandler:
                     "display_name": model_name.split('/')[-1] if '/' in model_name else model_name,
                     "description": f"{model_name} ({engine} engine)",
                     "model_family": self._extract_model_family(model_name),
+                    "config_path": config_path,
                     "is_active_config": True,  # Flag to indicate this is the active config
                     "is_omni_capable": is_omni,
                 }
@@ -272,12 +284,90 @@ class SystemHandler:
         
         return web.json_response(response_data)
     
+    async def handle_active_model(self, request: web.Request) -> web.Response:
+        """Get the currently active model information (ground truth).
+
+        This endpoint returns the actual loaded model configuration from the backend,
+        serving as the single source of truth for the frontend.
+
+        Args:
+            request: Web request with optional session_id
+
+        Returns:
+            JSON response with active model information
+        """
+        session_id = request.query.get("session_id", "default")
+
+        try:
+            session = await self.session_manager.get_or_create_session_safe(session_id)
+
+            # Get the active config (swapped config takes precedence)
+            if (hasattr(session.command_context, 'config') and
+                session.command_context.config is not None):
+                active_config = session.command_context.config
+                logger.debug(f"🔄 Active model from swapped config")
+            else:
+                active_config = session.config
+                logger.debug(f"🔄 Active model from initial config")
+
+            # Extract model metadata
+            model_name = getattr(active_config.model, "model_name", None)
+            if not model_name:
+                model_name = model_name_fallback("active_config.model.model_name")
+
+            engine = str(active_config.engine) if active_config.engine else "NATIVE"
+            context_length = getattr(active_config.model, "model_max_length", 4096)
+
+            # Get config path
+            try:
+                from oumi.webchat.utils.path_utils import normalize_config_path
+                cfg_attr = getattr(active_config, "config_path", None)
+                if cfg_attr:
+                    rel, _ = normalize_config_path(cfg_attr)
+                    config_path = rel
+                else:
+                    config_path = None
+            except Exception:
+                config_path = getattr(active_config, "config_path", None)
+
+            # Check if model is actually loaded
+            is_loaded = False
+            if hasattr(session.command_context, 'inference_engine'):
+                is_loaded = session.command_context.inference_engine is not None
+            elif hasattr(session, 'inference_engine'):
+                is_loaded = session.inference_engine is not None
+
+            # Build response with complete metadata
+            display_name = model_name.split('/')[-1] if '/' in model_name else model_name
+
+            response_data = {
+                "model_id": model_name,
+                "display_name": display_name,
+                "engine": engine,
+                "config_path": config_path,
+                "context_length": context_length,
+                "model_family": self._extract_model_family(model_name),
+                "status": "loaded" if is_loaded else "unloaded",
+                "loaded_at": int(time.time()) if is_loaded else None,
+                "description": f"{model_name} ({engine} engine)"
+            }
+
+            logger.debug(f"📋 Active model: {display_name} ({engine})")
+            return web.json_response(response_data)
+
+        except Exception as e:
+            logger.error(f"Error getting active model: {e}")
+            return web.json_response({
+                "error": "Failed to get active model information",
+                "message": str(e)
+            }, status=500)
+
     async def handle_clear_model_api(self, request: web.Request) -> web.Response:
         """Handle clearing/unloading the current model from memory.
-        
+
         Args:
             request: Web request with session_id
-            
+
         Returns:
             JSON response with clearing operation result
         """
@@ -289,9 +379,9 @@ class SystemHandler:
         try:
             session_id = request.query.get("session_id", "default")
             session = await self.session_manager.get_or_create_session_safe(session_id)
-            
+
             logger.info(f"[trace:{trace_id}] 🧹 Clearing model from memory for session {session_id}")
-            
+
             # Clear the inference engine if it exists
             if hasattr(session, 'inference_engine') and session.inference_engine is not None:
                 # Call dispose method if available
@@ -299,11 +389,11 @@ class SystemHandler:
                     session.inference_engine.dispose()
                 elif hasattr(session.inference_engine, 'close'):
                     session.inference_engine.close()
-                
+
                 # Clear the engine reference
                 session.inference_engine = None
                 logger.info("✅ Inference engine cleared")
-            
+
             # Clear the command context engine if it exists
             if hasattr(session.command_context, 'inference_engine') and session.command_context.inference_engine is not None:
                 # Call dispose method if available
@@ -311,14 +401,14 @@ class SystemHandler:
                     session.command_context.inference_engine.dispose()
                 elif hasattr(session.command_context.inference_engine, 'close'):
                     session.command_context.inference_engine.close()
-                
+
                 # Clear the engine reference
                 session.command_context.inference_engine = None
                 logger.info("✅ Command context inference engine cleared")
-            
+
             # Force garbage collection and CUDA cache clearing
             gc.collect()
-            
+
             # Clear CUDA cache if available
             try:
                 import torch
@@ -329,14 +419,14 @@ class SystemHandler:
                 logger.debug("PyTorch not available, skipping CUDA cache clear")
             except Exception as e:
                 logger.warning(f"Failed to clear CUDA cache: {e}")
-            
+
             logger.info("✅ Model clearing completed successfully")
-            
+
             resp = {"success": True, "message": "Model cleared from memory successfully"}
             if trace_id:
                 resp["trace_id"] = trace_id
             return web.json_response(resp)
-            
+
         except Exception as e:
             logger.error(f"[trace:{trace_id}] ❌ Error clearing model: {e}")
             payload = {"success": False, "error": f"Failed to clear model: {str(e)}"}

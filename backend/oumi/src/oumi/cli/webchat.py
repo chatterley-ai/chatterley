@@ -297,6 +297,14 @@ def webchat(
     parsed_config: InferenceConfig = InferenceConfig.from_yaml_and_arg_list(
         config, extra_args, logger=logger
     )
+    # Persist source config path using shared normalizer
+    try:
+        from oumi.webchat.utils.path_utils import normalize_config_path
+        rel, abs_path = normalize_config_path(config)
+        parsed_config.config_path = rel
+        setattr(parsed_config, 'absolute_config_path', abs_path)
+    except Exception:
+        parsed_config.config_path = config
     parsed_config.finalize_and_validate()
 
     # Print configuration for verification
@@ -499,6 +507,13 @@ def webchat_server(
     parsed_config: InferenceConfig = InferenceConfig.from_yaml_and_arg_list(
         config, extra_args, logger=logger
     )
+    try:
+        from oumi.webchat.utils.path_utils import normalize_config_path
+        rel, abs_path = normalize_config_path(config)
+        parsed_config.config_path = rel
+        setattr(parsed_config, 'absolute_config_path', abs_path)
+    except Exception:
+        parsed_config.config_path = config
     parsed_config.finalize_and_validate()
 
     # Print configuration for verification
@@ -748,6 +763,14 @@ def _original_webchat_fullstack(
     parsed_config: InferenceConfig = InferenceConfig.from_yaml_and_arg_list(
         config, extra_args, logger=logger
     )
+    # Persist source config path for downstream metadata (canonicalize)
+    try:
+        from oumi.webchat.utils.path_utils import normalize_config_path
+        rel, abs_path = normalize_config_path(config)
+        parsed_config.config_path = rel
+        setattr(parsed_config, 'absolute_config_path', abs_path)
+    except Exception:
+        parsed_config.config_path = config
     parsed_config.finalize_and_validate()
 
     # Print configuration for verification

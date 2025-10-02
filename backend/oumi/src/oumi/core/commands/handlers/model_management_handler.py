@@ -179,16 +179,17 @@ class ModelManagementHandler(BaseCommandHandler):
                 load_config_from_yaml_preserving_settings,
             )
 
+            new_config = load_config_from_yaml_preserving_settings(
+                str(full_path), self.context.config
+            )
+            # Persist source config path on the config object for downstream metadata
+            from oumi.webchat.utils.path_utils import normalize_config_path
+            rel, abs_path = normalize_config_path(full_path)
+            setattr(new_config, 'config_path', rel)
             try:
-                new_config = load_config_from_yaml_preserving_settings(
-                    str(full_path), self.context.config
-                )
-            except Exception as e:
-                return CommandResult(
-                    success=False,
-                    message=f"Error loading config: {str(e)}",
-                    should_continue=False,
-                )
+                setattr(new_config, 'absolute_config_path', str(abs_path))
+            except Exception:
+                pass
 
             # Create new inference engine with the loaded config
             from oumi.infer import get_engine

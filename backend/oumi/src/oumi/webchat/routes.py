@@ -160,6 +160,7 @@ def setup_routes(
     # System routes
     oumi.get("/system_stats", system_handler.handle_system_stats_api)
     oumi.get("/configs", config_handler.handle_get_configs_api)
+    oumi.get("/active_model", system_handler.handle_active_model)
     oumi.post("/clear_model", system_handler.handle_clear_model_api)
     
     # SSE routes (optional)
@@ -173,13 +174,14 @@ def setup_routes(
             "/health",
             "/v1/chat/completions",
             "/v1/models",
-            "/v1/oumi/branches", 
+            "/v1/oumi/branches",
             "/v1/oumi/conversation",
             "/v1/oumi/command",
             "/v1/oumi/regen_node",
             "/v1/oumi/sync_conversation",
             "/v1/oumi/system_stats",
             "/v1/oumi/configs",
+            "/v1/oumi/active_model",
             "/v1/oumi/clear_model",
             "/v1/oumi/reset_history",
             "/v1/oumi/diffusion/generate",
