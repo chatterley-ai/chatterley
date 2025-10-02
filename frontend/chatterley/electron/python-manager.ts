@@ -758,6 +758,19 @@ export class PythonServerManager {
       log.warn('[getCleanEnvironment] Failed to set PYTHONPATH for dev override:', e);
     }
 
+    // Route HuggingFace cache to user data directory to avoid bloating app package
+    try {
+      const { app } = require('electron');
+      const hfCachePath = path.join(app.getPath('userData'), 'huggingface');
+      cleanEnv.OUMI_HF_CACHE = hfCachePath; // picked up by oumi.utils.model_caching
+      cleanEnv.HF_HOME = hfCachePath;       // respected by huggingface_hub/transformers
+      cleanEnv.HUGGINGFACE_HUB_CACHE = path.join(hfCachePath, 'hub');
+      cleanEnv.TRANSFORMERS_CACHE = path.join(hfCachePath, 'transformers');
+      log.info(`[getCleanEnvironment] HF caches set: OUMI_HF_CACHE=${hfCachePath}`);
+    } catch (e) {
+      log.warn('[getCleanEnvironment] Failed to set OUMI_HF_CACHE:', e);
+    }
+
     // Add API keys from secure storage for inference engines
     try {
       // Import the api key manager here to avoid circular dependencies
