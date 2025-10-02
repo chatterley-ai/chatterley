@@ -130,17 +130,7 @@ class SystemHandler:
                 logger.warning(f"Active config model_name missing; using fallback '{model_name}'.")
             engine = str(active_config.engine) if active_config.engine else "NATIVE"
             context_length = getattr(active_config.model, "model_max_length", 4096)
-            # Normalize config_path to be relative to configs/
-            try:
-                from oumi.webchat.utils.path_utils import normalize_config_path
-                cfg_attr = getattr(active_config, "config_path", None)
-                if cfg_attr:
-                    rel, _ = normalize_config_path(cfg_attr)
-                    config_path = rel
-                else:
-                    config_path = None
-            except Exception:
-                config_path = getattr(active_config, "config_path", None)
+            config_path = getattr(active_config, "config_path", None)
             
             # Create enhanced model info with config metadata
             is_omni = is_qwen_omni_model(model_name)
@@ -317,18 +307,7 @@ class SystemHandler:
 
             engine = str(active_config.engine) if active_config.engine else "NATIVE"
             context_length = getattr(active_config.model, "model_max_length", 4096)
-
-            # Get config path
-            try:
-                from oumi.webchat.utils.path_utils import normalize_config_path
-                cfg_attr = getattr(active_config, "config_path", None)
-                if cfg_attr:
-                    rel, _ = normalize_config_path(cfg_attr)
-                    config_path = rel
-                else:
-                    config_path = None
-            except Exception:
-                config_path = getattr(active_config, "config_path", None)
+            config_path = getattr(active_config, "config_path", None)
 
             # Check if model is actually loaded
             is_loaded = False
