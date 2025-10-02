@@ -117,8 +117,6 @@ export default function SystemMonitor({
   const getCurrentSessionId = useChatStore((state) => state.getCurrentSessionId);
   const chatIsLoading = useChatStore((state) => state.isLoading);
   const chatIsTyping = useChatStore((state) => state.isTyping);
-  const updateSettings = useChatStore((state) => state.updateSettings);
-  const selectedModelFromStore = useChatStore((state) => state.settings.selectedModel);
   const [stats, setStats] = React.useState<SystemStats | null>(null);
   const [networkActivity, setNetworkActivity] = React.useState<NetworkActivity>({
     activeRequests: 0,

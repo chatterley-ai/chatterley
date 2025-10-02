@@ -8,7 +8,6 @@ import React from 'react';
 import { Bot, ChevronDown, RefreshCw, Check, AlertTriangle, Search, X, Zap, Brain, Cpu, Gem, Waves, FlaskConical, Building2, Play, Square } from 'lucide-react';
 import { useChatStore } from '@/lib/store';
 import apiClient from '@/lib/unified-api';
-import { ModelConfigMetadata, AppSettings } from '@/lib/types';
 import { formatContextLength } from '@/lib/api-model-context';
 
 const debugLog = (...args: unknown[]) => {
@@ -200,7 +199,7 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
       const selectedCfg = await apiClient.getStorageItem<string | null>('selectedConfig', null);
       if (!selectedCfg) throw new Error('No selected config available to test');
       const resp = await apiClient.testModel(selectedCfg);
-      const ok = resp.success && (resp.data as any)?.success !== false;
+      const ok = resp.success && (resp.data as { success?: boolean })?.success !== false;
       setModelStatus({
         loaded: Boolean(ok),
         modelName: modelStatus.modelName,
@@ -616,7 +615,7 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
           <div className="flex gap-1 pt-1">
             <button
               onClick={testActiveModel}
-              disabled={!activeConfigPath || isModelActionLoading}
+              disabled={isModelActionLoading}
               className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 rounded disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               title="Test model functionality"
             >

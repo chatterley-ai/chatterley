@@ -36,7 +36,7 @@ export function useActiveModel(options: UseActiveModelOptions = {}) {
       const response = await apiClient.getActiveModel(sessionId);
 
       if (response.success && response.data) {
-        const { display_name, engine, config_path, context_length, model_family, status } = response.data;
+        const { display_name, engine, config_path, status } = response.data;
 
         // Update global settings from backend ground truth
         updateSettings({
