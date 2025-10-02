@@ -53,7 +53,24 @@ const clearPythonCache = () => {
       }
     });
     
-    console.log('Python cache successfully cleared!');
+    // Remove common heavy cache directories if present
+    const heavyDirs = [
+      '.cache', '.mypy_cache', '.pytest_cache', '.ruff_cache', '.tox',
+      '.venv', 'venv', 'env', 'node_modules'
+    ];
+    heavyDirs.forEach((dir) => {
+      try {
+        const p = path.join(oumiRoot, dir);
+        if (fs.existsSync(p)) {
+          fs.rmSync(p, { recursive: true, force: true });
+          console.log(`Removed heavy cache directory: ${p}`);
+        }
+      } catch (e) {
+        console.log(`Warning: failed to remove ${dir}:`, e?.message || e);
+      }
+    });
+
+    console.log('Python caches cleared and heavy directories pruned.');
   } catch (error) {
     console.error('Error clearing Python cache:', error);
     process.exit(1);
