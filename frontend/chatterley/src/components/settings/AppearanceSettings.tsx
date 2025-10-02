@@ -218,7 +218,7 @@ export default function AppearanceSettingsSection() {
             <label className="block text-sm font-medium mb-2">Text Size</label>
             <input
               type="range"
-              min={0.85}
+              min={0.2}
               max={1.3}
               step={0.05}
               value={appearance.textScale}

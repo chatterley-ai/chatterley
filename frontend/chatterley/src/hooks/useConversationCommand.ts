@@ -59,7 +59,7 @@ export function useConversationCommand() {
       const conversationResponse = await apiClient.getConversation(getCurrentSessionId(), currentBranchId || 'main');
       if (conversationResponse.success && conversationResponse.data?.conversation && currentConversationId) {
         const existingMessages = getBranchMessages(currentConversationId, currentBranchId || 'main');
-        const mapped = transformBackendMessages(conversationResponse.data?.conversation as Record<string, unknown>[], {
+        const mapped = transformBackendMessages(conversationResponse.data?.conversation as unknown[], {
           settings,
           existingMessages,
           fallbackModel: settings.selectedModel,
@@ -238,7 +238,7 @@ interface BackendBranch {
           const existingMessages = targetConvId
             ? getBranchMessages(targetConvId, targetBranchId)
             : [];
-          const mapped = transformBackendMessages(snap as Record<string, unknown>[], {
+          const mapped = transformBackendMessages(snap as unknown[], {
             settings,
             existingMessages,
             fallbackModel: (response?.data && typeof response.data === 'object' && 'model_info' in response.data && 

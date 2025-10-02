@@ -82,7 +82,7 @@ export default function ChatHistory({
           </div>
         ) : (
           // Messages list
-          <div className="divide-y divide-gray-100">
+          <div className="divide-y divide-border">
             {messages.map((message, index) => (
               <ChatMessage
                 key={message.id}
@@ -107,7 +107,7 @@ export default function ChatHistory({
         <div className="absolute bottom-4 right-4">
           <button
             onClick={scrollToBottom}
-            className="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-full shadow-lg transition-colors"
+            className="bg-primary hover:opacity-90 text-primary-foreground p-3 rounded-full shadow-lg transition-colors"
             title="Scroll to bottom"
           >
             <svg

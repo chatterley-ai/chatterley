@@ -243,8 +243,9 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
         throw new Error(resp.message || 'Regen failed');
       }
       // Apply only the node update locally; do not refresh entire conversation
-      const newContent = (resp.data as Record<string, unknown>)?.assistant?.content as string | undefined;
-      const modelInfo = (resp.data as Record<string, unknown>)?.assistant?.metadata as { model_name?: string; engine?: string; duration_ms?: number } | undefined;
+      const assistant = (resp.data as Record<string, unknown>)?.assistant as Record<string, unknown> | undefined;
+      const newContent = assistant?.content as string | undefined;
+      const modelInfo = assistant?.metadata as { model_name?: string; engine?: string; duration_ms?: number } | undefined;
       if (newContent && currentConversationId && lastAssistant) {
         updateMessage(
           currentConversationId,

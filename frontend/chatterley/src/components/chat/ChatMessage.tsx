@@ -91,8 +91,9 @@ export default function ChatMessage({ message, isLatest = false, messageIndex }:
         alert(resp.message || 'Failed to regenerate');
       } else {
         // Apply only the node update locally; do not refresh entire conversation
-        const newContent = (resp.data as Record<string, unknown>)?.assistant?.content as string | undefined;
-        const modelInfo = (resp.data as Record<string, unknown>)?.assistant?.metadata as { model_name?: string; engine?: string; duration_ms?: number } | undefined;
+        const assistant = (resp.data as Record<string, unknown>)?.assistant as Record<string, unknown> | undefined;
+        const newContent = assistant?.content as string | undefined;
+        const modelInfo = assistant?.metadata as { model_name?: string; engine?: string; duration_ms?: number } | undefined;
         if (newContent && currentConversationId) {
           updateMessage(
             currentConversationId,
@@ -139,7 +140,8 @@ export default function ChatMessage({ message, isLatest = false, messageIndex }:
         if (result.success) {
           // Create a local version for the edit so version UI reflects immediately
           if (currentConversationId) {
-            const baseMeta = !isUser ? { modelName: (message as Record<string, unknown>)?.meta?.modelName, engine: (message as Record<string, unknown>)?.meta?.engine } : undefined;
+            const messageMeta = (message as unknown as { meta?: Record<string, unknown> })?.meta;
+            const baseMeta = !isUser ? { modelName: messageMeta?.modelName as string | undefined, engine: messageMeta?.engine as string | undefined } : undefined;
             updateMessage(currentConversationId, currentBranchId || 'main', message.id, {
               content: editContent.trim(),
               timestamp: Date.now(),
@@ -397,7 +399,7 @@ export default function ChatMessage({ message, isLatest = false, messageIndex }:
 
         {/* Timestamp, user meta, and actions */}
         <div className="flex items-center gap-2 pt-2 flex-wrap">
-          <span className="text-xs text-gray-400">
+          <span className="text-xs text-muted-foreground">
             {new Date(message.timestamp).toLocaleTimeString([], {
               hour: '2-digit',
               minute: '2-digit',
@@ -415,14 +417,14 @@ export default function ChatMessage({ message, isLatest = false, messageIndex }:
             {/* Copy button - for all messages */}
             <button
               onClick={handleCopy}
-              className="p-1 rounded hover:bg-gray-200"
+              className="p-1 rounded hover:bg-muted"
               title="Copy message"
               disabled={!!actionInProgress || isExecuting}
             >
               {copied ? (
-                <Check size={14} className="text-green-600" />
+                <Check size={14} className="text-foreground" />
               ) : (
-                <Copy size={14} className="text-gray-500" />
+                <Copy size={14} className="text-muted-foreground" />
               )}
             </button>
 
@@ -432,21 +434,21 @@ export default function ChatMessage({ message, isLatest = false, messageIndex }:
                 {/* Delete button - for all messages */}
                 <button
                   onClick={handleDelete}
-                  className="p-1 rounded hover:bg-red-100"
+                  className="p-1 rounded hover:bg-muted"
                   title="Delete this message"
                   disabled={actionInProgress === 'delete' || isExecuting}
                 >
-                  <Trash2 size={14} className={actionInProgress === 'delete' ? 'text-gray-400' : 'text-red-600'} />
+                  <Trash2 size={14} className={actionInProgress === 'delete' ? 'text-muted-foreground' : 'text-foreground'} />
                 </button>
 
                 {/* Edit button - for all messages */}
                 <button
                   onClick={handleEdit}
-                  className="p-1 rounded hover:bg-yellow-100"
+                  className="p-1 rounded hover:bg-muted"
                   title="Edit this message"
                   disabled={!!actionInProgress || isExecuting}
                 >
-                  <Edit3 size={14} className="text-yellow-600" />
+                  <Edit3 size={14} className="text-foreground" />
                 </button>
 
                 {/* Assistant-only actions */}
@@ -455,11 +457,11 @@ export default function ChatMessage({ message, isLatest = false, messageIndex }:
                     {/* Regenerate button */}
                     <button
                       onClick={handleRegen}
-                      className="p-1 rounded hover:bg-blue-100"
+                      className="p-1 rounded hover:bg-accent"
                       title="Regenerate response"
                       disabled={actionInProgress === 'regen' || isExecuting}
                     >
-                      <RefreshCw size={14} className={actionInProgress === 'regen' ? 'text-gray-400 animate-spin' : 'text-blue-600'} />
+                      <RefreshCw size={14} className={actionInProgress === 'regen' ? 'text-muted-foreground animate-spin' : 'text-primary'} />
                     </button>
                   </>
                 )}

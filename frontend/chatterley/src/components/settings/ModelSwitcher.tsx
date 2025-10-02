@@ -42,15 +42,9 @@ const getEngineAbbreviation = (engine: string) => {
   }
 };
 
-const getEngineColor = (engine: string) => {
-  switch (engine.toUpperCase()) {
-    case 'NATIVE': return 'bg-blue-100 text-blue-800';
-    case 'VLLM': return 'bg-green-100 text-green-800';
-    case 'LLAMACPP': return 'bg-purple-100 text-purple-800';
-    case 'OPENAI': return 'bg-orange-100 text-orange-800';
-    case 'ANTHROPIC': return 'bg-red-100 text-red-800';
-    default: return 'bg-gray-100 text-gray-800';
-  }
+const getEngineColor = (_engine: string) => {
+  // Use theme-driven accent colors so appearance settings apply consistently
+  return 'bg-accent text-accent-foreground';
 };
 
 const getFamilyIcon = (family: string) => {

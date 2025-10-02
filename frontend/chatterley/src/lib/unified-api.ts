@@ -460,7 +460,7 @@ class UnifiedApiClient {
   }
 
   async loadConversation(
-    sessionId: string, 
+    sessionId: string,
     conversationId: string,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     targetBranchId?: string // Currently unused but will be used in future implementation
@@ -470,7 +470,7 @@ class UnifiedApiClient {
       try {
         const conversationKey = `conversation_${sessionId}_${conversationId}`;
         const conversationData = await this.getStorageItem(conversationKey);
-        
+
         if (!conversationData) {
           return {
             success: false,
@@ -478,21 +478,21 @@ class UnifiedApiClient {
           };
         }
 
-        const messages = (conversationData && typeof conversationData === 'object') ? 
-          ((Array.isArray((conversationData as Record<string, unknown>).messages) ? (conversationData as Record<string, unknown>).messages : []) || 
+        const messages = (conversationData && typeof conversationData === 'object') ?
+          ((Array.isArray((conversationData as Record<string, unknown>).messages) ? (conversationData as Record<string, unknown>).messages : []) ||
           (Array.isArray((conversationData as Record<string, unknown>).conversation) ? (conversationData as Record<string, unknown>).conversation : [])) : [];
-        const nodeGraph = (conversationData && typeof conversationData === 'object') ? 
+        const nodeGraph = (conversationData && typeof conversationData === 'object') ?
           ((conversationData as { nodeGraph?: Record<string, unknown> }).nodeGraph || undefined) : undefined;
         const currentBranchId = (conversationData && typeof conversationData === 'object') ?
-          ((conversationData as { currentBranchId?: string; current_branch?: string }).currentBranchId || 
-           (conversationData as { currentBranchId?: string; current_branch?: string }).current_branch || 
+          ((conversationData as { currentBranchId?: string; current_branch?: string }).currentBranchId ||
+           (conversationData as { currentBranchId?: string; current_branch?: string }).current_branch ||
            undefined) : undefined;
 
         // If targetBranchId is provided, we would normally load into that branch
         // For now, just return the messages
         return {
           success: true,
-          data: { messages, nodeGraph, currentBranchId }
+          data: { messages: messages as Message[], nodeGraph, currentBranchId }
         };
       } catch (error) {
         console.error('Error loading conversation:', error);
@@ -506,7 +506,7 @@ class UnifiedApiClient {
       try {
         const conversationKey = `conversation_${sessionId}_${conversationId}`;
         const storedConversation = localStorage.getItem(conversationKey);
-        
+
         if (!storedConversation) {
           return {
             success: false,
@@ -515,21 +515,21 @@ class UnifiedApiClient {
         }
 
         const conversationData = JSON.parse(storedConversation);
-        const messages = (conversationData && typeof conversationData === 'object') ? 
-          ((Array.isArray((conversationData as Record<string, unknown>).messages) ? (conversationData as Record<string, unknown>).messages : []) || 
+        const messages = (conversationData && typeof conversationData === 'object') ?
+          ((Array.isArray((conversationData as Record<string, unknown>).messages) ? (conversationData as Record<string, unknown>).messages : []) ||
           (Array.isArray((conversationData as Record<string, unknown>).conversation) ? (conversationData as Record<string, unknown>).conversation : [])) : [];
-        const nodeGraph = (conversationData && typeof conversationData === 'object') ? 
+        const nodeGraph = (conversationData && typeof conversationData === 'object') ?
           ((conversationData as { nodeGraph?: Record<string, unknown> }).nodeGraph || undefined) : undefined;
         const currentBranchId = (conversationData && typeof conversationData === 'object') ?
-          ((conversationData as { currentBranchId?: string; current_branch?: string }).currentBranchId || 
-           (conversationData as { currentBranchId?: string; current_branch?: string }).current_branch || 
+          ((conversationData as { currentBranchId?: string; current_branch?: string }).currentBranchId ||
+           (conversationData as { currentBranchId?: string; current_branch?: string }).current_branch ||
            undefined) : undefined;
 
         // If targetBranchId is provided, we would normally load into that branch
         // For now, just return the messages
         return {
           success: true,
-          data: { messages, nodeGraph, currentBranchId }
+          data: { messages: messages as Message[], nodeGraph, currentBranchId }
         };
       } catch (error) {
         console.error('Error loading conversation:', error);

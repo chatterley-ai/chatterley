@@ -229,8 +229,7 @@ function SystemSettings() {
   const [installMsg, setInstallMsg] = useState<string | null>(null);
   const platformInfo = apiClient.getPlatform();
 
-  // Unused function due to UI redesign - keeping for future reference
-const handleInstall = async (kind: 'sglang' | 'flashattn2' | 'flashinfer') => {
+  const handleInstall = async (kind: 'sglang' | 'flashattn2' | 'flashinfer') => {
     try {
       setInstalling(prev => ({ ...prev, [kind]: true }));
       let result: { success: boolean; message: string } = { success: false, message: '' };
