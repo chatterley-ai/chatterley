@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import re
 import shutil
+import os
 from pathlib import Path
 from typing import Sequence
 
@@ -23,7 +24,29 @@ from huggingface_hub import hf_hub_download
 
 from oumi.utils.logging import logger
 
-HUGGINGFACE_CACHE = ".cache/huggingface"
+def _resolve_default_hf_cache() -> str:
+    """Resolve a safe, absolute Hugging Face cache directory.
+
+    Priority:
+    1) OUMI_HF_CACHE
+    2) HF_HOME
+    3) HUGGINGFACE_HUB_CACHE
+    4) TRANSFORMERS_CACHE
+    5) ~/.cache/huggingface
+
+    This avoids writing into the application working directory when Oumi is
+    embedded (e.g., inside an Electron app bundle). Using a user-level cache
+    prevents the app package from growing after first run.
+    """
+    for var in ("OUMI_HF_CACHE", "HF_HOME", "HUGGINGFACE_HUB_CACHE", "TRANSFORMERS_CACHE"):
+        val = os.environ.get(var)
+        if val and isinstance(val, str) and val.strip():
+            return os.path.expanduser(val.strip())
+
+    return str((Path.home() / ".cache" / "huggingface").resolve())
+
+
+HUGGINGFACE_CACHE = _resolve_default_hf_cache()
 
 
 def _download_gguf_part(repo_id: str, filename: str, cache_dir: Path) -> Path:
