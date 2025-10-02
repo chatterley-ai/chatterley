@@ -224,31 +224,6 @@ function SystemSettings() {
     });
   };
 
-  // Optional installs state
-  const [installing, setInstalling] = useState<{ sglang?: boolean; flashattn2?: boolean; flashinfer?: boolean }>({});
-  const [installMsg, setInstallMsg] = useState<string | null>(null);
-  const platformInfo = apiClient.getPlatform();
-
-  const handleInstall = async (kind: 'sglang' | 'flashattn2' | 'flashinfer') => {
-    try {
-      setInstalling(prev => ({ ...prev, [kind]: true }));
-      let result: { success: boolean; message: string } = { success: false, message: '' };
-      if (kind === 'sglang') {
-        result = await apiClient.installSGLangBackend();
-      } else if (kind === 'flashattn2') {
-        result = await apiClient.installFlashAttention2();
-      } else {
-        result = await apiClient.installFlashInfer();
-      }
-      setInstallMsg(result.message || (result.success ? 'Install completed' : 'Install failed'));
-    } catch (e) {
-      setInstallMsg(e instanceof Error ? e.message : String(e));
-    } finally {
-      setInstalling(prev => ({ ...prev, [kind]: false }));
-      setTimeout(() => setInstallMsg(null), 5000);
-    }
-  };
-
   return (
     <div className="space-y-6">
       {/* Profile */}
@@ -501,6 +476,31 @@ function SystemSettings() {
 
 function NotificationSettings() {
   const { settings, updateSettings } = useChatStore();
+
+  // Optional installs state
+  const [installing, setInstalling] = useState<{ sglang?: boolean; flashattn2?: boolean; flashinfer?: boolean }>({});
+  const [installMsg, setInstallMsg] = useState<string | null>(null);
+  const platformInfo = apiClient.getPlatform();
+
+  const handleInstall = async (kind: 'sglang' | 'flashattn2' | 'flashinfer') => {
+    try {
+      setInstalling(prev => ({ ...prev, [kind]: true }));
+      let result: { success: boolean; message: string } = { success: false, message: '' };
+      if (kind === 'sglang') {
+        result = await apiClient.installSGLangBackend();
+      } else if (kind === 'flashattn2') {
+        result = await apiClient.installFlashAttention2();
+      } else {
+        result = await apiClient.installFlashInfer();
+      }
+      setInstallMsg(result.message || (result.success ? 'Install completed' : 'Install failed'));
+    } catch (e) {
+      setInstallMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setInstalling(prev => ({ ...prev, [kind]: false }));
+      setTimeout(() => setInstallMsg(null), 5000);
+    }
+  };
 
   return (
     <div className="space-y-6">

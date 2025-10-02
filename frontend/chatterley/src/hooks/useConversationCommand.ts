@@ -7,8 +7,17 @@ import { useState } from 'react';
 import apiClient from '@/lib/unified-api';
 import { useChatStore } from '@/lib/store';
 import { transformBackendMessages } from '@/lib/messageMeta';
-// Import required types
-// import type { Message } from '@/lib/types';
+
+// BackendMessage type from messageMeta
+interface BackendMessage {
+  id?: string;
+  role: string;
+  content: unknown;
+  timestamp: unknown;
+  attachments?: unknown[];
+  metadata?: Record<string, unknown> | null;
+  meta?: Record<string, unknown> | null;
+}
 
 interface CommandOptions {
   /** Wait time after command execution before refreshing (for async operations like regen) */
@@ -59,7 +68,7 @@ export function useConversationCommand() {
       const conversationResponse = await apiClient.getConversation(getCurrentSessionId(), currentBranchId || 'main');
       if (conversationResponse.success && conversationResponse.data?.conversation && currentConversationId) {
         const existingMessages = getBranchMessages(currentConversationId, currentBranchId || 'main');
-        const mapped = transformBackendMessages(conversationResponse.data?.conversation as unknown[], {
+        const mapped = transformBackendMessages(conversationResponse.data?.conversation as BackendMessage[], {
           settings,
           existingMessages,
           fallbackModel: settings.selectedModel,
@@ -238,7 +247,7 @@ interface BackendBranch {
           const existingMessages = targetConvId
             ? getBranchMessages(targetConvId, targetBranchId)
             : [];
-          const mapped = transformBackendMessages(snap as unknown[], {
+          const mapped = transformBackendMessages(snap as unknown as BackendMessage[], {
             settings,
             existingMessages,
             fallbackModel: (response?.data && typeof response.data === 'object' && 'model_info' in response.data && 
