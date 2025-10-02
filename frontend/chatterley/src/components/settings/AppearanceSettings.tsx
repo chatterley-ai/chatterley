@@ -6,7 +6,7 @@ import { useChatStore } from '@/lib/store';
 import { DEFAULT_APPEARANCE, normalizeAppearance, getContrastingColor } from '@/lib/appearance';
 import { AppearanceSettings } from '@/lib/types';
 
-type AppearanceColorKey = 'backgroundColor' | 'textColor' | 'primaryColor' | 'cardColor' | 'mutedColor' | 'borderColor';
+type AppearanceColorKey = 'backgroundColor' | 'textColor' | 'primaryColor' | 'cardColor' | 'sidebarColor' | 'mutedColor' | 'borderColor';
 
 type ColorField = {
   key: AppearanceColorKey;
@@ -38,6 +38,12 @@ const COLOR_FIELDS: ColorField[] = [
     key: 'cardColor',
     label: 'Panel Surface',
     description: 'Cards, modals, and assistant message backgrounds.',
+    category: 'surface',
+  },
+  {
+    key: 'sidebarColor',
+    label: 'Sidebar Surface',
+    description: 'Left/Right sidebars and their tiles.',
     category: 'surface',
   },
   {

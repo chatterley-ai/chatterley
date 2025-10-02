@@ -7,6 +7,9 @@
   --foreground: #ededed;
   --card: #111111;
   --card-foreground: #ededed;
+  /* Sidebar surfaces default to card unless overridden by appearance */
+  --sidebar: #111111;
+  --sidebar-foreground: #ededed;
   --border: #262626;
   --input: #1a1a1a;
   --input-foreground: #ffffff;
@@ -29,6 +32,8 @@
     --foreground: #171717;
     --card: #ffffff;
     --card-foreground: #171717;
+    --sidebar: #f9fafb;
+    --sidebar-foreground: #171717;
     --border: #e5e7eb;
     --input: #ffffff;
     --input-foreground: #171717;
@@ -105,12 +110,20 @@ body {
   background-color: var(--card);
 }
 
+.bg-sidebar {
+  background-color: var(--sidebar);
+}
+
 .bg-input {
   background-color: var(--input);
 }
 
 .text-foreground {
   color: var(--foreground);
+}
+
+.text-sidebar-foreground {
+  color: var(--sidebar-foreground);
 }
 
 .text-input {

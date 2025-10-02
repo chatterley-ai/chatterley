@@ -7,6 +7,7 @@ export const DEFAULT_APPEARANCE: AppearanceSettings = {
   textColor: '#ededed',
   primaryColor: '#3b82f6',
   cardColor: '#111111',
+  sidebarColor: '#111111',
   mutedColor: '#171717',
   borderColor: '#262626',
   fontFamily: SYSTEM_FONT_STACK,
@@ -90,6 +91,7 @@ export function normalizeAppearance(input?: Partial<AppearanceSettings>): Appear
     textColor: normalizeHex(input.textColor, base.textColor),
     primaryColor: normalizeHex(input.primaryColor, base.primaryColor),
     cardColor: normalizeHex(input.cardColor, base.cardColor),
+    sidebarColor: normalizeHex(input.sidebarColor, base.sidebarColor),
     mutedColor: normalizeHex(input.mutedColor, base.mutedColor),
     borderColor: normalizeHex(input.borderColor, base.borderColor),
     fontFamily: input.fontFamily && input.fontFamily.trim().length > 0 ? input.fontFamily : base.fontFamily,
@@ -105,6 +107,8 @@ export function buildAppearanceVariables(appearance: AppearanceSettings): Record
   const accent = lighten(normalized.primaryColor, 0.18);
   const accentForeground = getContrastingColor(accent);
   const cardForeground = getContrastingColor(normalized.cardColor);
+  const sidebar = normalized.sidebarColor;
+  const sidebarForeground = getContrastingColor(sidebar);
   const mutedForeground = getContrastingColor(normalized.mutedColor);
   const primaryForeground = getContrastingColor(normalized.primaryColor);
   const inputBackground = lighten(normalized.cardColor, 0.08);
@@ -118,6 +122,8 @@ export function buildAppearanceVariables(appearance: AppearanceSettings): Record
     '--foreground': normalized.textColor,
     '--card': normalized.cardColor,
     '--card-foreground': cardForeground,
+    '--sidebar': sidebar,
+    '--sidebar-foreground': sidebarForeground,
     '--muted': normalized.mutedColor,
     '--muted-foreground': mutedForeground,
     '--border': border,

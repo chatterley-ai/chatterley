@@ -718,11 +718,11 @@ export default function MessageInput({
                     case 'fetch':
                       return <Globe size={18} className="text-purple-600" />;
                     case 'audio':
-                      return <Mic size={18} className="text-orange-600" />;
+                      return <Mic size={18} className="text-primary" />;
                     case 'video':
-                      return <Video size={18} className="text-red-600" />;
+                      return <Video size={18} className="text-primary" />;
                     default:
-                      return <ImageIcon size={18} className="text-blue-600" />;
+                      return <ImageIcon size={18} className="text-primary" />;
                   }
                 };
 
@@ -753,7 +753,7 @@ export default function MessageInput({
                         <div className="text-xs text-muted-foreground">{sizeLabel}</div>
                       )}
                       {attachment.type === 'fetch' && attachment.fetchUrl && (
-                        <div className="text-xs text-blue-600 truncate" title={attachment.fetchUrl}>
+                        <div className="text-xs text-primary truncate" title={attachment.fetchUrl}>
                           {attachment.fetchUrl}
                         </div>
                       )}
@@ -762,7 +762,7 @@ export default function MessageInput({
                     <button
                       type="button"
                       onClick={() => removeStagedAttachment(attachment.id)}
-                      className="absolute top-1 right-1 rounded-full bg-background/80 px-1 text-xs text-muted-foreground hover:bg-red-100 hover:text-red-600 transition-colors"
+                      className="absolute top-1 right-1 rounded-full bg-background/80 px-1 text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
                       title="Remove attachment"
                       aria-label={`Remove ${displayName}`}
                     >
@@ -784,7 +784,7 @@ export default function MessageInput({
             rows={1}
             className={`w-full resize-none border rounded-md px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed transition-all text-input bg-input placeholder:text-muted-foreground ${
               isCommand 
-                ? 'border-red-500 bg-red-900/20' 
+                ? 'border-accent bg-accent/20' 
                 : 'border-border'
             }`}
             style={{ minHeight: '56px', maxHeight: '160px' }}
@@ -792,7 +792,7 @@ export default function MessageInput({
           
           {/* Command indicator */}
           {isCommand && (
-            <div className="absolute -top-6 left-0 text-xs text-red-400 font-medium">
+            <div className="absolute -top-6 left-0 text-xs text-muted-foreground font-medium">
               Command blocked
             </div>
           )}
@@ -831,7 +831,7 @@ export default function MessageInput({
           <div className="w-full max-w-md bg-background border border-border rounded-lg shadow-2xl p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold flex items-center gap-2">
-                <Globe size={20} className="text-purple-600" />
+                <Globe size={20} className="text-primary" />
                 Fetch Website Content
               </h3>
               <button

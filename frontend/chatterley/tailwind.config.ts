@@ -14,6 +14,8 @@ export default {
         foreground: "var(--foreground)",
         card: "var(--card)",
         "card-foreground": "var(--card-foreground)",
+        sidebar: "var(--sidebar)",
+        "sidebar-foreground": "var(--sidebar-foreground)",
         border: "var(--border)",
         input: "var(--input)",
         "input-foreground": "var(--input-foreground)",

@@ -324,6 +324,7 @@ export interface AppearanceSettings {
   textColor: string;
   primaryColor: string;
   cardColor: string;
+  sidebarColor: string;
   mutedColor: string;
   borderColor: string;
   fontFamily: string;

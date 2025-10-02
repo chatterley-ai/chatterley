@@ -36,21 +36,21 @@ export default function ControlPanel({
       {
         key: 'systemStats',
         title: 'System Stats',
-        indicatorClass: 'bg-green-500',
+        indicatorClass: 'bg-primary',
         defaultOpen: true,
         render: () => <SystemMonitor updateInterval={3000} />
       },
       {
         key: 'modelSwitcher',
         title: 'Model Switcher',
-        indicatorClass: 'bg-blue-500',
+        indicatorClass: 'bg-primary',
         defaultOpen: false,
         render: () => <ModelSwitcher />
       },
       {
         key: 'diffusionWorkbench',
         title: 'Diffusion Workbench',
-        indicatorClass: 'bg-pink-500',
+        indicatorClass: 'bg-primary',
         defaultOpen: false,
         render: () => <DiffusionWorkbench />
       }
@@ -98,7 +98,7 @@ export default function ControlPanel({
 
   if (isCollapsed) {
     return (
-      <div className={`bg-card border-r flex flex-col items-center p-2 space-y-4 ${className}`}>
+      <div className={`bg-sidebar border-r flex flex-col items-center p-2 space-y-4 ${className}`}>
         <button
           onClick={onToggleCollapse}
           className="p-2 hover:bg-muted rounded-lg transition-colors text-muted-foreground hover:text-foreground"
@@ -124,7 +124,7 @@ export default function ControlPanel({
   }
 
   return (
-    <div className={`bg-card border-r flex flex-col ${className}`}>
+    <div className={`bg-sidebar border-r flex flex-col ${className}`}>
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b">
         <h2 className="text-base font-semibold text-foreground">Model Controls</h2>

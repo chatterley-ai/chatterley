@@ -732,16 +732,16 @@ React.useEffect(() => {
 
           {/* Right sidebar with Branch tree and Chat history */}
           <div className={`transition-all duration-200 ${isSidebarCollapsed ? 'hidden' : 'w-80'}`}>
-            <div className="flex flex-col h-full overflow-hidden">
+            <div className="flex flex-col h-full overflow-hidden bg-sidebar border-l border-border">
               {/* Right sidebar header with toggle button */}
-              <div className="bg-card border-b p-3 flex items-center justify-between sticky top-0 z-10">
+              <div className="bg-sidebar border-b p-3 flex items-center justify-between sticky top-0 z-10">
                 <h2 className="text-base font-semibold text-foreground">Branch Controls</h2>
                 <div className="flex items-center gap-1">
                   <button
                     onClick={() => setShowChatHistory(!showChatHistory)}
-                    className={`p-1 hover:bg-muted rounded transition-colors ${
+                    className={`p-1 hover:bg-accent rounded transition-colors ${
                       showChatHistory 
-                        ? 'text-orange-600 bg-orange-100 dark:bg-orange-900/30' 
+                        ? 'text-primary bg-accent' 
                         : 'text-muted-foreground hover:text-foreground'
                     }`}
                     title={showChatHistory ? 'Collapse chat history' : 'Expand chat history'}
@@ -759,14 +759,14 @@ React.useEffect(() => {
               </div>
 
               <div className="flex-1 overflow-y-auto p-3 space-y-3">
-                <div className="border border-border/60 rounded-lg bg-background/60">
+                <div className="border border-border/60 rounded-lg bg-sidebar">
                   <button
                     onClick={() => setIsBranchTreeExpanded(!isBranchTreeExpanded)}
                     className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-muted transition-colors"
                     aria-expanded={isBranchTreeExpanded}
                   >
                     <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-blue-500" aria-hidden />
+                      <span className="w-2 h-2 rounded-full bg-primary" aria-hidden />
                       <span className="text-sm font-medium text-foreground">Branch Tree</span>
                     </div>
                     {isBranchTreeExpanded ? (
@@ -782,14 +782,14 @@ React.useEffect(() => {
                   )}
                 </div>
 
-                <div className="border border-border/60 rounded-lg bg-background/60">
+                <div className="border border-border/60 rounded-lg bg-sidebar">
                   <button
                     onClick={() => setShowChatHistory(!showChatHistory)}
                     className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-muted transition-colors"
                     aria-expanded={showChatHistory}
                   >
                     <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-orange-500" aria-hidden />
+                      <span className="w-2 h-2 rounded-full bg-primary" aria-hidden />
                       <span className="text-sm font-medium text-foreground">Chat History</span>
                     </div>
                     {showChatHistory ? (
