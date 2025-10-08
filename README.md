@@ -6,7 +6,7 @@
 
 Chatterley is a pretty, private, powerful, local-first desktop AI chat app for MacOS, Windows and Linux, supporting gpt-oss, DeepSeek-R1, Gemma 3, Qwen3 Coder, Qwen3 Omni, GPT-5, Claude Sonnet 4.5, and more.
 
-> **⚠️ macOS Users**: The application is currently unsigned. After installation, if macOS prevents you from opening the app, run this command in Terminal:
+> **⚠️ macOS Users**: The application is signed; however, if after installation, if macOS prevents you from opening the app, run this command in Terminal:
 > ```bash
 > xattr -cr /Applications/Chatterley.app
 > ```
