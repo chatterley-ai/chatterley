@@ -175,25 +175,19 @@
           "from": "python-dist/darwin-${arch}/",
           "to": "python-dist/",
           "filter": [
-            "**/*"
+            "**/*",
+            "!**/tests/**",
+            "!**/test/**",
+            "!**/__pycache__/**",
+            "!**/*.pyc",
+            "!**/*.pyo"
           ]
         }
       ],
       "target": [
         {
           "target": "dmg",
-          "arch": "x64"
-        },
-        {
-          "target": "dmg",
           "arch": "arm64"
-        },
-        {
-          "target": "zip",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
         }
       ]
     },
@@ -223,7 +217,12 @@
           "from": "python-dist/win32-x64/",
           "to": "python-dist/",
           "filter": [
-            "**/*"
+            "**/*",
+            "!**/tests/**",
+            "!**/test/**",
+            "!**/__pycache__/**",
+            "!**/*.pyc",
+            "!**/*.pyo"
           ]
         }
       ],
@@ -254,7 +253,12 @@
           "from": "python-dist/linux-${arch}/",
           "to": "python-dist/",
           "filter": [
-            "**/*"
+            "**/*",
+            "!**/tests/**",
+            "!**/test/**",
+            "!**/__pycache__/**",
+            "!**/*.pyc",
+            "!**/*.pyo"
           ]
         }
       ],

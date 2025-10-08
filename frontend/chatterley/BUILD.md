@@ -30,7 +30,7 @@ This guide covers building and distributing Chatterley across platforms.
 
 | Script | Description |
 |--------|-------------|
-| `npm run dist:mac` | Build macOS DMG and ZIP |
+| `npm run dist:mac` | Build macOS DMG |
 | `npm run dist:win` | Build Windows NSIS installer and portable |
 | `npm run dist:linux` | Build Linux AppImage, DEB, and RPM |
 | `npm run dist:all` | Build for all platforms |
@@ -47,7 +47,7 @@ This guide covers building and distributing Chatterley across platforms.
 
 ## Platform-Specific Builds
 
-### macOS (DMG + ZIP)
+### macOS (DMG)
 **Requirements:**
 - macOS machine (for native builds)
 - Xcode Command Line Tools
@@ -60,7 +60,6 @@ npm run dist:mac
 
 **Output:**
 - `Chatterley-{version}-mac-{arch}.dmg` - Installer
-- `Chatterley-{version}-mac-{arch}.zip` - Portable
 
 **Code Signing (Optional):**
 Set environment variables:
@@ -134,6 +133,8 @@ Updates are configured in `package.json`:
 Users can check for updates via:
 - **macOS**: `Chatterley` → `Check for Updates`
 - **Windows/Linux**: `Help` → `Check for Updates`
+
+Note: macOS auto-updates typically use a `.zip` artifact. With only `dmg` builds, differential/mac auto-update may not function. Keep a mac `zip` target if you rely on auto-updates.
 
 ## Version Management
 
@@ -271,7 +272,7 @@ npx electron-builder --publish=never --analyze
 
 | Platform | Architecture | Status | Notes |
 |----------|-------------|--------|-------|
-| macOS | x64 | ✅ | Intel Macs |
+| macOS | x64 | ❌ | Not supported |
 | macOS | arm64 | ✅ | Apple Silicon |
 | Windows | x64 | ✅ | Windows 10+ |
 | Windows | arm64 | ⚠️ | Experimental |
