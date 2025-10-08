@@ -221,7 +221,7 @@ export class PythonEnvironmentManager {
   /**
    * Locate a prebuilt llama-cpp wheel shipped with the application (if available)
    */
-  private findPrebuiltLlamaWheel(): string | null {
+  private findPrebuiltLlamaWheel(targetPythonTag?: string): string | null {
     const resourcesPath = app.isPackaged
       ? process.resourcesPath
       : path.resolve(__dirname, '../..');
@@ -232,6 +232,8 @@ export class PythonEnvironmentManager {
       path.join(resourcesPath, '..', '..', 'python-wheels'),
     ];
 
+    let fallback: string | null = null;
+
     for (const dir of candidateDirs) {
       if (!fs.existsSync(dir)) {
         continue;
@@ -240,12 +242,47 @@ export class PythonEnvironmentManager {
       const entries = fs.readdirSync(dir);
       for (const entry of entries) {
         if (entry.toLowerCase().startsWith('llama_cpp_python') && entry.endsWith('.whl')) {
-          return path.join(dir, entry);
+          const fullPath = path.join(dir, entry);
+          if (targetPythonTag && entry.includes(targetPythonTag)) {
+            return fullPath;
+          }
+          if (!fallback) {
+            fallback = fullPath;
+          }
         }
       }
     }
 
-    return null;
+    return fallback;
+  }
+
+  /**
+   * Determine the Python major.minor tag (e.g., cp311) for the given interpreter
+   */
+  private async getPythonTag(pythonPath: string): Promise<string | null> {
+    return new Promise((resolve) => {
+      try {
+        const proc = spawn(pythonPath, ['-c', 'import sys; print(f"cp{sys.version_info[0]}{sys.version_info[1]:02d}")'], {
+          stdio: ['ignore', 'pipe', 'ignore'],
+        });
+
+        let output = '';
+        proc.stdout?.on('data', (data) => {
+          output += data.toString();
+        });
+
+        proc.on('error', () => resolve(null));
+        proc.on('close', (code) => {
+          if (code === 0) {
+            resolve(output.trim());
+          } else {
+            resolve(null);
+          }
+        });
+      } catch (error) {
+        resolve(null);
+      }
+    });
   }
 
   /**
@@ -254,7 +291,8 @@ export class PythonEnvironmentManager {
   private async installPrebuiltLlamaWheel(
     envPath: string,
     uvPath: string,
-    extras: string[]
+    extras: string[],
+    pythonPath: string
   ): Promise<void> {
     if (process.platform !== 'win32') {
       return;
@@ -264,7 +302,8 @@ export class PythonEnvironmentManager {
       return;
     }
 
-    const wheelPath = this.findPrebuiltLlamaWheel();
+    const pythonTag = await this.getPythonTag(pythonPath);
+    const wheelPath = this.findPrebuiltLlamaWheel(pythonTag || undefined);
     if (!wheelPath) {
       log.info('[PythonEnvManager] No bundled llama-cpp wheel found, continuing with default installation');
       return;
@@ -768,7 +807,7 @@ export class PythonEnvironmentManager {
       : path.join(envPath, 'bin', 'uv');
 
     await this.ensureWindowsBuildDependencies(envPath, uvPath, extras);
-    await this.installPrebuiltLlamaWheel(envPath, uvPath, extras);
+    await this.installPrebuiltLlamaWheel(envPath, uvPath, extras, pythonPath);
 
     return new Promise((resolve, reject) => {
       // Use uv to install oumi in development mode with appropriate extras

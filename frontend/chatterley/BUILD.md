@@ -96,9 +96,9 @@ export WIN_CSC_KEY_PASSWORD="certificate-password"
 
 #### Prebuilt `llama-cpp-python`
 - Trigger the **Build llama.cpp wheel (Windows)** workflow (`.github/workflows/build-llamacpp.yml`) from GitHub under the **Actions** tab → select the workflow → **Run workflow**.
-- Download the artifact (`llama-cpp-python-win-wheel`) once it completes.
-- Place the wheel inside `frontend/chatterley/python-wheels/` (the filename should start with `llama_cpp_python`).
-- The app will install that wheel during environment setup and skip building from source. If the wheel is missing, it falls back to the default behaviour (which requires the toolchain above).
+- The workflow builds wheels for Python 3.11, 3.12, and 3.13. Download the artifact (`llama-cpp-python-win-wheels`) once it completes and extract the `.whl` files inside.
+- Place the wheels inside `frontend/chatterley/python-wheels/` (filenames start with `llama_cpp_python`).
+- The app detects the wheel matching the Python runtime version and installs it before resolving the rest of the dependencies. If the wheel is missing, it falls back to building from source (requiring the toolchain above).
 
 ### Linux (AppImage + DEB + RPM)
 **Requirements:**
