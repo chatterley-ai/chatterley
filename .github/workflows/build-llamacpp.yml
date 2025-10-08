@@ -1,0 +1,58 @@
+name: Build llama.cpp wheel (Windows)
+
+on:
+  workflow_dispatch:
+    inputs:
+      llama_cpp_version:
+        description: llama-cpp-python version to build
+        required: false
+        default: 0.3.16
+      python_version:
+        description: Python version (major.minor) for the wheel
+        required: false
+        default: '3.11'
+
+jobs:
+  build:
+    runs-on: windows-2022
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python_version }}
+
+      - name: Upgrade pip and install build tooling
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install --upgrade "cmake>=3.26" ninja scikit-build-core pip wheel
+
+      - name: Build llama-cpp wheel
+        shell: pwsh
+        env:
+          LLAMA_CPP_VERSION: ${{ inputs.llama_cpp_version }}
+        run: |
+          $version = if ($env:LLAMA_CPP_VERSION) { $env:LLAMA_CPP_VERSION } else { '0.3.16' }
+          Write-Host "Building llama-cpp-python version $version"
+
+          mkdir dist | Out-Null
+          $env:CMAKE_ARGS = '-DLLAMA_BLAS=OFF -DLLAMA_CUBLAS=OFF -DLLAMA_CLBLAST=OFF -DLLAMA_METAL=OFF'
+          pip wheel --no-deps "llama-cpp-python==$version" --wheel-dir dist
+
+      - name: List build artifacts
+        shell: pwsh
+        run: |
+          Get-ChildItem dist
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: llama-cpp-python-win-wheel
+          path: dist/*.whl
+          if-no-files-found: error
+

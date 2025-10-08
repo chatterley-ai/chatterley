@@ -72,7 +72,9 @@ export APPLE_TEAM_ID="YOUR_TEAM_ID"
 ### Windows (NSIS + Portable)
 **Requirements:**
 - Windows machine or cross-compilation setup
+- Microsoft Visual C++ Build Tools 2022 with the **Desktop development with C++** workload (includes CMake, MSVC, Windows SDK)
 - Code signing certificate (optional)
+- Optional: Prebuilt `llama-cpp-python` wheel from the GitHub Actions workflow (see below)
 
 **Build:**
 ```bash
@@ -89,6 +91,14 @@ Set environment variables:
 export WIN_CSC_LINK="path/to/certificate.p12"
 export WIN_CSC_KEY_PASSWORD="certificate-password"
 ```
+
+**Note:** Bundled Python extras such as `llama_cpp` require a working C++ toolchain. The virtual environment setup attempts to install the `cmake` Python package automatically, but you still need the Visual C++ Build Tools so that MSVC (`cl.exe`) and CMake are available on the PATH.
+
+#### Prebuilt `llama-cpp-python`
+- Trigger the **Build llama.cpp wheel (Windows)** workflow (`.github/workflows/build-llamacpp.yml`) from GitHub under the **Actions** tab → select the workflow → **Run workflow**.
+- Download the artifact (`llama-cpp-python-win-wheel`) once it completes.
+- Place the wheel inside `frontend/chatterley/python-wheels/` (the filename should start with `llama_cpp_python`).
+- The app will install that wheel during environment setup and skip building from source. If the wheel is missing, it falls back to the default behaviour (which requires the toolchain above).
 
 ### Linux (AppImage + DEB + RPM)
 **Requirements:**

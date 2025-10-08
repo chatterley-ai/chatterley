@@ -40,6 +40,252 @@ export class PythonEnvironmentManager {
   }
 
   /**
+   * Resolve the bin/Scripts directory for a given virtual environment
+   */
+  private getVirtualEnvBinDir(envPath: string): string {
+    return process.platform === 'win32'
+      ? path.join(envPath, 'Scripts')
+      : path.join(envPath, 'bin');
+  }
+
+  /**
+   * Build a process environment with the virtualenv PATH/VIRTUAL_ENV populated
+   */
+  private buildVirtualEnvProcessEnv(envPath: string): NodeJS.ProcessEnv {
+    const binDir = this.getVirtualEnvBinDir(envPath);
+    const delimiter = process.platform === 'win32' ? ';' : ':';
+    const currentPath = process.env.PATH || process.env.Path || '';
+    const combinedPath = currentPath
+      ? `${binDir}${delimiter}${currentPath}`
+      : binDir;
+
+    return {
+      ...process.env,
+      VIRTUAL_ENV: envPath,
+      PATH: combinedPath,
+      Path: combinedPath, // Some Windows environments read capitalized variant
+    };
+  }
+
+  /**
+   * Run a uv command within the virtual environment with basic logging
+   */
+  private async runUvCommand(
+    uvPath: string,
+    envPath: string,
+    args: string[],
+    description: string
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      log.info(`[PythonEnvManager] ${description} (uv ${args.join(' ')})`);
+      const proc = spawn(uvPath, args, {
+        stdio: 'pipe',
+        env: this.buildVirtualEnvProcessEnv(envPath),
+      });
+
+      this.setupProcess = proc;
+      let stderr = '';
+
+      proc.stdout?.on('data', (data) => {
+        const text = data.toString().trim();
+        if (text) {
+          log.info(`[PythonEnvManager] uv stdout: ${text}`);
+        }
+      });
+
+      proc.stderr?.on('data', (data) => {
+        const text = data.toString();
+        stderr += text;
+        const trimmed = text.trim();
+        if (trimmed) {
+          log.warn(`[PythonEnvManager] uv stderr: ${trimmed}`);
+        }
+      });
+
+      proc.on('close', (code) => {
+        this.setupProcess = null;
+        if (code === 0) {
+          resolve();
+        } else {
+          const message = `${description} failed with exit code ${code}`;
+          log.error(`[PythonEnvManager] ${message}`);
+          log.error(`[PythonEnvManager] uv stderr: ${stderr}`);
+          reject(new Error(`${message}: ${stderr}`));
+        }
+      });
+
+      proc.on('error', (error) => {
+        this.setupProcess = null;
+        log.error('[PythonEnvManager] uv command error:', error);
+        reject(error);
+      });
+    });
+  }
+
+  /**
+   * Check whether a command is available (returns true if it executes successfully)
+   */
+  private async checkCommandAvailability(
+    command: string,
+    args: string[] = ['--version'],
+    envPath?: string
+  ): Promise<boolean> {
+    return new Promise((resolve) => {
+      try {
+        const proc = spawn(command, args, {
+          stdio: 'ignore',
+          env: envPath ? this.buildVirtualEnvProcessEnv(envPath) : process.env,
+        });
+
+        proc.on('error', () => resolve(false));
+        proc.on('close', (code) => resolve(code === 0));
+      } catch (error) {
+        resolve(false);
+      }
+    });
+  }
+
+  /**
+   * Determine if cmake is accessible within the virtual environment
+   */
+  private async hasCMake(envPath: string): Promise<boolean> {
+    if (await this.checkCommandAvailability('cmake', ['--version'], envPath)) {
+      return true;
+    }
+
+    const binDir = this.getVirtualEnvBinDir(envPath);
+    const cmakeExecutable =
+      process.platform === 'win32'
+        ? path.join(binDir, 'cmake.exe')
+        : path.join(binDir, 'cmake');
+
+    if (fs.existsSync(cmakeExecutable)) {
+      return this.checkCommandAvailability(cmakeExecutable, ['--version'], envPath);
+    }
+
+    return false;
+  }
+
+  /**
+   * Ensure Windows build prerequisites (CMake) are present when installing llama.cpp extras
+   */
+  private async ensureWindowsBuildDependencies(
+    envPath: string,
+    uvPath: string,
+    extras: string[]
+  ): Promise<void> {
+    if (process.platform !== 'win32') {
+      return;
+    }
+
+    if (!extras.includes('llama_cpp')) {
+      return;
+    }
+
+    if (await this.hasCMake(envPath)) {
+      log.info('[PythonEnvManager] Detected CMake in PATH for llama.cpp build');
+      return;
+    }
+
+    await this.reportProgress(
+      'build_tools',
+      68,
+      'Installing CMake toolchain (required for llama.cpp)...'
+    );
+
+    try {
+      await this.runUvCommand(
+        uvPath,
+        envPath,
+        ['pip', 'install', 'cmake', 'ninja'],
+        'Installing build tool prerequisites'
+      );
+    } catch (error) {
+      log.warn(
+        '[PythonEnvManager] Automatic CMake installation via pip failed:',
+        error
+      );
+    }
+
+    if (await this.hasCMake(envPath)) {
+      log.info('[PythonEnvManager] CMake available after auto-installation');
+      return;
+    }
+
+    const message =
+      'CMake is required to install llama.cpp on Windows. Install the Microsoft C++ Build Tools (with the CMake component) or add CMake to PATH, then restart Chatterley.';
+    log.error(`[PythonEnvManager] ${message}`);
+    throw new Error(message);
+  }
+
+  /**
+   * Locate a prebuilt llama-cpp wheel shipped with the application (if available)
+   */
+  private findPrebuiltLlamaWheel(): string | null {
+    const resourcesPath = app.isPackaged
+      ? process.resourcesPath
+      : path.resolve(__dirname, '../..');
+
+    const candidateDirs = [
+      path.join(resourcesPath, 'python-wheels'),
+      path.join(resourcesPath, 'python', 'wheels'),
+      path.join(resourcesPath, '..', '..', 'python-wheels'),
+    ];
+
+    for (const dir of candidateDirs) {
+      if (!fs.existsSync(dir)) {
+        continue;
+      }
+
+      const entries = fs.readdirSync(dir);
+      for (const entry of entries) {
+        if (entry.toLowerCase().startsWith('llama_cpp_python') && entry.endsWith('.whl')) {
+          return path.join(dir, entry);
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Pre-install the bundled llama-cpp wheel so uv/pip does not try to build from source
+   */
+  private async installPrebuiltLlamaWheel(
+    envPath: string,
+    uvPath: string,
+    extras: string[]
+  ): Promise<void> {
+    if (process.platform !== 'win32') {
+      return;
+    }
+
+    if (!extras.includes('llama_cpp')) {
+      return;
+    }
+
+    const wheelPath = this.findPrebuiltLlamaWheel();
+    if (!wheelPath) {
+      log.info('[PythonEnvManager] No bundled llama-cpp wheel found, continuing with default installation');
+      return;
+    }
+
+    await this.reportProgress('build_tools', 69, 'Installing bundled llama.cpp wheel...');
+
+    try {
+      await this.runUvCommand(
+        uvPath,
+        envPath,
+        ['pip', 'install', wheelPath, '--no-deps'],
+        'Installing prebuilt llama.cpp wheel'
+      );
+      log.info('[PythonEnvManager] Bundled llama-cpp wheel installed successfully');
+    } catch (error) {
+      log.warn('[PythonEnvManager] Failed to install bundled llama-cpp wheel, falling back to default behaviour:', error);
+    }
+  }
+
+  /**
    * Get the user app data directory for storing the Python environment
    */
   private getUserDataDir(): string {
@@ -517,13 +763,15 @@ export class PythonEnvironmentManager {
     log.info(`[PythonEnvManager] Selected extras: ${extras.join(', ')}`);
     await this.reportProgress('oumi', 70, `Installing Oumi with extras: ${extras.join(', ')}...`);
 
+    const uvPath = process.platform === 'win32'
+      ? path.join(envPath, 'Scripts', 'uv.exe')
+      : path.join(envPath, 'bin', 'uv');
+
+    await this.ensureWindowsBuildDependencies(envPath, uvPath, extras);
+    await this.installPrebuiltLlamaWheel(envPath, uvPath, extras);
+
     return new Promise((resolve, reject) => {
-      
       // Use uv to install oumi in development mode with appropriate extras
-      const uvPath = process.platform === 'win32' 
-        ? path.join(envPath, 'Scripts', 'uv.exe')
-        : path.join(envPath, 'bin', 'uv');
-        
       const packageSpec = extras.length > 0 
         ? `${oumiSourcePath}[${extras.join(',')}]`  // Install with extras
         : oumiSourcePath;                            // Install without extras
@@ -537,9 +785,7 @@ export class PythonEnvironmentManager {
       ], {
         stdio: 'pipe',
         env: {
-          ...process.env,
-          VIRTUAL_ENV: envPath,
-          PATH: `${path.dirname(uvPath)}:${process.env.PATH}`,
+          ...this.buildVirtualEnvProcessEnv(envPath),
           // Set version for setuptools-scm since bundled source lacks .git directory
           SETUPTOOLS_SCM_PRETEND_VERSION_FOR_OUMI: '0.1.0'
         }
