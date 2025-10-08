@@ -44,7 +44,7 @@ jobs:
           Write-Host "Building llama-cpp-python version $version for Python ${{ matrix.python-version }}"
 
           mkdir dist | Out-Null
-          $env:CMAKE_ARGS = '-DLLAMA_BLAS=OFF -DLLAMA_CUBLAS=OFF -DLLAMA_CLBLAST=OFF -DLLAMA_METAL=OFF'
+          $env:CMAKE_ARGS = '-DGGML_BLAS=OFF -DGGML_CUDA=OFF -DGGML_METAL=OFF'
           pip wheel --no-deps "llama-cpp-python==$version" --wheel-dir dist
 
       - name: List build artifacts
@@ -145,7 +145,7 @@ jobs:
           Write-Host "Building CUDA-enabled llama-cpp-python version $version for Python ${{ matrix.python-version }} (CUDA ${{ matrix.cuda-short }})"
 
           mkdir dist | Out-Null
-          $env:CMAKE_ARGS = '-DLLAMA_CUBLAS=ON -DLLAMA_BLAS=OFF -DLLAMA_CLBLAST=OFF -DLLAMA_METAL=OFF -DLLAMA_ACCELERATE=OFF'
+          $env:CMAKE_ARGS = '-DGGML_CUDA=ON -DGGML_BLAS=OFF -DGGML_METAL=OFF'
           pip wheel --no-deps "llama-cpp-python==$version" --wheel-dir dist
 
       - name: Stage CUDA redistributable DLLs
