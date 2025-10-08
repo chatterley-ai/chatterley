@@ -65,7 +65,7 @@ npm run dist:mac
 Set environment variables:
 ```bash
 export APPLE_ID="your-apple-id@example.com"
-export APPLE_ID_PASSWORD="app-specific-password"
+export APPLE_APP_SPECIFIC_PASSWORD="app-specific-password"
 export APPLE_TEAM_ID="YOUR_TEAM_ID"
 ```
 
@@ -184,7 +184,7 @@ GitHub Actions automatically builds releases when tags are pushed:
 ### Core Configuration
 - `package.json` - Main electron-builder configuration
 - `build/entitlements.mac.plist` - macOS security entitlements
-- `scripts/notarize.js` - macOS notarization script
+- Notarization is handled automatically by electron-builder when env vars are set
 
 ### Build Resources
 ```

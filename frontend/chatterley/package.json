@@ -170,6 +170,12 @@
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
+      "signIgnore": [
+        "^/Contents/Resources/python-dist/.*\\.(zip|tar|gz|bz2|7z|whl)$",
+        "^/Contents/Resources/python-dist/.*/(tests?|docs?|examples?)/",
+        "^/Contents/Resources/python-dist/.*\\.(txt|md|rst|markdown)$",
+        "^/Contents/Resources/.*\\.(zip|tar|gz|bz2|7z)$"
+      ],
       "extraResources": [
         {
           "from": "python-dist/darwin-${arch}/",
@@ -188,6 +194,12 @@
         {
           "target": "dmg",
           "arch": "arm64"
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
         }
       ]
     },
@@ -303,7 +315,6 @@
         "repo": "oumi-chat-desktop"
       }
     ],
-    "afterSign": "scripts/notarize.js",
     "compression": "maximum",
     "artifactName": "Chatterley-${version}-${os}-${arch}.${ext}"
   }

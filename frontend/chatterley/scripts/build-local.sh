@@ -71,6 +71,13 @@ case "$PLATFORM" in
         echo "🍎 Building for macOS..."
         echo "🧽 Pre-cleaning any stale DMG mounts/symlinks..."
         cleanup_macos_dmg_volume
+        # Enable detailed signing/build logs unless DEBUG is already set by the user
+        if [[ -z "${DEBUG:-}" ]]; then
+            export DEBUG="electron-osx-sign*,electron-builder"
+            echo "🔎 Debug logging enabled: $DEBUG"
+        else
+            echo "🔎 Using existing DEBUG: $DEBUG"
+        fi
         npm run dist:mac
         ;;
     "win" | "windows")
@@ -88,6 +95,12 @@ case "$PLATFORM" in
         echo "🍎 Building macOS packages..."
         echo "🧽 Pre-cleaning any stale DMG mounts/symlinks..."
         cleanup_macos_dmg_volume
+        if [[ -z "${DEBUG:-}" ]]; then
+            export DEBUG="electron-osx-sign*,electron-builder"
+            echo "🔎 Debug logging enabled: $DEBUG"
+        else
+            echo "🔎 Using existing DEBUG: $DEBUG"
+        fi
         npm run dist:mac
         echo "🪟 Building Windows packages..."
         npm run dist:win
