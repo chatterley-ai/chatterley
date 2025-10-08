@@ -119,9 +119,16 @@ jobs:
           if (-not $cudaPath) {
             throw 'CUDA toolkit install failed; CUDA path not found.'
           }
-          Write-Host "Using CUDA toolkit path: $($cudaPath.FullName)"
-          echo "CUDA_PATH=$($cudaPath.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
-          echo "PATH=$($cudaPath.FullName)\bin;$env:PATH" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+          $cudaRoot = $cudaPath.FullName
+          $cudaBin = Join-Path $cudaRoot 'bin'
+          $cudaLibNvvp = Join-Path $cudaRoot 'libnvvp'
+
+          Write-Host "Using CUDA toolkit path: $cudaRoot"
+          echo "CUDA_PATH=$cudaRoot" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "CudaToolkitDir=$cudaRoot" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "CUDA_PATH_V12_0=$cudaRoot" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "PATH=$cudaBin;$cudaLibNvvp;$env:PATH" | Out-File -FilePath $env:GITHUB_ENV -Append
 
           Write-Host 'nvcc version:'
           & "$($cudaPath.FullName)\bin\nvcc.exe" --version
