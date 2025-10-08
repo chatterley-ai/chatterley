@@ -114,14 +114,7 @@ jobs:
           Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath
           Write-Host "Installing CUDA toolkit silently"
 
-          $installerArgs = '-s'
-          if ('${{ matrix.cuda-short }}'.StartsWith('12.4')) {
-            $installerArgs = '-s nvcc_12.4 cudart_12.4 cublas_12.4 curand_12.4'
-          } elseif ('${{ matrix.cuda-short }}'.StartsWith('12.6')) {
-            $installerArgs = '-s nvcc_12.6 cudart_12.6 cublas_12.6 curand_12.6'
-          }
-
-          Start-Process -FilePath $installerPath -ArgumentList $installerArgs -Wait
+          Start-Process -FilePath $installerPath -ArgumentList '-s' -Wait
           $cudaPath = Get-ChildItem 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA' | Sort-Object Name -Descending | Select-Object -First 1
           if (-not $cudaPath) {
             throw 'CUDA toolkit install failed; CUDA path not found.'
@@ -129,6 +122,9 @@ jobs:
           Write-Host "Using CUDA toolkit path: $($cudaPath.FullName)"
           echo "CUDA_PATH=$($cudaPath.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
           echo "PATH=$($cudaPath.FullName)\bin;$env:PATH" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+          Write-Host 'nvcc version:'
+          & "$($cudaPath.FullName)\bin\nvcc.exe" --version
 
       - name: Upgrade pip and install build tooling
         shell: pwsh
