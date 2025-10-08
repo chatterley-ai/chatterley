@@ -58,3 +58,145 @@ jobs:
           name: llama-cpp-python-win-wheel-py${{ matrix.python-version }}
           path: dist/*.whl
           if-no-files-found: error
+
+  build-cuda:
+    runs-on: windows-2022
+    strategy:
+      matrix:
+        include:
+          - python-version: '3.11'
+            cuda-short: '11'
+            cuda-redist-version: '11.8.89'
+            cublas-version: '11.11.3.6'
+            cuda-toolkit-choco: '11.8.0.522'
+          - python-version: '3.12'
+            cuda-short: '11'
+            cuda-redist-version: '11.8.89'
+            cublas-version: '11.11.3.6'
+            cuda-toolkit-choco: '11.8.0.522'
+          - python-version: '3.13'
+            cuda-short: '11'
+            cuda-redist-version: '11.8.89'
+            cublas-version: '11.11.3.6'
+            cuda-toolkit-choco: '11.8.0.522'
+          - python-version: '3.11'
+            cuda-short: '12'
+            cuda-redist-version: '12.4.127'
+            cublas-version: '12.4.5.8'
+            cuda-toolkit-choco: '12.4.1'
+          - python-version: '3.12'
+            cuda-short: '12'
+            cuda-redist-version: '12.4.127'
+            cublas-version: '12.4.5.8'
+            cuda-toolkit-choco: '12.4.1'
+          - python-version: '3.13'
+            cuda-short: '12'
+            cuda-redist-version: '12.4.127'
+            cublas-version: '12.4.5.8'
+            cuda-toolkit-choco: '12.4.1'
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install CUDA toolkit ${{ matrix.cuda-short }}
+        shell: pwsh
+        run: |
+          $version = '${{ matrix.cuda-toolkit-choco }}'
+          if ($version) {
+            Write-Host "Installing CUDA toolkit version $version via Chocolatey"
+            choco install cuda --version=$version -y --no-progress
+          } else {
+            Write-Host 'Installing latest CUDA toolkit via Chocolatey'
+            choco install cuda -y --no-progress
+          }
+          $cudaPath = Get-ChildItem 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA' | Sort-Object Name -Descending | Select-Object -First 1
+          if (-not $cudaPath) {
+            throw 'CUDA toolkit install failed; CUDA path not found.'
+          }
+          Write-Host "Using CUDA toolkit path: $($cudaPath.FullName)"
+          echo "CUDA_PATH=$($cudaPath.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "PATH=$($cudaPath.FullName)\bin;$env:PATH" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Upgrade pip and install build tooling
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install --upgrade "cmake>=3.26" ninja scikit-build-core pip wheel
+
+      - name: Build CUDA-enabled llama-cpp wheel
+        shell: pwsh
+        env:
+          LLAMA_CPP_VERSION: ${{ inputs.llama_cpp_version }}
+        run: |
+          $version = if ($env:LLAMA_CPP_VERSION) { $env:LLAMA_CPP_VERSION } else { '0.3.16' }
+          Write-Host "Building CUDA-enabled llama-cpp-python version $version for Python ${{ matrix.python-version }} (CUDA ${{ matrix.cuda-short }})"
+
+          mkdir dist | Out-Null
+          $env:CMAKE_ARGS = '-DLLAMA_CUBLAS=ON -DLLAMA_BLAS=OFF -DLLAMA_CLBLAST=OFF -DLLAMA_METAL=OFF -DLLAMA_ACCELERATE=OFF'
+          pip wheel --no-deps "llama-cpp-python==$version" --wheel-dir dist
+
+      - name: Stage CUDA redistributable DLLs
+        shell: pwsh
+        run: |
+          $root = Join-Path (Get-Location) "cuda_v${{ matrix.cuda-short }}"
+          New-Item -ItemType Directory -Path $root -Force | Out-Null
+          $downloads = Join-Path $root 'downloads'
+          New-Item -ItemType Directory -Path $downloads -Force | Out-Null
+
+          $cudartUrl = "https://developer.download.nvidia.com/compute/cuda/redist/cuda_cudart/windows-x86_64/cuda_cudart-windows-x86_64-${{ matrix.cuda-redist-version }}-archive.zip"
+          $cublasUrl = "https://developer.download.nvidia.com/compute/cuda/redist/libcublas/windows-x86_64/libcublas-windows-x86_64-${{ matrix.cublas-version }}-archive.zip"
+
+          $archives = @(
+            @{ Name = 'cudart.zip'; Url = $cudartUrl },
+            @{ Name = 'cublas.zip'; Url = $cublasUrl }
+          )
+
+          foreach ($archive in $archives) {
+            $zipPath = Join-Path $downloads $archive.Name
+            Write-Host "Downloading $($archive.Url)"
+            Invoke-WebRequest -Uri $archive.Url -OutFile $zipPath
+            Expand-Archive -Path $zipPath -DestinationPath $downloads -Force
+          }
+
+          $dllTarget = Join-Path $root 'bin'
+          New-Item -ItemType Directory -Path $dllTarget -Force | Out-Null
+          Get-ChildItem -Path $downloads -Recurse -Filter *.dll | ForEach-Object {
+            Copy-Item $_.FullName -Destination $dllTarget -Force
+          }
+
+          $licenses = Join-Path $root 'licenses'
+          New-Item -ItemType Directory -Path $licenses -Force | Out-Null
+          Get-ChildItem -Path $downloads -Recurse -Filter *.txt | ForEach-Object {
+            Copy-Item $_.FullName -Destination $licenses -Force
+          }
+
+          $zipPath = Join-Path (Get-Location) "cuda_v${{ matrix.cuda-short }}.zip"
+          if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
+          Compress-Archive -Path @($dllTarget, $licenses) -DestinationPath $zipPath -Force
+
+      - name: List build artifacts
+        shell: pwsh
+        run: |
+          Get-ChildItem dist
+
+      - name: Upload CUDA wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: llama-cpp-python-win-wheel-cuda${{ matrix.cuda-short }}-py${{ matrix.python-version }}
+          path: dist/*.whl
+          if-no-files-found: error
+
+      - name: Upload CUDA runtime bundle
+        if: matrix.python-version == '3.11'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cuda-runtime-v${{ matrix.cuda-short }}
+          path: cuda_v${{ matrix.cuda-short }}.zip
+          if-no-files-found: error

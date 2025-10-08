@@ -100,6 +100,16 @@ export WIN_CSC_KEY_PASSWORD="certificate-password"
 - Place the wheels inside `frontend/chatterley/python-wheels/` (filenames start with `llama_cpp_python`).
 - The app detects the wheel matching the Python runtime version and installs it before resolving the rest of the dependencies. If the wheel is missing, it falls back to building from source (requiring the toolchain above).
 
+#### CUDA-enabled builds (optional)
+- The same workflow now runs a CUDA job matrix. For each Python version (3.11–3.13) and CUDA runtime (11.x, 12.x) it uploads:
+  - `llama-cpp-python-win-wheel-cuda11-pyX.Y`
+  - `llama-cpp-python-win-wheel-cuda12-pyX.Y`
+  - Runtime bundles: `cuda-runtime-v11`, `cuda-runtime-v12` (only once per run)
+- After the workflow finishes:
+  1. Download the wheel artifacts you need and place the `.whl` files in `frontend/chatterley/python-wheels/`.
+  2. Download the CUDA runtime bundles and extract them into `frontend/chatterley/windows-runners/cuda_v11/` and `.../cuda_v12/`. Each folder should contain a `bin/` directory with NVIDIA DLLs (and the accompanying license files).
+- The packaged app will ship these resources so the Windows runtime can choose between CPU and CUDA runners without requiring the end user to install the CUDA toolkit.
+
 ### Linux (AppImage + DEB + RPM)
 **Requirements:**
 - Linux machine

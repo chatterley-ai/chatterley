@@ -168,6 +168,13 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "windows-runners/",
+        "to": "windows-runners",
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "mac": {
