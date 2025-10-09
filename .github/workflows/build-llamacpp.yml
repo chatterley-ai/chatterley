@@ -6,18 +6,18 @@ on:
       llama_cpp_version:
         description: llama-cpp-python version to build
         required: false
-        default: 0.3.16
+        default: 0.3.15
       python_version:
         description: Python version (major.minor) for the wheel
         required: false
-        default: '3.11'
+        default: '3.12'
 
 jobs:
   build:
     runs-on: windows-2022
     strategy:
       matrix:
-        python-version: ['3.11', '3.12', '3.13']
+        python-version: ['3.11', '3.12']
     env:
       PYTHONUTF8: '1'
     steps:
@@ -40,7 +40,7 @@ jobs:
         env:
           LLAMA_CPP_VERSION: ${{ inputs.llama_cpp_version }}
         run: |
-          $version = if ($env:LLAMA_CPP_VERSION) { $env:LLAMA_CPP_VERSION } else { '0.3.16' }
+          $version = if ($env:LLAMA_CPP_VERSION) { $env:LLAMA_CPP_VERSION } else { '0.3.15' }
           Write-Host "Building llama-cpp-python version $version for Python ${{ matrix.python-version }}"
 
           mkdir dist | Out-Null
@@ -85,11 +85,6 @@ jobs:
             cublas-version: '12.6.4.1'
             cuda-installer-url: 'https://developer.download.nvidia.com/compute/cuda/12.6.3/local_installers/cuda_12.6.3_561.17_windows.exe'
           - python-version: '3.12'
-            cuda-short: '12.6'
-            cuda-redistrib-version: '12.6.77'
-            cublas-version: '12.6.4.1'
-            cuda-installer-url: 'https://developer.download.nvidia.com/compute/cuda/12.6.3/local_installers/cuda_12.6.3_561.17_windows.exe'
-          - python-version: '3.13'
             cuda-short: '12.6'
             cuda-redistrib-version: '12.6.77'
             cublas-version: '12.6.4.1'
@@ -144,7 +139,7 @@ jobs:
         env:
           LLAMA_CPP_VERSION: ${{ inputs.llama_cpp_version }}
         run: |
-          $version = if ($env:LLAMA_CPP_VERSION) { $env:LLAMA_CPP_VERSION } else { '0.3.16' }
+          $version = if ($env:LLAMA_CPP_VERSION) { $env:LLAMA_CPP_VERSION } else { '0.3.15' }
           Write-Host "Building CUDA-enabled llama-cpp-python version $version for Python ${{ matrix.python-version }} (CUDA ${{ matrix.cuda-short }})"
 
           mkdir dist | Out-Null
