@@ -72,6 +72,25 @@ jobs:
           Write-Host "Git describe output: $gitDescribe"
           Set-Location ..
 
+      - name: Set vLLM version explicitly
+        shell: pwsh
+        working-directory: vllm-windows
+        run: |
+          $version = "${{ env.VLLM_VERSION }}"
+          Write-Host "Setting vLLM version to: $version"
+
+          # Create vllm directory if it doesn't exist
+          if (-not (Test-Path 'vllm')) {
+            New-Item -ItemType Directory -Path 'vllm' -Force
+          }
+
+          # Write version to _version.py
+          "__version__ = `"$version`"" | Out-File -FilePath "vllm/_version.py" -Encoding utf8 -Force
+          Write-Host "Created vllm/_version.py with version $version"
+
+          # Verify the file was created
+          Get-Content "vllm/_version.py"
+
       - name: Install CUDA toolkit ${{ matrix.cuda_short }}
         shell: pwsh
         run: |
