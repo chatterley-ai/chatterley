@@ -136,7 +136,7 @@ gpu = [
 gpu_win = [
     "nvidia-ml-py>=13.580,<13.581",
     # Windows-compatible vLLM fork
-    "vllm @ git+https://github.com/SystemPanic/vllm-windows.git",
+    "vllm>=0.10,<0.11",
 ]
 
 omni = [

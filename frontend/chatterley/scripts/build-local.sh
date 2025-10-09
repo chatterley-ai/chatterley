@@ -7,8 +7,21 @@
 set -e
 
 PLATFORM=${1:-"$(uname | tr '[:upper:]' '[:lower:]')"}
+PROFILE_ARG=${2:-}
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+
+if [[ -z "${LLAMA_WHEEL_PROFILE:-}" && -n "$PROFILE_ARG" ]]; then
+    export LLAMA_WHEEL_PROFILE="$PROFILE_ARG"
+fi
+
+if [[ -z "${LLAMA_WHEEL_PROFILE:-}" ]]; then
+    export LLAMA_WHEEL_PROFILE="cpu"
+fi
+
+if [[ -z "${VLLM_WHEEL_PROFILE:-}" ]]; then
+    export VLLM_WHEEL_PROFILE="$LLAMA_WHEEL_PROFILE"
+fi
 
 # Best-effort cleanup so rebuilds don't fail on existing artifacts/symlinks
 cleanup_macos_dmg_volume() {
@@ -80,8 +93,16 @@ case "$PLATFORM" in
         fi
         npm run dist:mac
         ;;
-    "win" | "windows")
+    "win" | "windows" | "win-cpu" | "win-cuda12.4" | "win-cuda12.6")
+        case "$PLATFORM" in
+            win-cpu) export LLAMA_WHEEL_PROFILE="cpu" ;;
+            win-cuda12.4) export LLAMA_WHEEL_PROFILE="cuda12.4" ;;
+            win-cuda12.6) export LLAMA_WHEEL_PROFILE="cuda12.6" ;;
+        esac
+        export VLLM_WHEEL_PROFILE="${VLLM_WHEEL_PROFILE:-$LLAMA_WHEEL_PROFILE}"
         echo "🪟 Building for Windows..."
+        echo "🎯 Llama wheel profile: ${LLAMA_WHEEL_PROFILE}"
+        echo "🎯 vLLM wheel profile: ${VLLM_WHEEL_PROFILE}"
         npm run dist:win
         ;;
     "linux")
@@ -102,7 +123,8 @@ case "$PLATFORM" in
             echo "🔎 Using existing DEBUG: $DEBUG"
         fi
         npm run dist:mac
-        echo "🪟 Building Windows packages..."
+        echo "🪟 Building Windows packages (profile: ${LLAMA_WHEEL_PROFILE})..."
+        export VLLM_WHEEL_PROFILE="${VLLM_WHEEL_PROFILE:-$LLAMA_WHEEL_PROFILE}"
         npm run dist:win
         echo "🐧 Building Linux packages..."
         npm run dist:linux

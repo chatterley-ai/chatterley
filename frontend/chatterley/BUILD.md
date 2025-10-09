@@ -73,6 +73,7 @@ export APPLE_TEAM_ID="YOUR_TEAM_ID"
 **Requirements:**
 - Windows machine or cross-compilation setup
 - Microsoft Visual C++ Build Tools 2022 with the **Desktop development with C++** workload (includes CMake, MSVC, Windows SDK)
+- Git for Windows (the setup will automatically download a portable copy if `git` is missing)
 - Code signing certificate (optional)
 - Optional: Prebuilt `llama-cpp-python` wheel from the GitHub Actions workflow (see below)
 
@@ -97,18 +98,38 @@ export WIN_CSC_KEY_PASSWORD="certificate-password"
 #### Prebuilt `llama-cpp-python`
 - Trigger the **Build llama.cpp wheel (Windows)** workflow (`.github/workflows/build-llamacpp.yml`) from GitHub under the **Actions** tab → select the workflow → **Run workflow**.
 - The workflow builds wheels for Python 3.11, 3.12, and 3.13. Download each artifact (`llama-cpp-python-win-wheel-py3.11`, `...-py3.12`, `...-py3.13`) once it completes and extract the `.whl` files inside.
-- Place the wheels inside `frontend/chatterley/python-wheels/` (filenames start with `llama_cpp_python`).
-- The app detects the wheel matching the Python runtime version and installs it before resolving the rest of the dependencies. If the wheel is missing, it falls back to building from source (requiring the toolchain above).
+- Organise the wheels by profile:
+  - CPU: `frontend/chatterley/python-wheels/cpu/`
+  - CUDA 12.4: `frontend/chatterley/python-wheels/cuda12.4/`
+  - CUDA 12.6: `frontend/chatterley/python-wheels/cuda12.6/`
+  (filenames still start with `llama_cpp_python`)
+- The app detects the wheel matching the Python runtime version and installs the wheel from the active profile (see below). If no wheel is found, it falls back to building from source (requiring the toolchain above).
 
 #### CUDA-enabled builds (optional)
-- The same workflow now runs a CUDA job matrix. For each Python version (3.11–3.13) and CUDA runtime (11.x, 12.x) it uploads:
-  - `llama-cpp-python-win-wheel-cuda11-pyX.Y`
-  - `llama-cpp-python-win-wheel-cuda12-pyX.Y`
-  - Runtime bundles: `cuda-runtime-v11`, `cuda-runtime-v12` (only once per run)
+- The same workflow now runs a CUDA job matrix. For each Python version (3.11–3.13) and CUDA runtime (12.4, 12.6) it uploads:
+  - `llama-cpp-python-win-wheel-cuda12.4-pyX.Y`
+  - `llama-cpp-python-win-wheel-cuda12.6-pyX.Y`
+  - Runtime bundles: `cuda-runtime-v12.4`, `cuda-runtime-v12.6` (only once per run)
 - After the workflow finishes:
-  1. Download the wheel artifacts you need and place the `.whl` files in `frontend/chatterley/python-wheels/`.
-  2. Download the CUDA runtime bundles and extract them into `frontend/chatterley/windows-runners/cuda_v11/` and `.../cuda_v12/`. Each folder should contain a `bin/` directory with NVIDIA DLLs (and the accompanying license files).
+  1. Download the wheel artifacts you need and place the `.whl` files in the matching profile directory listed above.
+  2. Download the CUDA runtime bundles and extract them into `frontend/chatterley/windows-runners/cuda_v12.4/` and `.../cuda_v12.6/`. Each folder should contain a `bin/` directory with NVIDIA DLLs (and the accompanying license files).
 - The packaged app will ship these resources so the Windows runtime can choose between CPU and CUDA runners without requiring the end user to install the CUDA toolkit.
+
+#### Selecting a wheel profile when building
+- Use the `LLAMA_WHEEL_PROFILE` environment variable (values: `cpu`, `cuda12.4`, `cuda12.6`).
+- `./scripts/build-local.sh win <profile>` automatically exports the profile for you:
+  ```bash
+  ./scripts/build-local.sh win cpu        # CPU-only build
+  ./scripts/build-local.sh win cuda12.4   # CUDA 12.4 wheel + runtime
+  ./scripts/build-local.sh win cuda12.6   # CUDA 12.6 wheel + runtime
+  ```
+- If you call the script without a profile it defaults to `cpu`. The `all` target uses whichever profile is active in `LLAMA_WHEEL_PROFILE`.
+
+#### Prebuilt `vLLM` wheels
+- Trigger the **Build vLLM wheel (Windows)** workflow (`.github/workflows/build-vllm-windows.yml`).
+- By default it builds wheels for Python 3.11–3.13 targeting CUDA 12.6. Each run uploads artifacts named `vllm-windows-wheel-cu126-py3.11`, etc.
+- Extract the wheels into `frontend/chatterley/python-wheels/vllm/cuda12.6/`.
+- The environment setup will install the bundled wheel automatically on Windows when the GPU extras are selected (no Git required).
 
 ### Linux (AppImage + DEB + RPM)
 **Requirements:**

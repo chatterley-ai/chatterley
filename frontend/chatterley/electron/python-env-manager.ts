@@ -8,6 +8,9 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { app } from 'electron';
+import * as https from 'https';
+import * as http from 'http';
+import { URL } from 'url';
 import log from 'electron-log';
 import { SystemDetector, SystemInfo } from './system-detector';
 import { executePythonCode, checkPythonPackage } from './python-utils';
@@ -39,6 +42,15 @@ export class PythonEnvironmentManager {
     log.info('[PythonEnvManager] Initialized');
   }
 
+  private extraPathDirs: string[] = [];
+
+  private addExtraPath(dir: string): void {
+    if (!dir) return;
+    if (!this.extraPathDirs.includes(dir)) {
+      this.extraPathDirs.push(dir);
+    }
+  }
+
   /**
    * Resolve the bin/Scripts directory for a given virtual environment
    */
@@ -55,9 +67,25 @@ export class PythonEnvironmentManager {
     const binDir = this.getVirtualEnvBinDir(envPath);
     const delimiter = process.platform === 'win32' ? ';' : ':';
     const currentPath = process.env.PATH || process.env.Path || '';
-    const combinedPath = currentPath
-      ? `${binDir}${delimiter}${currentPath}`
-      : binDir;
+
+    const pathEntries: string[] = [];
+    const seen = new Set<string>();
+
+    const pushEntry = (entry: string | null | undefined) => {
+      if (!entry) return;
+      const normalized = process.platform === 'win32' ? entry.toLowerCase() : entry;
+      if (seen.has(normalized)) return;
+      seen.add(normalized);
+      pathEntries.push(entry);
+    };
+
+    pushEntry(binDir);
+    for (const extra of this.extraPathDirs) {
+      pushEntry(extra);
+    }
+    pushEntry(currentPath);
+
+    const combinedPath = pathEntries.join(delimiter);
 
     return {
       ...process.env,
@@ -166,6 +194,76 @@ export class PythonEnvironmentManager {
     return false;
   }
 
+  private async downloadFile(url: string, destination: string): Promise<void> {
+    await fs.promises.mkdir(path.dirname(destination), { recursive: true }).catch(() => {});
+    return new Promise((resolve, reject) => {
+      const downloadRecursive = (currentUrl: string, redirectCount: number = 0) => {
+        if (redirectCount > 5) {
+          reject(new Error('Too many redirects while downloading.'));
+          return;
+        }
+
+        const parsed = new URL(currentUrl);
+        const client = parsed.protocol === 'https:' ? https : http;
+
+        const request = client.get(parsed, (response) => {
+          if (response.statusCode && response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+            response.resume();
+            const nextUrl = new URL(response.headers.location, currentUrl).toString();
+            downloadRecursive(nextUrl, redirectCount + 1);
+            return;
+          }
+
+          if (response.statusCode !== 200) {
+            reject(new Error(`Failed to download ${currentUrl}: HTTP ${response.statusCode}`));
+            return;
+          }
+
+          const file = fs.createWriteStream(destination);
+          response.pipe(file);
+          file.on('finish', () => {
+            file.close(() => resolve());
+          });
+          file.on('error', (error) => {
+            fs.unlink(destination, () => reject(error));
+          });
+        });
+
+        request.on('error', (error) => {
+          reject(error);
+        });
+      };
+
+      downloadRecursive(url);
+    });
+  }
+
+  private async expandZipWindows(zipPath: string, destination: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const escapedZip = zipPath.replace(/'/g, "''");
+      const escapedDest = destination.replace(/'/g, "''");
+      const script = `Expand-Archive -Path '${escapedZip}' -DestinationPath '${escapedDest}' -Force`;
+      const proc = spawn('powershell', ['-NoLogo', '-NonInteractive', '-Command', script], {
+        stdio: 'pipe',
+      });
+
+      let stderr = '';
+      proc.stderr?.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      proc.on('close', (code) => {
+        if (code === 0) {
+          resolve();
+        } else {
+          reject(new Error(`Expand-Archive failed with code ${code}: ${stderr}`));
+        }
+      });
+
+      proc.on('error', reject);
+    });
+  }
+
   /**
    * Ensure Windows build prerequisites (CMake) are present when installing llama.cpp extras
    */
@@ -218,19 +316,142 @@ export class PythonEnvironmentManager {
     throw new Error(message);
   }
 
+  private async ensureGitAvailable(envPath: string): Promise<void> {
+    if (await this.checkCommandAvailability('git', ['--version'], envPath)) {
+      log.info('[PythonEnvManager] Git command already available');
+      return;
+    }
+
+    if (process.platform !== 'win32') {
+      throw new Error('Git is required but was not found. Please install Git and restart Chatterley.');
+    }
+
+    const toolsDir = path.join(this.getUserDataDir(), 'tools');
+    const gitRoot = path.join(toolsDir, 'mingit');
+    const gitCmdDir = path.join(gitRoot, 'cmd');
+    const gitExe = path.join(gitCmdDir, 'git.exe');
+
+    if (!fs.existsSync(gitExe)) {
+      const version = '2.46.0';
+      const release = `v${version}.windows.1`;
+      const url = `https://github.com/git-for-windows/git/releases/download/${release}/MinGit-${version}-64-bit.zip`;
+      const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'mingit-'));
+      const zipPath = path.join(tempDir, 'mingit.zip');
+
+      try {
+        log.info('[PythonEnvManager] Downloading portable Git for Windows...', { url });
+        await this.downloadFile(url, zipPath);
+
+        const extractDir = path.join(tempDir, 'extract');
+        await fs.promises.mkdir(extractDir, { recursive: true });
+        await this.expandZipWindows(zipPath, extractDir);
+
+        const entries = await fs.promises.readdir(extractDir);
+        const sourceRoot = entries
+          .map((entry) => path.join(extractDir, entry))
+          .find((candidate) => fs.existsSync(path.join(candidate, 'cmd', 'git.exe')));
+
+        if (!sourceRoot) {
+          throw new Error('Downloaded MinGit archive did not contain expected structure.');
+        }
+
+        await fs.promises.rm(gitRoot, { recursive: true, force: true });
+        await fs.promises.mkdir(path.dirname(gitRoot), { recursive: true });
+        await fs.promises.cp(sourceRoot, gitRoot, { recursive: true });
+      } finally {
+        await fs.promises.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+      }
+    }
+
+    if (!fs.existsSync(gitExe)) {
+      throw new Error('Failed to provision portable Git. Please install Git for Windows manually.');
+    }
+
+    this.addExtraPath(gitCmdDir);
+    process.env.PATH = `${gitCmdDir};${process.env.PATH ?? ''}`;
+    process.env.Path = process.env.PATH;
+
+    if (!(await this.checkCommandAvailability('git', ['--version'], envPath))) {
+      throw new Error('Git is still unavailable after installing portable Git.');
+    }
+
+    log.info('[PythonEnvManager] Portable Git configured successfully.');
+  }
+
   /**
    * Locate a prebuilt llama-cpp wheel shipped with the application (if available)
    */
+  private normalizeWheelProfile(profile?: string | null): string | null {
+    if (!profile) {
+      return null;
+    }
+
+    const cleaned = profile.trim().toLowerCase();
+    if (!cleaned) {
+      return null;
+    }
+
+    const aliases: Record<string, string> = {
+      'cpu': 'cpu',
+      'default': 'cpu',
+      'cuda': 'cuda12.6',
+      'cuda12': 'cuda12.6',
+      'cuda126': 'cuda12.6',
+      'cuda12_6': 'cuda12.6',
+      'cuda12.6': 'cuda12.6',
+      'cuda124': 'cuda12.4',
+      'cuda12_4': 'cuda12.4',
+      'cuda12.4': 'cuda12.4',
+    };
+
+    return aliases[cleaned] ?? cleaned;
+  }
+
+  private getPreferredWheelProfiles(preferred?: string | null): string[] {
+    const profileEnv = preferred ?? process.env.VLLM_WHEEL_PROFILE ?? process.env.LLAMA_WHEEL_PROFILE;
+    const requested = this.normalizeWheelProfile(profileEnv);
+
+    if (!requested) {
+      return ['cuda12.6', 'cuda12.4', 'cpu'];
+    }
+
+    if (requested === 'cpu') {
+      return ['cpu'];
+    }
+
+    const order = new Set<string>();
+    order.add(requested);
+    const fallbacks = requested === 'cuda12.6'
+      ? ['cuda12.4', 'cpu']
+      : requested === 'cuda12.4'
+        ? ['cuda12.6', 'cpu']
+        : ['cpu'];
+
+    fallbacks.forEach(profile => order.add(profile));
+    return Array.from(order);
+  }
+
   private findPrebuiltLlamaWheel(targetPythonTag?: string): string | null {
     const resourcesPath = app.isPackaged
       ? process.resourcesPath
       : path.resolve(__dirname, '../..');
 
-    const candidateDirs = [
+    const baseDirs = [
       path.join(resourcesPath, 'python-wheels'),
       path.join(resourcesPath, 'python', 'wheels'),
       path.join(resourcesPath, '..', '..', 'python-wheels'),
     ];
+
+    const profileOrder = this.getPreferredWheelProfiles(process.env.LLAMA_WHEEL_PROFILE ?? process.env.VLLM_WHEEL_PROFILE);
+    log.info(`[PythonEnvManager] Wheel profile preference order: ${profileOrder.join(', ')}`);
+
+    const candidateDirs: string[] = [];
+    for (const base of baseDirs) {
+      for (const profile of profileOrder) {
+        candidateDirs.push(path.join(base, profile));
+      }
+      candidateDirs.push(base); // legacy fallback
+    }
 
     let fallback: string | null = null;
 
@@ -243,7 +464,60 @@ export class PythonEnvironmentManager {
       for (const entry of entries) {
         if (entry.toLowerCase().startsWith('llama_cpp_python') && entry.endsWith('.whl')) {
           const fullPath = path.join(dir, entry);
+          log.info(`[PythonEnvManager] Candidate prebuilt llama wheel found: ${fullPath}`);
           if (targetPythonTag && entry.includes(targetPythonTag)) {
+            log.info(`[PythonEnvManager] Selecting wheel ${entry} for tag ${targetPythonTag}`);
+            return fullPath;
+          }
+          if (!fallback) {
+            fallback = fullPath;
+          }
+        }
+      }
+    }
+
+    return fallback;
+  }
+
+  private findPrebuiltVllmWheel(targetPythonTag?: string): string | null {
+    if (process.platform !== 'win32') {
+      return null;
+    }
+
+    const resourcesPath = app.isPackaged
+      ? process.resourcesPath
+      : path.resolve(__dirname, '../..');
+
+    const baseDirs = [
+      path.join(resourcesPath, 'python-wheels', 'vllm'),
+      path.join(resourcesPath, 'python', 'wheels', 'vllm'),
+      path.join(resourcesPath, '..', '..', 'python-wheels', 'vllm'),
+    ];
+
+    const profileOrder = this.getPreferredWheelProfiles(process.env.VLLM_WHEEL_PROFILE ?? process.env.LLAMA_WHEEL_PROFILE);
+    const candidateDirs: string[] = [];
+    for (const base of baseDirs) {
+      for (const profile of profileOrder) {
+        candidateDirs.push(path.join(base, profile));
+      }
+      candidateDirs.push(base);
+    }
+
+    let fallback: string | null = null;
+
+    for (const dir of candidateDirs) {
+      if (!fs.existsSync(dir)) {
+        continue;
+      }
+
+      const entries = fs.readdirSync(dir);
+      for (const entry of entries) {
+        const lower = entry.toLowerCase();
+        if (lower.startsWith('vllm') && entry.endsWith('.whl')) {
+          const fullPath = path.join(dir, entry);
+          log.info(`[PythonEnvManager] Candidate vLLM wheel found: ${fullPath}`);
+          if (targetPythonTag && entry.includes(targetPythonTag)) {
+            log.info(`[PythonEnvManager] Selecting vLLM wheel ${entry} for tag ${targetPythonTag}`);
             return fullPath;
           }
           if (!fallback) {
@@ -321,6 +595,43 @@ export class PythonEnvironmentManager {
       log.info('[PythonEnvManager] Bundled llama-cpp wheel installed successfully');
     } catch (error) {
       log.warn('[PythonEnvManager] Failed to install bundled llama-cpp wheel, falling back to default behaviour:', error);
+    }
+  }
+
+  private async installPrebuiltVllmWheel(
+    envPath: string,
+    uvPath: string,
+    extras: string[],
+    pythonPath: string
+  ): Promise<void> {
+    if (process.platform !== 'win32') {
+      return;
+    }
+
+    const requiresVllm = extras.some((extra) => ['gpu_win', 'gpu', 'vllm'].includes(extra));
+    if (!requiresVllm) {
+      return;
+    }
+
+    const pythonTag = await this.getPythonTag(pythonPath);
+    const wheelPath = this.findPrebuiltVllmWheel(pythonTag || undefined);
+    if (!wheelPath) {
+      log.info('[PythonEnvManager] No bundled vLLM wheel found; proceeding with default installation');
+      return;
+    }
+
+    await this.reportProgress('vllm', 67, 'Installing bundled vLLM wheel...');
+
+    try {
+      await this.runUvCommand(
+        uvPath,
+        envPath,
+        ['pip', 'install', wheelPath, '--no-deps'],
+        'Installing prebuilt vLLM wheel'
+      );
+      log.info('[PythonEnvManager] Bundled vLLM wheel installed successfully');
+    } catch (error) {
+      log.warn('[PythonEnvManager] Failed to install bundled vLLM wheel, falling back to default behaviour:', error);
     }
   }
 
@@ -541,6 +852,10 @@ export class PythonEnvironmentManager {
       // Step 5: Install uv
       await this.reportProgress('uv', 45, 'Installing uv package manager...');
       await this.installUv(envPython);
+
+      // Step 5.5: Ensure Git availability (required for git-based extras)
+      await this.reportProgress('git', 55, 'Ensuring Git is available...');
+      await this.ensureGitAvailable(envPath);
 
       // Step 6: Install oumi dependencies
       await this.reportProgress('oumi', 65, 'Installing Oumi dependencies...');
@@ -807,6 +1122,8 @@ export class PythonEnvironmentManager {
       : path.join(envPath, 'bin', 'uv');
 
     await this.ensureWindowsBuildDependencies(envPath, uvPath, extras);
+    await this.ensureGitAvailable(envPath);
+    await this.installPrebuiltVllmWheel(envPath, uvPath, extras, pythonPath);
     await this.installPrebuiltLlamaWheel(envPath, uvPath, extras, pythonPath);
 
     return new Promise((resolve, reject) => {
@@ -1211,6 +1528,7 @@ export class PythonEnvironmentManager {
       await this.installUv(pythonPath);
     }
 
+    await this.ensureGitAvailable(envPath);
     await this.reportProgress('sglang', 15, 'Installing SGLang backend...');
 
     await new Promise<void>((resolve, reject) => {
@@ -1301,6 +1619,7 @@ export class PythonEnvironmentManager {
       await this.installUv(pythonPath);
     }
 
+    await this.ensureGitAvailable(envPath);
     await this.reportProgress('flash-attn2', 15, 'Installing FlashAttention 2 (flash-attn)...');
 
     await new Promise<void>((resolve, reject) => {
@@ -1368,6 +1687,7 @@ export class PythonEnvironmentManager {
       await this.installUv(pythonPath);
     }
 
+    await this.ensureGitAvailable(envPath);
     await this.reportProgress('flash-infer', 15, 'Installing flashinfer-python...');
 
     await new Promise<void>((resolve, reject) => {
