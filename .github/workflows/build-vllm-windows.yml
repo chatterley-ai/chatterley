@@ -61,17 +61,11 @@ jobs:
       - name: Clone vLLM Windows fork
         shell: pwsh
         run: |
-          git clone --depth 1 --branch "v${{ env.VLLM_VERSION }}" https://github.com/SystemPanic/vllm-windows.git
+          git clone --depth 1 --branch "v${{ env.VLLM_VERSION }}" https://github.com/penfever/vllm-windows.git
           if (-not (Test-Path 'vllm-windows')) {
             Write-Error "Failed to clone vllm-windows at v${{ env.VLLM_VERSION }}"
             exit 1
           }
-
-      - name: Patch setup.py for nvcc path normalization
-        shell: pwsh
-        working-directory: vllm-windows
-        run: |
-          python ../.github/workflows/scripts/patch_vllm_setup.py
 
       - name: Install CUDA toolkit ${{ matrix.cuda_short }}
         shell: pwsh
