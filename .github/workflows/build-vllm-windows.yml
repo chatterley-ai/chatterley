@@ -97,6 +97,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install wheel ninja packaging setuptools
 
+      - name: Enable long paths for git
+        shell: pwsh
+        run: |
+          git config --global core.longpaths true
+
       - name: Install PyTorch (${{ matrix.torch_version }})
         shell: pwsh
         working-directory: vllm-windows
