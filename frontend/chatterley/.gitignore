@@ -42,3 +42,19 @@ next-env.d.ts
 
 # python distribution files
 python-dist/
+
+# local wheel/runtime artifacts (populated during release builds)
+python-wheels/*
+!python-wheels/**/
+!python-wheels/**/.gitkeep
+python-wheels/**/*.whl
+python-wheels/**/*.zip
+python-wheels/vllm/**
+!python-wheels/vllm/
+!python-wheels/vllm/.gitkeep
+!python-wheels/vllm/**/.gitkeep
+windows-runners/*
+!windows-runners/**/
+!windows-runners/**/.gitkeep
+windows-runners/**/*.zip
+windows-runners/**/*.dll

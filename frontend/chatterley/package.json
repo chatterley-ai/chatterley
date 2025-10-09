@@ -170,6 +170,13 @@
         ]
       },
       {
+        "from": "python-wheels/vllm/",
+        "to": "python-wheels/vllm",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
         "from": "windows-runners/",
         "to": "windows-runners",
         "filter": [

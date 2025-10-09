@@ -1,0 +1,128 @@
+name: Build vLLM wheel (Windows)
+
+on:
+  workflow_dispatch:
+    inputs:
+      vllm_version:
+        description: vLLM Windows version to build
+        required: false
+        default: 0.10.1.1
+      python_version:
+        description: Python versions (comma separated) e.g. "3.11,3.12,3.13"
+        required: false
+        default: 3.11,3.12,3.13
+      torch_version:
+        description: Torch version (with CUDA suffix)
+        required: false
+        default: 2.7.1+cu126
+      torchaudio_version:
+        description: torchaudio version (with CUDA suffix)
+        required: false
+        default: 2.7.1+cu126
+      torchvision_version:
+        description: torchvision version (with CUDA suffix)
+        required: false
+        default: 0.22.1+cu126
+      torch_index_url:
+        description: Torch index URL
+        required: false
+        default: https://download.pytorch.org/whl/cu126
+
+jobs:
+  build:
+    runs-on: windows-2022
+    strategy:
+      matrix:
+        python-version: ${{ fromJson('["' + replace(github.event.inputs.python_version || '3.11,3.12,3.13', ',', '","') + '"]') }}
+    env:
+      PYTHONUTF8: '1'
+      TORCH_VERSION: ${{ github.event.inputs.torch_version || '2.7.1+cu126' }}
+      TORCHAUDIO_VERSION: ${{ github.event.inputs.torchaudio_version || '2.7.1+cu126' }}
+      TORCHVISION_VERSION: ${{ github.event.inputs.torchvision_version || '0.22.1+cu126' }}
+      TORCH_INDEX_URL: ${{ github.event.inputs.torch_index_url || 'https://download.pytorch.org/whl/cu126' }}
+      VLLM_VERSION: ${{ github.event.inputs.vllm_version || '0.10.1.1' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Clone vLLM Windows fork
+        shell: pwsh
+        run: |
+          git clone --depth 1 --branch "v${{ env.VLLM_VERSION }}" https://github.com/SystemPanic/vllm-windows.git
+          if (-not (Test-Path 'vllm-windows')) {
+            Write-Error "Failed to clone vllm-windows at v${{ env.VLLM_VERSION }}"
+            exit 1
+          }
+
+      - name: Install CUDA toolkit 12.6
+        shell: pwsh
+        run: |
+          $installerUrl = 'https://developer.download.nvidia.com/compute/cuda/12.6.3/local_installers/cuda_12.6.3_windows.exe'
+          $installerPath = Join-Path $env:RUNNER_TEMP 'cuda_installer.exe'
+          Write-Host "Downloading CUDA toolkit from $installerUrl"
+          Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath
+          Write-Host "Installing CUDA toolkit silently"
+          Start-Process -FilePath $installerPath -ArgumentList '-s' -Wait
+          $cudaPath = Get-ChildItem 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA' | Sort-Object Name -Descending | Select-Object -First 1
+          if (-not $cudaPath) {
+            throw 'CUDA toolkit install failed; CUDA path not found.'
+          }
+          $cudaRoot = $cudaPath.FullName
+          $cudaBin = Join-Path $cudaRoot 'bin'
+          $cudaLibNvvp = Join-Path $cudaRoot 'libnvvp'
+          Write-Host "Using CUDA toolkit path: $cudaRoot"
+          echo "CUDA_PATH=$cudaRoot" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "CudaToolkitDir=$cudaRoot" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "CUDA_PATH_V12_0=$cudaRoot" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "PATH=$cudaBin;$cudaLibNvvp;$env:PATH" | Out-File -FilePath $env:GITHUB_ENV -Append
+          & "$cudaBin\nvcc.exe" --version
+
+      - name: Prepare build environment
+        shell: pwsh
+        working-directory: vllm-windows
+        run: |
+          python -m pip install --upgrade pip
+          pip install wheel ninja packaging setuptools
+
+      - name: Install PyTorch (${{ env.TORCH_VERSION }})
+        shell: pwsh
+        working-directory: vllm-windows
+        run: |
+          pip install torch==${{ env.TORCH_VERSION }} torchaudio==${{ env.TORCHAUDIO_VERSION }} torchvision==${{ env.TORCHVISION_VERSION }} --index-url ${{ env.TORCH_INDEX_URL }}
+
+      - name: Install build requirements
+        shell: pwsh
+        working-directory: vllm-windows
+        run: |
+          pip install -r requirements/build.txt
+          pip install -r requirements/windows.txt
+
+      - name: Build vLLM wheel
+        shell: cmd
+        working-directory: vllm-windows
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
+          set DISTUTILS_USE_SDK=1
+          set VLLM_TARGET_DEVICE=cuda
+          set MAX_JOBS=8
+          set CUDA_ROOT=%CUDA_PATH%
+          set CUDA_HOME=%CUDA_PATH%
+          pip wheel . --no-deps --no-build-isolation -w dist
+
+      - name: List wheel artifacts
+        shell: pwsh
+        working-directory: vllm-windows
+        run: |
+          Get-ChildItem dist
+
+      - name: Upload vLLM wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vllm-windows-wheel-cu126-py${{ matrix.python-version }}
+          path: vllm-windows/dist/*.whl
+          if-no-files-found: error
