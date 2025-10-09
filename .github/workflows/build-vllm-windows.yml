@@ -61,15 +61,15 @@ jobs:
       - name: Clone vLLM Windows fork
         shell: pwsh
         run: |
-          git clone --depth 1 --branch "v${{ env.VLLM_VERSION }}" https://github.com/penfever/vllm-windows.git
+          git clone --branch "v${{ env.VLLM_VERSION }}" https://github.com/penfever/vllm-windows.git
           if (-not (Test-Path 'vllm-windows')) {
             Write-Error "Failed to clone vllm-windows at v${{ env.VLLM_VERSION }}"
             exit 1
           }
           Set-Location vllm-windows
-          git fetch --tags origin "refs/tags/v${{ env.VLLM_VERSION }}"
-          git fetch --unshallow 2>$null || Write-Host "Repository already full-depth"
-          git describe --tags --always
+          git fetch --tags
+          $gitDescribe = git describe --tags --always
+          Write-Host "Git describe output: $gitDescribe"
           Set-Location ..
 
       - name: Install CUDA toolkit ${{ matrix.cuda_short }}
