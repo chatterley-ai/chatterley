@@ -66,6 +66,11 @@ jobs:
             Write-Error "Failed to clone vllm-windows at v${{ env.VLLM_VERSION }}"
             exit 1
           }
+          Set-Location vllm-windows
+          git fetch --tags origin "refs/tags/v${{ env.VLLM_VERSION }}"
+          git fetch --unshallow 2>$null || Write-Host "Repository already full-depth"
+          git describe --tags --always
+          Set-Location ..
 
       - name: Install CUDA toolkit ${{ matrix.cuda_short }}
         shell: pwsh
