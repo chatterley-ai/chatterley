@@ -135,6 +135,7 @@ jobs:
           set MAX_JOBS=8
           set CUDA_ROOT=%CUDA_PATH%
           set CUDA_HOME=%CUDA_PATH%
+          set CMAKE_ARGS=-DCMAKE_CUDA_ARCHITECTURES=80;86;89;90
           pip wheel . --no-deps --no-build-isolation -w dist
 
       - name: List wheel artifacts
