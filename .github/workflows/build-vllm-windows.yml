@@ -67,6 +67,22 @@ jobs:
             exit 1
           }
 
+      - name: Patch setup.py for nvcc path normalization
+        shell: pwsh
+        working-directory: vllm-windows
+        run: |
+          python - <<'PY'
+from pathlib import Path
+
+path = Path('setup.py')
+text = path.read_text()
+old = "            if IS_WINDOWS:\n                cmake_args += [f'-DCMAKE_CUDA_COMPILER={CUDA_HOME.replace(\\\"\\\\\\", \\\"/\\\")}/bin/nvcc.exe']"
+new = "            if IS_WINDOWS:\n                cuda_home_normalized = CUDA_HOME.replace('\\\\', '/')\n                cmake_args += [f'-DCMAKE_CUDA_COMPILER={cuda_home_normalized}/bin/nvcc.exe']"
+if old not in text:
+    raise SystemExit('Expected snippet not found in setup.py')
+path.write_text(text.replace(old, new))
+PY
+
       - name: Install CUDA toolkit ${{ matrix.cuda_short }}
         shell: pwsh
         run: |
