@@ -109,7 +109,14 @@ jobs:
         shell: pwsh
         working-directory: vllm-windows
         run: |
-          pip install torch==${{ matrix.torch_version }} torchaudio==${{ matrix.torchaudio_version }} torchvision==${{ matrix.torchvision_version }} --index-url ${{ matrix.torch_index_url }}
+          if ('${{ matrix.torch_version }}'.EndsWith('cu126')) {
+            $url = 'https://download.pytorch.org/whl/cu126'
+          } elseif ('${{ matrix.torch_version }}'.EndsWith('cu124')) {
+            $url = 'https://download.pytorch.org/whl/cu124'
+          } else {
+            $url = 'https://download.pytorch.org/whl/cu126'
+          }
+          pip install torch==${{ matrix.torch_version }} torchaudio==${{ matrix.torchaudio_version }} torchvision==${{ matrix.torchvision_version }} --index-url $url
 
       - name: Install build requirements
         shell: pwsh
