@@ -165,6 +165,32 @@ function setupAppHandlers(): void {
       }
     }
   });
+
+  ipcMain.on('app:minimize', () => {
+    const focusedWindow = BrowserWindow.getFocusedWindow();
+    focusedWindow?.minimize();
+  });
+
+  ipcMain.on('app:toggle-maximize', () => {
+    const focusedWindow = BrowserWindow.getFocusedWindow();
+    if (!focusedWindow) return;
+
+    if (focusedWindow.isMaximized()) {
+      focusedWindow.unmaximize();
+    } else {
+      focusedWindow.maximize();
+    }
+  });
+
+  ipcMain.on('app:close', () => {
+    const focusedWindow = BrowserWindow.getFocusedWindow();
+    focusedWindow?.close();
+  });
+
+  ipcMain.handle('app:is-maximized', () => {
+    const focusedWindow = BrowserWindow.getFocusedWindow();
+    return focusedWindow?.isMaximized() ?? false;
+  });
 }
 
 /**

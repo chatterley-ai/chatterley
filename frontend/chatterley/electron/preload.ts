@@ -15,6 +15,7 @@ const menuListenerMap = new Map<string, Map<Function, Function>>();
 const eventsListenerMap = new Map<string, Map<Function, Function>>();
 const downloadProgressListenerMap = new Map<Function, Function>();
 const downloadErrorListenerMap = new Map<Function, Function>();
+const windowStateListenerMap = new Map<Function, Function>();
 
 // API interface for renderer process
 export interface ElectronAPI {
@@ -27,6 +28,12 @@ export interface ElectronAPI {
     toggleFullScreen: () => void;
     zoom: (direction: 'in' | 'out' | 'reset') => void;
     hideLoadingScreen: () => Promise<{ success: boolean; message: string }>;
+    minimize: () => void;
+    toggleMaximize: () => void;
+    close: () => void;
+    isMaximized: () => Promise<boolean>;
+    onWindowStateChange: (callback: (state: { isMaximized: boolean }) => void) => void;
+    offWindowStateChange: (callback: (state: { isMaximized: boolean }) => void) => void;
   };
 
   // File system operations
@@ -192,7 +199,23 @@ const electronAPI: ElectronAPI = {
     toggleDevTools: () => ipcRenderer.send('app:toggle-dev-tools'),
     toggleFullScreen: () => ipcRenderer.send('app:toggle-full-screen'),
     zoom: (direction) => ipcRenderer.send('app:zoom', direction),
-    hideLoadingScreen: () => ipcRenderer.invoke('app:hide-loading-screen')
+    hideLoadingScreen: () => ipcRenderer.invoke('app:hide-loading-screen'),
+    minimize: () => ipcRenderer.send('app:minimize'),
+    toggleMaximize: () => ipcRenderer.send('app:toggle-maximize'),
+    close: () => ipcRenderer.send('app:close'),
+    isMaximized: () => ipcRenderer.invoke('app:is-maximized'),
+    onWindowStateChange: (callback: (state: { isMaximized: boolean }) => void) => {
+      const wrapped = (_: IpcRendererEvent, state: { isMaximized: boolean }) => callback(state);
+      windowStateListenerMap.set(callback, wrapped);
+      ipcRenderer.on('app:window-state', wrapped);
+    },
+    offWindowStateChange: (callback: (state: { isMaximized: boolean }) => void) => {
+      const wrapped = windowStateListenerMap.get(callback) as any;
+      if (wrapped) {
+        ipcRenderer.removeListener('app:window-state', wrapped);
+        windowStateListenerMap.delete(callback);
+      }
+    }
   },
 
   files: {

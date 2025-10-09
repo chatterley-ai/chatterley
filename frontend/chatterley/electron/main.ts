@@ -259,6 +259,25 @@ class ChatterleyApp {
       icon: this.getAppIcon()
     });
 
+    const emitWindowState = () => {
+      if (!this.mainWindow || this.mainWindow.isDestroyed()) {
+        return;
+      }
+
+      try {
+        this.mainWindow.webContents.send('app:window-state', {
+          isMaximized: this.mainWindow.isMaximized()
+        });
+      } catch (error) {
+        log.warn('[Main] Failed to emit window state:', error);
+      }
+    };
+
+    this.mainWindow.on('maximize', emitWindowState);
+    this.mainWindow.on('unmaximize', emitWindowState);
+    this.mainWindow.on('enter-full-screen', emitWindowState);
+    this.mainWindow.on('leave-full-screen', emitWindowState);
+
     // Load the application
     let startUrl: string;
     
@@ -300,6 +319,7 @@ class ChatterleyApp {
     // Show window when ready
     this.mainWindow.once('ready-to-show', () => {
       this.mainWindow?.show();
+      emitWindowState();
       
       if (this.isDevelopment || process.env.ELECTRON_DEBUG_PRODUCTION === '1') {
         this.mainWindow?.webContents.openDevTools();
