@@ -124,6 +124,7 @@ jobs:
           call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
           set DISTUTILS_USE_SDK=1
           set VLLM_TARGET_DEVICE=cuda
+          set VLLM_FORCE_TARGET_DEVICE=cuda
           set MAX_JOBS=8
           set CUDA_ROOT=%CUDA_PATH%
           set CUDA_HOME=%CUDA_PATH%
