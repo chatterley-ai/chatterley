@@ -101,6 +101,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install wheel ninja packaging setuptools
+          pip install setuptools-scm
 
       - name: Enable long paths for git
         shell: pwsh
@@ -135,6 +136,7 @@ jobs:
           set DISTUTILS_USE_SDK=1
           set VLLM_TARGET_DEVICE=cuda
           set VLLM_FORCE_TARGET_DEVICE=cuda
+          set SETUPTOOLS_SCM_PRETEND_VERSION=${{ env.VLLM_VERSION }}
           set MAX_JOBS=8
           set CUDA_ROOT=%CUDA_PATH%
           set CUDA_HOME=%CUDA_PATH%
