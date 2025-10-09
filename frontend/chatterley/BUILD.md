@@ -128,7 +128,7 @@ export WIN_CSC_KEY_PASSWORD="certificate-password"
 #### Prebuilt `vLLM` wheels
 - Trigger the **Build vLLM wheel (Windows)** workflow (`.github/workflows/build-vllm-windows.yml`).
 - By default it builds wheels for Python 3.11–3.13 targeting CUDA 12.6. Each run uploads artifacts named `vllm-windows-wheel-cu126-py3.11`, etc.
-- Extract the wheels into `frontend/chatterley/python-wheels/vllm/cuda12.6/`.
+- Extract the wheels into `frontend/chatterley/python-wheels/vllm/cuda12.6/` or `cuda12.4/` depending on the CUDA runtime you plan to ship.
 - The environment setup will install the bundled wheel automatically on Windows when the GPU extras are selected (no Git required).
 
 ### Linux (AppImage + DEB + RPM)

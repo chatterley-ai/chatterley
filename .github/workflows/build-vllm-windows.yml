@@ -7,39 +7,55 @@ on:
         description: vLLM Windows version to build
         required: false
         default: 0.10.1.1
-      python_version:
-        description: Python versions (comma separated) e.g. "3.11,3.12,3.13"
-        required: false
-        default: 3.11,3.12,3.13
-      torch_version:
-        description: Torch version (with CUDA suffix)
-        required: false
-        default: 2.7.1+cu126
-      torchaudio_version:
-        description: torchaudio version (with CUDA suffix)
-        required: false
-        default: 2.7.1+cu126
-      torchvision_version:
-        description: torchvision version (with CUDA suffix)
-        required: false
-        default: 0.22.1+cu126
-      torch_index_url:
-        description: Torch index URL
-        required: false
-        default: https://download.pytorch.org/whl/cu126
 
 jobs:
   build:
     runs-on: windows-2022
     strategy:
       matrix:
-        python-version: ${{ fromJson('["' + replace(github.event.inputs.python_version || '3.11,3.12,3.13', ',', '","') + '"]') }}
+        include:
+          - python-version: '3.11'
+            cuda_short: '12.6'
+            cuda_installer_url: 'https://developer.download.nvidia.com/compute/cuda/12.6.3/local_installers/cuda_12.6.3_windows.exe'
+            torch_version: '2.7.1+cu126'
+            torchaudio_version: '2.7.1+cu126'
+            torchvision_version: '0.22.1+cu126'
+            torch_index_url: 'https://download.pytorch.org/whl/cu126'
+            artifact_suffix: 'cu126'
+          - python-version: '3.12'
+            cuda_short: '12.6'
+            cuda_installer_url: 'https://developer.download.nvidia.com/compute/cuda/12.6.3/local_installers/cuda_12.6.3_windows.exe'
+            torch_version: '2.7.1+cu126'
+            torchaudio_version: '2.7.1+cu126'
+            torchvision_version: '0.22.1+cu126'
+            torch_index_url: 'https://download.pytorch.org/whl/cu126'
+            artifact_suffix: 'cu126'
+          - python-version: '3.13'
+            cuda_short: '12.6'
+            cuda_installer_url: 'https://developer.download.nvidia.com/compute/cuda/12.6.3/local_installers/cuda_12.6.3_windows.exe'
+            torch_version: '2.7.1+cu126'
+            torchaudio_version: '2.7.1+cu126'
+            torchvision_version: '0.22.1+cu126'
+            torch_index_url: 'https://download.pytorch.org/whl/cu126'
+            artifact_suffix: 'cu126'
+          - python-version: '3.11'
+            cuda_short: '12.4'
+            cuda_installer_url: 'https://developer.download.nvidia.com/compute/cuda/12.4.1/local_installers/cuda_12.4.1_windows.exe'
+            torch_version: '2.5.1+cu124'
+            torchaudio_version: '2.5.1+cu124'
+            torchvision_version: '0.20.1+cu124'
+            torch_index_url: 'https://download.pytorch.org/whl/cu124'
+            artifact_suffix: 'cu124'
+          - python-version: '3.12'
+            cuda_short: '12.4'
+            cuda_installer_url: 'https://developer.download.nvidia.com/compute/cuda/12.4.1/local_installers/cuda_12.4.1_windows.exe'
+            torch_version: '2.5.1+cu124'
+            torchaudio_version: '2.5.1+cu124'
+            torchvision_version: '0.20.1+cu124'
+            torch_index_url: 'https://download.pytorch.org/whl/cu124'
+            artifact_suffix: 'cu124'
     env:
       PYTHONUTF8: '1'
-      TORCH_VERSION: ${{ github.event.inputs.torch_version || '2.7.1+cu126' }}
-      TORCHAUDIO_VERSION: ${{ github.event.inputs.torchaudio_version || '2.7.1+cu126' }}
-      TORCHVISION_VERSION: ${{ github.event.inputs.torchvision_version || '0.22.1+cu126' }}
-      TORCH_INDEX_URL: ${{ github.event.inputs.torch_index_url || 'https://download.pytorch.org/whl/cu126' }}
       VLLM_VERSION: ${{ github.event.inputs.vllm_version || '0.10.1.1' }}
     steps:
       - name: Checkout repository
@@ -59,10 +75,10 @@ jobs:
             exit 1
           }
 
-      - name: Install CUDA toolkit 12.6
+      - name: Install CUDA toolkit ${{ matrix.cuda_short }}
         shell: pwsh
         run: |
-          $installerUrl = 'https://developer.download.nvidia.com/compute/cuda/12.6.3/local_installers/cuda_12.6.3_windows.exe'
+          $installerUrl = '${{ matrix.cuda_installer_url }}'
           $installerPath = Join-Path $env:RUNNER_TEMP 'cuda_installer.exe'
           Write-Host "Downloading CUDA toolkit from $installerUrl"
           Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath
@@ -89,11 +105,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install wheel ninja packaging setuptools
 
-      - name: Install PyTorch (${{ env.TORCH_VERSION }})
+      - name: Install PyTorch (${{ matrix.torch_version }})
         shell: pwsh
         working-directory: vllm-windows
         run: |
-          pip install torch==${{ env.TORCH_VERSION }} torchaudio==${{ env.TORCHAUDIO_VERSION }} torchvision==${{ env.TORCHVISION_VERSION }} --index-url ${{ env.TORCH_INDEX_URL }}
+          pip install torch==${{ matrix.torch_version }} torchaudio==${{ matrix.torchaudio_version }} torchvision==${{ matrix.torchvision_version }} --index-url ${{ matrix.torch_index_url }}
 
       - name: Install build requirements
         shell: pwsh
@@ -123,6 +139,6 @@ jobs:
       - name: Upload vLLM wheel artifact
         uses: actions/upload-artifact@v4
         with:
-          name: vllm-windows-wheel-cu126-py${{ matrix.python-version }}
+          name: vllm-windows-wheel-cuda${{ matrix.cuda_short }}-py${{ matrix.python-version }}-${{ matrix.artifact_suffix }}
           path: vllm-windows/dist/*.whl
           if-no-files-found: error
