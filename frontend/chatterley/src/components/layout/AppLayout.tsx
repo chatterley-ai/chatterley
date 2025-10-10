@@ -158,7 +158,18 @@ React.useEffect(() => {
       return;
     }
 
-    const electronAPI = (window as any).electronAPI;
+    interface ElectronAPI {
+      platform?: { os: string };
+      app?: {
+        minimize?: () => void;
+        toggleMaximize?: () => void;
+        close?: () => void;
+        isMaximized?: () => Promise<boolean>;
+        onWindowStateChange?: (handler: (state: { isMaximized: boolean }) => void) => void;
+        offWindowStateChange?: (handler: (state: { isMaximized: boolean }) => void) => void;
+      };
+    }
+    const electronAPI = (window as Window & { electronAPI?: ElectronAPI }).electronAPI;
     if (!electronAPI?.platform || electronAPI.platform.os !== 'win32') {
       return;
     }
@@ -198,7 +209,12 @@ React.useEffect(() => {
     }
 
     try {
-      const electronAPI = (window as any).electronAPI;
+      interface ElectronAPI {
+        app?: {
+          minimize?: () => void;
+        };
+      }
+      const electronAPI = (window as Window & { electronAPI?: ElectronAPI }).electronAPI;
       electronAPI?.app?.minimize?.();
     } catch (error) {
       console.error('Failed to minimize window:', error);
@@ -211,7 +227,12 @@ React.useEffect(() => {
     }
 
     try {
-      const electronAPI = (window as any).electronAPI;
+      interface ElectronAPI {
+        app?: {
+          toggleMaximize?: () => void;
+        };
+      }
+      const electronAPI = (window as Window & { electronAPI?: ElectronAPI }).electronAPI;
       electronAPI?.app?.toggleMaximize?.();
     } catch (error) {
       console.error('Failed to toggle maximize state:', error);
@@ -224,7 +245,12 @@ React.useEffect(() => {
     }
 
     try {
-      const electronAPI = (window as any).electronAPI;
+      interface ElectronAPI {
+        app?: {
+          close?: () => void;
+        };
+      }
+      const electronAPI = (window as Window & { electronAPI?: ElectronAPI }).electronAPI;
       electronAPI?.app?.close?.();
     } catch (error) {
       console.error('Failed to close window:', error);

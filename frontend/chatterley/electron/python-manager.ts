@@ -1362,6 +1362,56 @@ export class PythonServerManager {
   }
 
   /**
+   * Ensure the managed Python environment exists and is ready for use.
+   */
+  public async ensureEnvironmentReady(): Promise<EnvironmentInfo> {
+    await this.ensurePythonEnvironment();
+
+    if (!this.environmentInfo || !this.environmentInfo.isValid || !this.environmentInfo.pythonPath) {
+      const errorMsg = 'Managed Python environment is not ready';
+      log.error(`[PythonServerManager] ${errorMsg}`, this.environmentInfo);
+      throw new Error(errorMsg);
+    }
+
+    return this.environmentInfo;
+  }
+
+  /**
+   * Provide a ready-to-use Python interpreter path and environment variables for auxiliary tasks.
+   */
+  public async getPythonExecutionContext(): Promise<{ pythonPath: string; env: NodeJS.ProcessEnv }> {
+    const info = await this.ensureEnvironmentReady();
+    const env = await this.getCleanEnvironment();
+
+    const envPath = info.path;
+    const pythonPath = info.pythonPath;
+
+    if (!envPath || !pythonPath) {
+      const errorMsg = 'Python execution context missing environment path or interpreter';
+      log.error(`[PythonServerManager] ${errorMsg}`, { envPath, pythonPath });
+      throw new Error(errorMsg);
+    }
+
+    const binDir = process.platform === 'win32'
+      ? path.join(envPath, 'Scripts')
+      : path.join(envPath, 'bin');
+
+    const delimiter = path.delimiter;
+    const existingPath = env.PATH ?? process.env.PATH ?? '';
+    const combinedPath = binDir
+      ? `${binDir}${delimiter}${existingPath}`
+      : existingPath;
+
+    env.PATH = combinedPath;
+    if (process.platform === 'win32') {
+      env.Path = combinedPath;
+    }
+    env.VIRTUAL_ENV = envPath;
+
+    return { pythonPath, env };
+  }
+
+  /**
    * Get user data directory path
    */
   public getUserDataPath(): string {

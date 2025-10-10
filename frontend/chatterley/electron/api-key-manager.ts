@@ -10,6 +10,7 @@ import log from 'electron-log';
 import * as path from 'path';
 import * as fs from 'fs';
 import { executePythonCode } from './python-utils';
+import type { PythonServerManager } from './python-manager';
 
 export interface ApiKeyConfig {
   providerId: string;
@@ -29,6 +30,7 @@ export interface ApiValidationResult {
 class ApiKeyManager {
   private encryptedStore: Store;
   private encryptionKey: string;
+  private pythonManager: PythonServerManager | null = null;
 
   constructor() {
     // Generate machine-specific encryption key
@@ -65,6 +67,10 @@ class ApiKeyManager {
     }
 
     log.info('[ApiKeyManager] Initialized with encrypted storage');
+  }
+
+  public setPythonManager(manager: PythonServerManager): void {
+    this.pythonManager = manager;
   }
 
   /**
@@ -197,6 +203,12 @@ class ApiKeyManager {
    * Validate API key using Oumi configuration
    */
   public async validateApiKeyWithOumi(providerId: string): Promise<ApiValidationResult> {
+    if (!this.pythonManager) {
+      const errorMsg = 'Python manager not configured for API key validation';
+      log.error(`[ApiKeyManager] ${errorMsg}`);
+      throw new Error(errorMsg);
+    }
+
     const apiKey = this.getApiKey(providerId);
     if (!apiKey) {
       return { isValid: false, error: 'API key not found' };
@@ -205,6 +217,9 @@ class ApiKeyManager {
     try {
       log.info(`[ApiKeyManager] Validating API key for ${providerId} using Oumi`);
 
+      const { pythonPath, env: baseEnv } = await this.pythonManager.getPythonExecutionContext();
+      const env = { ...baseEnv };
+
       // Find appropriate API config for the provider
       const configPath = await this.findApiConfigForProvider(providerId);
       if (!configPath) {
@@ -212,7 +227,13 @@ class ApiKeyManager {
       }
 
       // Test the API key using Oumi
-      const result = await this.testWithOumiConfig(configPath, providerId, apiKey.keyValue);
+      const result = await this.testWithOumiConfig(
+        configPath,
+        providerId,
+        apiKey.keyValue,
+        pythonPath,
+        env
+      );
       
       // Update the stored key with validation result
       this.updateApiKeyStatus(providerId, {
@@ -281,10 +302,16 @@ class ApiKeyManager {
   /**
    * Test API key using Oumi configuration
    */
-  private async testWithOumiConfig(configPath: string, providerId: string, apiKey: string): Promise<ApiValidationResult> {
+  private async testWithOumiConfig(
+    configPath: string,
+    providerId: string,
+    apiKey: string,
+    pythonPath: string,
+    baseEnv: NodeJS.ProcessEnv
+  ): Promise<ApiValidationResult> {
     try {
       // Set up environment with API key
-      const env = { ...process.env };
+      const env = { ...baseEnv };
       const envVarMap: Record<string, string> = {
         'openai': 'OPENAI_API_KEY',
         'anthropic': 'ANTHROPIC_API_KEY', 
@@ -320,7 +347,8 @@ except Exception as e:
 
       const result = await executePythonCode(testScript, {
         env,
-        timeout: 10000
+        timeout: 10000,
+        pythonPath
       });
 
       if (result.success && result.stdout) {
@@ -450,3 +478,7 @@ except Exception as e:
 }
 
 export const apiKeyManager = new ApiKeyManager();
+
+export function attachPythonManager(manager: PythonServerManager): void {
+  apiKeyManager.setPythonManager(manager);
+}
