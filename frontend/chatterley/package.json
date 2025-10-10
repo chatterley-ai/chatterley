@@ -118,6 +118,10 @@
       "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}",
       "!**/{appveyor.yml,.travis.yml,circle.yml}",
       "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
+      ,
+      "!python-wheels/**",
+      "!windows-tools/**",
+      "!windows-runners/**"
     ],
     "extraResources": [
       {
@@ -161,34 +165,6 @@
           "!**/*.pyc",
           "!**/*.pyo"
         ]
-      },
-      {
-        "from": "python-wheels/",
-        "to": "python-wheels",
-        "filter": [
-          "**/*"
-        ]
-      },
-      {
-        "from": "python-wheels/vllm/",
-        "to": "python-wheels/vllm",
-        "filter": [
-          "**/*"
-        ]
-      },
-      {
-        "from": "windows-tools/",
-        "to": "windows-tools",
-        "filter": [
-          "**/*"
-        ]
-      },
-      {
-        "from": "windows-runners/",
-        "to": "windows-runners",
-        "filter": [
-          "**/*"
-        ]
       }
     ],
     "mac": {
@@ -222,16 +198,11 @@
         {
           "target": "dmg",
           "arch": "arm64"
-        },
-        {
-          "target": "zip",
-          "arch": [
-            "arm64"
-          ]
         }
       ]
     },
     "dmg": {
+      "writeUpdateInfo": false,
       "contents": [
         {
           "x": 130,
@@ -263,6 +234,27 @@
             "!**/__pycache__/**",
             "!**/*.pyc",
             "!**/*.pyo"
+          ]
+        },
+        {
+          "from": "python-wheels/",
+          "to": "python-wheels",
+          "filter": [
+            "**/*"
+          ]
+        },
+        {
+          "from": "windows-tools/",
+          "to": "windows-tools",
+          "filter": [
+            "**/*"
+          ]
+        },
+        {
+          "from": "windows-runners/",
+          "to": "windows-runners",
+          "filter": [
+            "**/*"
           ]
         }
       ],

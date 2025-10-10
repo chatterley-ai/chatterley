@@ -523,7 +523,7 @@ function AboutSettings() {
           </div>
           <div className="flex items-center justify-between py-2">
             <span className="text-muted-foreground">Last Update</span>
-            <span>{BUILD_DATE !== '__BUILD_DATE__' ? BUILD_DATE : 'Development'}</span>
+            <span>{BUILD_DATE && BUILD_DATE.length > 0 ? BUILD_DATE : 'Development'}</span>
           </div>
         </div>
 
