@@ -317,11 +317,7 @@ class ApiKeyManager {
         'anthropic': 'ANTHROPIC_API_KEY', 
         'google': 'GOOGLE_API_KEY',
         'gemini': 'GOOGLE_API_KEY',
-        'together': 'TOGETHER_API_KEY',
-        'deepseek': 'DEEPSEEK_API_KEY',
-        'sambanova': 'SAMBANOVA_API_KEY',
-        'parasail': 'PARASAIL_API_KEY',
-        'lambda': 'LAMBDA_API_KEY'
+        'together': 'TOGETHER_API_KEY'
       };
 
       const envVar = envVarMap[providerId];
@@ -442,7 +438,7 @@ except Exception as e:
       }
       
       // Approach 2: Try using the existing getApiKey method for known providers
-      const knownProviders = ['openai', 'anthropic', 'google', 'gemini', 'together', 'deepseek'];
+      const knownProviders = ['openai', 'anthropic', 'google', 'gemini', 'together'];
       log.info(`[ApiKeyManager] Trying getApiKey method for known providers...`);
       
       for (const providerId of knownProviders) {

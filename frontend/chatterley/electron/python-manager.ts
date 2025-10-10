@@ -785,17 +785,7 @@ export class PythonServerManager {
         'anthropic': 'ANTHROPIC_API_KEY',
         'google': 'GOOGLE_API_KEY',
         'gemini': 'GOOGLE_API_KEY',
-        'together': 'TOGETHER_API_KEY',
-        'deepseek': 'DEEPSEEK_API_KEY',
-        'sambanova': 'SAMBANOVA_API_KEY',
-        'parasail': 'PARASAIL_API_KEY',
-        'lambda': 'LAMBDA_API_KEY',
-        'perplexity': 'PERPLEXITY_API_KEY',
-        'fireworks': 'FIREWORKS_API_KEY',
-        'groq': 'GROQ_API_KEY',
-        'azure': 'AZURE_OPENAI_KEY',
-        'cohere': 'COHERE_API_KEY',
-        'mistral': 'MISTRAL_API_KEY'
+        'together': 'TOGETHER_API_KEY'
       };
 
       // Add API keys to environment if they exist

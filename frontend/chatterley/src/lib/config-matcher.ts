@@ -472,7 +472,36 @@ export class ConfigMatcher {
     configs: ConfigOption[],
     system: SystemCapabilities
   ): Array<ConfigOption & { recommendation?: ConfigRecommendation }> {
-    const sortedConfigs = configs
+    const disallowedApiFragments = [
+      'deepseek',
+      'sambanova',
+      'parasail',
+      'lambda',
+      'vertex',
+      'google_vertex',
+      'cohere',
+      'mistral',
+      'azure',
+      'perplexity',
+      'fireworks'
+    ];
+
+    const filteredConfigs = configs.filter(config => {
+      const engineLower = (config.engine || '').toLowerCase();
+      if (!engineLower) {
+        return true;
+      }
+
+      // Keep allowed API engines and all non-API engines
+      if (this.isApiBasedEngine(engineLower)) {
+        return true;
+      }
+
+      // Remove disallowed API engines
+      return !disallowedApiFragments.some(fragment => engineLower.includes(fragment));
+    });
+
+    const sortedConfigs = filteredConfigs
       .map(config => ({
         ...config,
         recommendation: this.evaluateConfig(config, system)

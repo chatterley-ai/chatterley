@@ -4,7 +4,7 @@
 
 "use client";
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { 
   Key, 
   Eye, 
@@ -417,7 +417,10 @@ export default function ApiSettings({ onClose }: ApiSettingsProps) {
   const [validationResults, setValidationResults] = useState<{ [providerId: string]: { isValid: boolean; error?: string } }>({});
   const [showHfToken, setShowHfToken] = useState(false);
 
-  const providers = getAllProviders();
+  const providers = useMemo(() => {
+    const allowed = new Set(['openai', 'anthropic', 'google', 'together']);
+    return getAllProviders().filter(provider => allowed.has(provider.id));
+  }, []);
   const hasAnyKeys = Object.keys(settings.apiKeys).length > 0;
   const activeKeys = Object.values(settings.apiKeys).filter(key => key.isActive).length;
 
@@ -441,7 +444,7 @@ export default function ApiSettings({ onClose }: ApiSettingsProps) {
     setEditingProvider(null);
   };
 
-  const popularProviders = providers.filter(p => ['openai', 'anthropic', 'google'].includes(p.id));
+  const popularProviders = providers.filter(p => ['openai', 'anthropic', 'google', 'together'].includes(p.id));
 
   const handleHuggingFaceUpdate = (field: 'username' | 'token', value: string) => {
     updateSettings({

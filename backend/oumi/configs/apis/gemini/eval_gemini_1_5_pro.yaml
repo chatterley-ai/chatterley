@@ -1,5 +1,6 @@
 model:
   model_name: "gemini-1.5-pro"
+  model_max_length: 2000000
 
 inference_engine: GOOGLE_GEMINI
 

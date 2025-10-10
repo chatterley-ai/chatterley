@@ -1,0 +1,21 @@
+# TogetherAI inference config for Mixtral 8x22B Instruct.
+#
+# Requirements:
+#   - Set environment variable: export TOGETHER_API_KEY=your_key_here
+#
+# Usage:
+#   oumi infer -i -c configs/apis/together/infer_mixtral_8x22b.yaml
+#
+# Notes:
+#   - This configuration uses the Together API compatible inference engine.
+#   - Mixtral 8x22B supports a 32K context window when served via Together.
+
+model:
+  model_name: "mistralai/Mixtral-8x22B-Instruct-v0.1"
+  model_max_length: 32768
+
+engine: TOGETHER
+
+generation:
+  max_new_tokens: 8192
+  temperature: 0.7
