@@ -419,7 +419,7 @@ function SystemSettings() {
           {installMsg && <div className="text-xs text-muted-foreground">{installMsg}</div>}
         </div>
         <p className="text-xs text-muted-foreground">
-          These packages can enable faster inference on supported hardware. Installs occur inside Chatterley's managed Python environment and may fail on unsupported systems.
+          These packages can enable faster inference on supported hardware. Installs occur inside Chatterley&apos;s managed Python environment and may fail on unsupported systems.
         </p>
 
         <div className="space-y-3">

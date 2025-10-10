@@ -1,5 +1,6 @@
 model:
   model_name: "gpt-4o"
+  model_max_length: 128000
 
 inference_engine: OPENAI
 

@@ -8,7 +8,7 @@ import React from 'react';
 import { Activity, Cpu, HardDrive, Zap, MessageSquare, Wifi, WifiOff, Clock } from 'lucide-react';
 import apiClient from '@/lib/unified-api';
 import { useChatStore } from '@/lib/store';
-import { ModelConfigMetadata, AppSettings } from '@/lib/types';
+import { ModelConfigMetadata } from '@/lib/types';
 
 interface SystemStats {
   cpu_percent?: number;
@@ -377,12 +377,14 @@ export default function SystemMonitor({
     }
   };
 
+  // Reload model function - kept for future use
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const reloadModel = async () => {
     setIsModelActionLoading(true);
     try {
       // First unload the model
       await unloadModel();
-      
+
       // Wait a bit then check if model is available (but not loaded until tested)
       setTimeout(async () => {
         await checkModelStatus();

@@ -14,6 +14,7 @@ export interface PythonExecutionOptions {
   cwd?: string;
   timeout?: number;
   stdio?: 'pipe' | 'inherit' | 'ignore';
+  pythonPath?: string;
 }
 
 export interface PythonExecutionResult {
@@ -146,13 +147,37 @@ export async function executePythonCode(
   code: string, 
   options: PythonExecutionOptions = {}
 ): Promise<PythonExecutionResult> {
+  const { pythonPath, ...execOptions } = options;
   const commands = getPythonCommands();
   let lastError = '';
+
+  if (pythonPath) {
+    try {
+      log.info(`[PythonUtils] Using explicit Python interpreter: ${pythonPath}`);
+      const result = await runPythonProcess(pythonPath, ['-c', code], execOptions);
+
+      if (result.success || result.exitCode === 0) {
+        log.info('[PythonUtils] Execution succeeded with explicit interpreter');
+        return result;
+      }
+
+      if (result.stderr && !result.stderr.includes('ENOENT')) {
+        log.warn('[PythonUtils] Explicit interpreter returned error:', result.stderr);
+        return result;
+      }
+
+      lastError = result.stderr || result.error || '';
+      log.warn('[PythonUtils] Explicit interpreter unavailable, falling back to discovery');
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+      log.warn('[PythonUtils] Failed using explicit interpreter, falling back:', lastError);
+    }
+  }
 
   for (const pythonCmd of commands) {
     try {
       log.info(`[PythonUtils] Trying Python command: ${pythonCmd}`);
-      const result = await runPythonProcess(pythonCmd, ['-c', code], options);
+      const result = await runPythonProcess(pythonCmd, ['-c', code], execOptions);
       
       if (result.success || result.exitCode === 0) {
         log.info(`[PythonUtils] Successfully executed with: ${pythonCmd}`);
@@ -186,6 +211,8 @@ export async function executePythonScript(
   args: string[] = [],
   options: PythonExecutionOptions = {}
 ): Promise<PythonExecutionResult> {
+  const { pythonPath, ...execOptions } = options;
+
   if (!fs.existsSync(scriptPath)) {
     return {
       success: false,
@@ -196,13 +223,37 @@ export async function executePythonScript(
     };
   }
 
+  if (pythonPath) {
+    try {
+      log.info(`[PythonUtils] Running script with explicit interpreter: ${pythonPath}`);
+      const result = await runPythonProcess(pythonPath, [scriptPath, ...args], execOptions);
+
+      if (result.success || result.exitCode === 0) {
+        log.info('[PythonUtils] Script executed successfully with explicit interpreter');
+        return result;
+      }
+
+      if (result.stderr && !result.stderr.includes('ENOENT')) {
+        log.warn('[PythonUtils] Explicit interpreter script error:', result.stderr);
+        return result;
+      }
+
+      log.warn('[PythonUtils] Explicit interpreter unavailable, falling back to discovery');
+    } catch (error) {
+      log.warn(
+        '[PythonUtils] Failed to run script with explicit interpreter, falling back:',
+        error instanceof Error ? error.message : String(error)
+      );
+    }
+  }
+
   const commands = getPythonCommands();
   let lastError = '';
 
   for (const pythonCmd of commands) {
     try {
       log.info(`[PythonUtils] Trying to run script with: ${pythonCmd} ${scriptPath}`);
-      const result = await runPythonProcess(pythonCmd, [scriptPath, ...args], options);
+      const result = await runPythonProcess(pythonCmd, [scriptPath, ...args], execOptions);
       
       if (result.success || result.exitCode === 0) {
         log.info(`[PythonUtils] Successfully executed script with: ${pythonCmd}`);

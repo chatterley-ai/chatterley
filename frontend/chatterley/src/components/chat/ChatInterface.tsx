@@ -397,7 +397,7 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
             console.log('[ChatInterface] Setting isOmniCapable from getModels:', derived);
             setIsOmniCapable(derived);
           }
-          await safeSyncSettings(modelEntry as any, md as any);
+          await safeSyncSettings(modelEntry as { id?: string; config_metadata?: Record<string, unknown> }, md as Record<string, unknown> | null | undefined);
         } catch (metaError) {
           console.warn('[ChatInterface] Failed to interpret config metadata from getModels:', metaError);
         }
@@ -441,7 +441,7 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
             console.log('[ChatInterface] Setting isOmniCapable from recheck:', derived);
             setIsOmniCapable(derived);
           }
-          await safeSyncSettings(modelEntry as any, md as any);
+          await safeSyncSettings(modelEntry as { id?: string; config_metadata?: Record<string, unknown> }, md as Record<string, unknown> | null | undefined);
         } catch (metaError) {
           console.warn('[ChatInterface] Failed to interpret config metadata from recheck:', metaError);
         }
