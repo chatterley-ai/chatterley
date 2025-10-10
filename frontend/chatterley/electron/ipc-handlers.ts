@@ -1199,7 +1199,7 @@ function setupApiKeyHandlers(pythonManager: PythonServerManager): void {
   // Clear all API keys (security reset)
   ipcMain.handle('apikey:clear-all', async () => {
     try {
-      apiKeyManager.clearAllKeys();
+      await apiKeyManager.clearAllKeys();
       return { success: true };
     } catch (error) {
       log.error('Failed to clear API keys:', error);
