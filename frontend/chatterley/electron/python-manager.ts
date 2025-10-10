@@ -232,6 +232,35 @@ export class PythonServerManager {
   }
 
   /**
+   * Apply environment variable changes related to API keys and restart if needed.
+   */
+  public async applyApiKeyUpdate(envVar: string, value: string | null, restart: boolean = true): Promise<void> {
+    if (value) {
+      process.env[envVar] = value;
+    } else {
+      delete process.env[envVar];
+    }
+
+    if (!restart) {
+      log.info(`[PythonServerManager] API key update applied for ${envVar}; restart not requested.`);
+      return;
+    }
+
+    if (!this.isServerRunning()) {
+      log.info(`[PythonServerManager] API key update applied for ${envVar}; server not running so no restart needed.`);
+      return;
+    }
+
+    try {
+      log.info(`[PythonServerManager] Restarting backend to apply API key update for ${envVar}`);
+      await this.restart();
+    } catch (error) {
+      log.error('[PythonServerManager] Failed to restart after API key update:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Get server port
    */
   public getPort(): number {

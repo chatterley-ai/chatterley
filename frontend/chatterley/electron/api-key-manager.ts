@@ -31,6 +31,13 @@ class ApiKeyManager {
   private encryptedStore: Store;
   private encryptionKey: string;
   private pythonManager: PythonServerManager | null = null;
+  private static readonly PROVIDER_ENV_MAP: Record<string, string> = {
+    openai: 'OPENAI_API_KEY',
+    anthropic: 'ANTHROPIC_API_KEY',
+    google: 'GOOGLE_API_KEY',
+    gemini: 'GOOGLE_API_KEY',
+    together: 'TOGETHER_API_KEY'
+  };
 
   constructor() {
     // Generate machine-specific encryption key
@@ -114,6 +121,7 @@ class ApiKeyManager {
       });
       
       log.info(`[ApiKeyManager] Stored API key for provider: ${config.providerId}`);
+      void this.propagateApiKeyChange(config.providerId, config.keyValue, config.isActive);
     } catch (error) {
       log.error(`[ApiKeyManager] Failed to store API key for ${config.providerId}:`, error);
       throw new Error('Failed to store API key securely');
@@ -169,6 +177,7 @@ class ApiKeyManager {
     try {
       this.encryptedStore.delete(`keys.${providerId}`);
       log.info(`[ApiKeyManager] Removed API key for provider: ${providerId}`);
+      void this.propagateApiKeyChange(providerId, undefined, false);
       return true;
     } catch (error) {
       log.error(`[ApiKeyManager] Failed to remove API key for ${providerId}:`, error);
@@ -192,6 +201,7 @@ class ApiKeyManager {
 
       this.encryptedStore.set(`keys.${providerId}`, updated);
       log.info(`[ApiKeyManager] Updated API key status for provider: ${providerId}`);
+      void this.propagateApiKeyChange(providerId, updated.keyValue, updated.isActive);
       return true;
     } catch (error) {
       log.error(`[ApiKeyManager] Failed to update API key status for ${providerId}:`, error);
@@ -466,9 +476,46 @@ except Exception as e:
     try {
       this.encryptedStore.clear();
       log.info('[ApiKeyManager] Cleared all stored API keys');
+      const providers = Object.keys(ApiKeyManager.PROVIDER_ENV_MAP);
+      await Promise.all(
+        providers.map((providerId) => this.propagateApiKeyChange(providerId, undefined, false, false))
+      );
+      if (this.pythonManager && this.pythonManager.isServerRunning()) {
+        try {
+          log.info('[ApiKeyManager] Restarting backend after clearing API keys');
+          await this.pythonManager.restart();
+        } catch (error) {
+          log.warn('[ApiKeyManager] Failed to restart backend after clearing API keys:', error);
+        }
+      }
     } catch (error) {
       log.error('[ApiKeyManager] Failed to clear API keys:', error);
       throw new Error('Failed to clear API keys');
+    }
+  }
+
+  private async propagateApiKeyChange(providerId: string, keyValue?: string, isActive?: boolean, restart: boolean = true): Promise<void> {
+    const envVar = ApiKeyManager.PROVIDER_ENV_MAP[providerId.toLowerCase()];
+    if (!envVar) {
+      return;
+    }
+
+    const value = keyValue && isActive !== false ? keyValue : null;
+
+    if (value) {
+      process.env[envVar] = value;
+    } else {
+      delete process.env[envVar];
+    }
+
+    if (!this.pythonManager) {
+      return;
+    }
+
+    try {
+      await this.pythonManager.applyApiKeyUpdate(envVar, value, restart);
+    } catch (error) {
+      log.warn(`[ApiKeyManager] Failed to propagate API key change for ${providerId}:`, error);
     }
   }
 }
