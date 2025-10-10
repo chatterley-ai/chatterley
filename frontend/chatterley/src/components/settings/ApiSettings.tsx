@@ -12,8 +12,7 @@ import {
   Plus, 
   Check, 
   X, 
-  AlertCircle, 
-  DollarSign,
+  AlertCircle,
   Settings,
   Shield,
   RefreshCw,
@@ -22,7 +21,7 @@ import {
   Zap
 } from 'lucide-react';
 import { useChatStore } from '@/lib/store';
-import { getAllProviders, formatCost } from '@/lib/api-providers';
+import { getAllProviders } from '@/lib/api-providers';
 import { apiValidationService } from '@/lib/api-validation';
 import { ApiProvider, ApiKeyConfig, ApiValidationResult } from '@/lib/types';
 import apiClient from '@/lib/unified-api';
@@ -238,10 +237,6 @@ function ProviderCard({
   const isActive = apiKey?.isActive || false;
   const isValidated = apiKey?.isValid;
 
-  const totalCost = apiKey?.usage?.totalCost || 0;
-  const totalTokens = apiKey?.usage?.totalTokens || 0;
-  const totalRequests = apiKey?.usage?.totalRequests || 0;
-
   const statusColor = !hasKey 
     ? 'text-muted-foreground' 
     : isValidated === false 
@@ -315,70 +310,6 @@ function ProviderCard({
           </a>
         </div>
       </div>
-
-      {/* Models */}
-      <div className="mb-4">
-        <h4 className="text-xs font-medium text-muted-foreground mb-2">
-          Available Models ({provider.models.length})
-        </h4>
-        <div className="grid grid-cols-1 gap-2">
-          {provider.models.slice(0, 3).map((model) => (
-            <div key={model.id} className="flex items-center justify-between text-xs p-2 bg-muted/50 rounded">
-              <div>
-                <span className="font-medium">{model.displayName}</span>
-                <div className="flex items-center gap-2 mt-1 flex-wrap">
-                  {model.tags?.slice(0, 3).map((tag) => (
-                    <span key={tag} className="px-1.5 py-0.5 bg-primary/10 text-primary rounded-full text-[10px]">
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              </div>
-              <div className="text-right">
-                <div className="text-muted-foreground">
-                  {(model.contextLength / 1000).toFixed(0)}K ctx
-                </div>
-                {model.inputCost && (
-                  <div className="text-muted-foreground">
-                    ${model.inputCost}/$
-                    {model.outputCost}/1M
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
-          {provider.models.length > 3 && (
-            <div className="text-xs text-muted-foreground text-center py-1">
-              +{provider.models.length - 3} more models
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Usage Stats */}
-      {hasKey && totalRequests > 0 && (
-        <div className="mb-4 p-3 bg-muted/30 rounded-lg">
-          <h4 className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1">
-            <DollarSign size={12} />
-            Usage This Month
-          </h4>
-          <div className="grid grid-cols-3 gap-3 text-xs">
-            <div className="text-center">
-              <div className="font-mono text-foreground">{totalRequests.toLocaleString()}</div>
-              <div className="text-muted-foreground">Requests</div>
-            </div>
-            <div className="text-center">
-              <div className="font-mono text-foreground">{(totalTokens / 1000).toFixed(1)}K</div>
-              <div className="text-muted-foreground">Tokens</div>
-            </div>
-            <div className="text-center">
-              <div className="font-mono text-foreground">{formatCost(totalCost)}</div>
-              <div className="text-muted-foreground">Cost</div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Action Button */}
       <button
         onClick={hasKey ? onEditKey : onAddKey}
@@ -727,21 +658,6 @@ export default function ApiSettings({ onClose }: ApiSettingsProps) {
           Settings
         </h3>
         <div className="space-y-4">
-          <label className="flex items-center justify-between">
-            <div>
-              <div className="font-medium text-sm">Usage Monitoring</div>
-              <div className="text-xs text-muted-foreground">
-                Track API costs and token usage
-              </div>
-            </div>
-            <input
-              type="checkbox"
-              checked={settings.usageMonitoring}
-              onChange={(e) => updateSettings({ usageMonitoring: e.target.checked })}
-              className="rounded"
-            />
-          </label>
-          
           <label className="flex items-center justify-between">
             <div>
               <div className="font-medium text-sm">Auto-validate Keys</div>
