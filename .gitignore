@@ -11,7 +11,8 @@ notebooks/*tutorial*
 # Evaluation results
 results/
 notes/
-chatterley-ai.github.io/
+# frontend build
+frontend/chatterley/windows-tools
 
 # Pyright Config
 pyrightconfig.json
