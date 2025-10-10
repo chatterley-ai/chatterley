@@ -10,7 +10,7 @@ const https = require('https');
 const { execSync } = require('child_process');
 
 // Configuration
-const PYTHON_VERSION = '3.11';  // Use Python 3.11 for good compatibility
+const PYTHON_VERSION = '3.12';  // Use Python 3.12 for bundled runtime
 const GITHUB_API_URL = 'https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest';
 
 // Platform-specific distribution patterns

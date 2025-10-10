@@ -22,9 +22,15 @@ export function useApplyAppearanceSettings(): void {
       root.style.setProperty(name.startsWith(VAR_PREFIX) ? name : `${VAR_PREFIX}${name}`, value);
     });
 
+    const baseFontSize = `${(resolved.textScale * 16).toFixed(2)}px`;
+    const baseLineHeight = resolved.lineHeight.toFixed(2);
+
+    root.style.setProperty('font-size', baseFontSize);
+    root.style.setProperty('line-height', baseLineHeight);
+
     body.style.setProperty('fontFamily', resolved.fontFamily);
-    body.style.setProperty('fontSize', `${(resolved.textScale * 16).toFixed(2)}px`);
-    body.style.setProperty('lineHeight', resolved.lineHeight.toFixed(2));
+    body.style.setProperty('fontSize', baseFontSize);
+    body.style.setProperty('lineHeight', baseLineHeight);
     body.dataset.compactUi = resolved.compactMode ? 'true' : 'false';
   }, [appearance]);
 }

@@ -14,6 +14,7 @@
 
 model:
   model_name: "gemini-2.5-pro"
+  model_max_length: 2000000
   is_vision_capable: true
   is_omni_capable: true
 

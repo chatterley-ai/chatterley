@@ -7,7 +7,7 @@ import { promises as fs } from 'fs';
 import Store from 'electron-store';
 import log from 'electron-log';
 import { PythonServerManager, DownloadProgress, DownloadErrorEvent } from './python-manager';
-import { apiKeyManager, ApiKeyConfig } from './api-key-manager';
+import { apiKeyManager, ApiKeyConfig, attachPythonManager } from './api-key-manager';
 
 // Create a resilient store for IPC-backed key/value operations
 function createIpcStore(): Store<any> {
@@ -104,7 +104,7 @@ export function setupIpcHandlers(pythonManager: PythonServerManager): void {
     
     // API key management handlers
     log.info('Setting up API key management handlers...');
-    setupApiKeyHandlers();
+    setupApiKeyHandlers(pythonManager);
     
     log.info('IPC handlers set up successfully');
   } catch (error) {
@@ -164,6 +164,32 @@ function setupAppHandlers(): void {
           break;
       }
     }
+  });
+
+  ipcMain.on('app:minimize', () => {
+    const focusedWindow = BrowserWindow.getFocusedWindow();
+    focusedWindow?.minimize();
+  });
+
+  ipcMain.on('app:toggle-maximize', () => {
+    const focusedWindow = BrowserWindow.getFocusedWindow();
+    if (!focusedWindow) return;
+
+    if (focusedWindow.isMaximized()) {
+      focusedWindow.unmaximize();
+    } else {
+      focusedWindow.maximize();
+    }
+  });
+
+  ipcMain.on('app:close', () => {
+    const focusedWindow = BrowserWindow.getFocusedWindow();
+    focusedWindow?.close();
+  });
+
+  ipcMain.handle('app:is-maximized', () => {
+    const focusedWindow = BrowserWindow.getFocusedWindow();
+    return focusedWindow?.isMaximized() ?? false;
   });
 }
 
@@ -1035,7 +1061,8 @@ function setupTestHandlers(pythonManager: PythonServerManager): void {
 /**
  * API Key Management handlers
  */
-function setupApiKeyHandlers(): void {
+function setupApiKeyHandlers(pythonManager: PythonServerManager): void {
+  attachPythonManager(pythonManager);
   // Store API key securely
   ipcMain.handle('apikey:store', async (_, config: ApiKeyConfig) => {
     try {
@@ -1172,7 +1199,7 @@ function setupApiKeyHandlers(): void {
   // Clear all API keys (security reset)
   ipcMain.handle('apikey:clear-all', async () => {
     try {
-      apiKeyManager.clearAllKeys();
+      await apiKeyManager.clearAllKeys();
       return { success: true };
     } catch (error) {
       log.error('Failed to clear API keys:', error);

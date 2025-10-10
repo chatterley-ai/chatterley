@@ -111,7 +111,7 @@ frontend/
 
 ## Platform Support
 
-- **macOS**: DMG installer and ZIP archive (Intel + Apple Silicon)
+- **macOS (Apple Silicon only)**: DMG installer and ZIP archive
 - **Windows**: NSIS installer and portable executable
 - **Linux**: AppImage and Snap packages
 

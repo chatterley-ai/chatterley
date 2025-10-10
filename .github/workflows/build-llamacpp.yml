@@ -6,18 +6,18 @@ on:
       llama_cpp_version:
         description: llama-cpp-python version to build
         required: false
-        default: 0.3.16
+        default: 0.3.15
       python_version:
         description: Python version (major.minor) for the wheel
         required: false
-        default: '3.11'
+        default: '3.12'
 
 jobs:
   build:
     runs-on: windows-2022
     strategy:
       matrix:
-        python-version: ['3.11', '3.12', '3.13']
+        python-version: ['3.11', '3.12']
     env:
       PYTHONUTF8: '1'
     steps:
@@ -40,11 +40,11 @@ jobs:
         env:
           LLAMA_CPP_VERSION: ${{ inputs.llama_cpp_version }}
         run: |
-          $version = if ($env:LLAMA_CPP_VERSION) { $env:LLAMA_CPP_VERSION } else { '0.3.16' }
+          $version = if ($env:LLAMA_CPP_VERSION) { $env:LLAMA_CPP_VERSION } else { '0.3.15' }
           Write-Host "Building llama-cpp-python version $version for Python ${{ matrix.python-version }}"
 
           mkdir dist | Out-Null
-          $env:CMAKE_ARGS = '-DLLAMA_BLAS=OFF -DLLAMA_CUBLAS=OFF -DLLAMA_CLBLAST=OFF -DLLAMA_METAL=OFF'
+          $env:CMAKE_ARGS = '-DGGML_BLAS=OFF -DGGML_CUDA=OFF -DGGML_METAL=OFF'
           pip wheel --no-deps "llama-cpp-python==$version" --wheel-dir dist
 
       - name: List build artifacts
@@ -65,35 +65,30 @@ jobs:
       matrix:
         include:
           - python-version: '3.11'
-            cuda-short: '11'
-            cuda-redist-version: '11.8.89'
-            cublas-version: '11.11.3.6'
-            cuda-toolkit-choco: '11.8.0.522'
+            cuda-short: '12.4'
+            cuda-redistrib-version: '12.4.127'
+            cublas-version: '12.4.5.8'
+            cuda-installer-url: 'https://developer.download.nvidia.com/compute/cuda/12.4.1/local_installers/cuda_12.4.1_551.78_windows.exe'
           - python-version: '3.12'
-            cuda-short: '11'
-            cuda-redist-version: '11.8.89'
-            cublas-version: '11.11.3.6'
-            cuda-toolkit-choco: '11.8.0.522'
+            cuda-short: '12.4'
+            cuda-redistrib-version: '12.4.127'
+            cublas-version: '12.4.5.8'
+            cuda-installer-url: 'https://developer.download.nvidia.com/compute/cuda/12.4.1/local_installers/cuda_12.4.1_551.78_windows.exe'
           - python-version: '3.13'
-            cuda-short: '11'
-            cuda-redist-version: '11.8.89'
-            cublas-version: '11.11.3.6'
-            cuda-toolkit-choco: '11.8.0.522'
+            cuda-short: '12.4'
+            cuda-redistrib-version: '12.4.127'
+            cublas-version: '12.4.5.8'
+            cuda-installer-url: 'https://developer.download.nvidia.com/compute/cuda/12.4.1/local_installers/cuda_12.4.1_551.78_windows.exe'
           - python-version: '3.11'
-            cuda-short: '12'
-            cuda-redist-version: '12.4.127'
-            cublas-version: '12.4.5.8'
-            cuda-toolkit-choco: '12.4.1'
+            cuda-short: '12.6'
+            cuda-redistrib-version: '12.6.77'
+            cublas-version: '12.6.4.1'
+            cuda-installer-url: 'https://developer.download.nvidia.com/compute/cuda/12.6.3/local_installers/cuda_12.6.3_561.17_windows.exe'
           - python-version: '3.12'
-            cuda-short: '12'
-            cuda-redist-version: '12.4.127'
-            cublas-version: '12.4.5.8'
-            cuda-toolkit-choco: '12.4.1'
-          - python-version: '3.13'
-            cuda-short: '12'
-            cuda-redist-version: '12.4.127'
-            cublas-version: '12.4.5.8'
-            cuda-toolkit-choco: '12.4.1'
+            cuda-short: '12.6'
+            cuda-redistrib-version: '12.6.77'
+            cublas-version: '12.6.4.1'
+            cuda-installer-url: 'https://developer.download.nvidia.com/compute/cuda/12.6.3/local_installers/cuda_12.6.3_561.17_windows.exe'
     env:
       PYTHONUTF8: '1'
     steps:
@@ -108,21 +103,30 @@ jobs:
       - name: Install CUDA toolkit ${{ matrix.cuda-short }}
         shell: pwsh
         run: |
-          $version = '${{ matrix.cuda-toolkit-choco }}'
-          if ($version) {
-            Write-Host "Installing CUDA toolkit version $version via Chocolatey"
-            choco install cuda --version=$version -y --no-progress
-          } else {
-            Write-Host 'Installing latest CUDA toolkit via Chocolatey'
-            choco install cuda -y --no-progress
-          }
+          $installerUrl = '${{ matrix.cuda-installer-url }}'
+          $installerPath = Join-Path $env:RUNNER_TEMP 'cuda_installer.exe'
+          Write-Host "Downloading CUDA toolkit from $installerUrl"
+          Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath
+          Write-Host "Installing CUDA toolkit silently"
+
+          Start-Process -FilePath $installerPath -ArgumentList '-s' -Wait
           $cudaPath = Get-ChildItem 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA' | Sort-Object Name -Descending | Select-Object -First 1
           if (-not $cudaPath) {
             throw 'CUDA toolkit install failed; CUDA path not found.'
           }
-          Write-Host "Using CUDA toolkit path: $($cudaPath.FullName)"
-          echo "CUDA_PATH=$($cudaPath.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
-          echo "PATH=$($cudaPath.FullName)\bin;$env:PATH" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+          $cudaRoot = $cudaPath.FullName
+          $cudaBin = Join-Path $cudaRoot 'bin'
+          $cudaLibNvvp = Join-Path $cudaRoot 'libnvvp'
+
+          Write-Host "Using CUDA toolkit path: $cudaRoot"
+          echo "CUDA_PATH=$cudaRoot" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "CudaToolkitDir=$cudaRoot" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "CUDA_PATH_V12_0=$cudaRoot" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "PATH=$cudaBin;$cudaLibNvvp;$env:PATH" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+          Write-Host 'nvcc version:'
+          & "$($cudaPath.FullName)\bin\nvcc.exe" --version
 
       - name: Upgrade pip and install build tooling
         shell: pwsh
@@ -135,11 +139,11 @@ jobs:
         env:
           LLAMA_CPP_VERSION: ${{ inputs.llama_cpp_version }}
         run: |
-          $version = if ($env:LLAMA_CPP_VERSION) { $env:LLAMA_CPP_VERSION } else { '0.3.16' }
+          $version = if ($env:LLAMA_CPP_VERSION) { $env:LLAMA_CPP_VERSION } else { '0.3.15' }
           Write-Host "Building CUDA-enabled llama-cpp-python version $version for Python ${{ matrix.python-version }} (CUDA ${{ matrix.cuda-short }})"
 
           mkdir dist | Out-Null
-          $env:CMAKE_ARGS = '-DLLAMA_CUBLAS=ON -DLLAMA_BLAS=OFF -DLLAMA_CLBLAST=OFF -DLLAMA_METAL=OFF -DLLAMA_ACCELERATE=OFF'
+          $env:CMAKE_ARGS = '-DGGML_CUDA=ON -DGGML_BLAS=OFF -DGGML_METAL=OFF'
           pip wheel --no-deps "llama-cpp-python==$version" --wheel-dir dist
 
       - name: Stage CUDA redistributable DLLs
@@ -150,7 +154,7 @@ jobs:
           $downloads = Join-Path $root 'downloads'
           New-Item -ItemType Directory -Path $downloads -Force | Out-Null
 
-          $cudartUrl = "https://developer.download.nvidia.com/compute/cuda/redist/cuda_cudart/windows-x86_64/cuda_cudart-windows-x86_64-${{ matrix.cuda-redist-version }}-archive.zip"
+          $cudartUrl = "https://developer.download.nvidia.com/compute/cuda/redist/cuda_cudart/windows-x86_64/cuda_cudart-windows-x86_64-${{ matrix.cuda-redistrib-version }}-archive.zip"
           $cublasUrl = "https://developer.download.nvidia.com/compute/cuda/redist/libcublas/windows-x86_64/libcublas-windows-x86_64-${{ matrix.cublas-version }}-archive.zip"
 
           $archives = @(

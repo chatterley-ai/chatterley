@@ -59,6 +59,7 @@ const store = createMainStore();
 class ChatterleyApp {
   private mainWindow: BrowserWindow | null = null;
   private setupWindow: BrowserWindow | null = null;
+  private splashWindow: BrowserWindow | null = null;
   private pythonManager: PythonServerManager | null = null;
   private isDevelopment: boolean;
 
@@ -108,6 +109,8 @@ class ChatterleyApp {
 
   private async onReady(): Promise<void> {
     try {
+      this.createSplashWindow();
+
       // In debug modes, proactively clear Electron caches at startup
       if (this.isDevelopment || process.env.ELECTRON_DEBUG_PRODUCTION === '1') {
         try {
@@ -128,7 +131,9 @@ class ChatterleyApp {
       
       // Check if Python environment setup is needed
       const isSetupNeeded = await this.pythonManager.isEnvironmentSetupNeeded();
-      
+
+      this.closeSplashWindow();
+
       if (isSetupNeeded) {
         log.info('Python environment setup needed - showing setup screen');
         
@@ -159,6 +164,7 @@ class ChatterleyApp {
       }
 
     } catch (error) {
+      this.closeSplashWindow();
       log.error('Failed to initialize application:', error);
       dialog.showErrorBox(
         'Initialization Error',
@@ -259,6 +265,25 @@ class ChatterleyApp {
       icon: this.getAppIcon()
     });
 
+    const emitWindowState = () => {
+      if (!this.mainWindow || this.mainWindow.isDestroyed()) {
+        return;
+      }
+
+      try {
+        this.mainWindow.webContents.send('app:window-state', {
+          isMaximized: this.mainWindow.isMaximized()
+        });
+      } catch (error) {
+        log.warn('[Main] Failed to emit window state:', error);
+      }
+    };
+
+    this.mainWindow.on('maximize', emitWindowState);
+    this.mainWindow.on('unmaximize', emitWindowState);
+    this.mainWindow.on('enter-full-screen', emitWindowState);
+    this.mainWindow.on('leave-full-screen', emitWindowState);
+
     // Load the application
     let startUrl: string;
     
@@ -300,6 +325,7 @@ class ChatterleyApp {
     // Show window when ready
     this.mainWindow.once('ready-to-show', () => {
       this.mainWindow?.show();
+      emitWindowState();
       
       if (this.isDevelopment || process.env.ELECTRON_DEBUG_PRODUCTION === '1') {
         this.mainWindow?.webContents.openDevTools();
@@ -530,6 +556,93 @@ class ChatterleyApp {
     this.setupWindow.on('closed', () => {
       this.setupWindow = null;
     });
+  }
+
+  private createSplashWindow(): void {
+    if (this.splashWindow) {
+      return;
+    }
+
+    this.splashWindow = new BrowserWindow({
+      width: 360,
+      height: 260,
+      resizable: false,
+      minimizable: false,
+      maximizable: false,
+      frame: false,
+      show: true,
+      alwaysOnTop: true,
+      transparent: false,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true
+      }
+    });
+
+    const splashHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>Launching Chatterley</title>
+        <style>
+          body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #101826;
+            color: #f5f7ff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+          }
+          .container {
+            text-align: center;
+          }
+          .logo {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 12px;
+          }
+          .spinner {
+            margin: 20px auto;
+            width: 42px;
+            height: 42px;
+            border: 3px solid rgba(255,255,255,0.15);
+            border-top: 3px solid #5f8dff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+          }
+          .subtitle {
+            color: rgba(245,247,255,0.75);
+            font-size: 14px;
+            letter-spacing: 0.3px;
+          }
+          @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="logo">Chatterley</div>
+          <div class="spinner"></div>
+          <div class="subtitle">Preparing your workspace...</div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    this.splashWindow.loadURL(`data:text/html;charset=UTF-8,${encodeURIComponent(splashHtml)}`);
+  }
+
+  private closeSplashWindow(): void {
+    if (this.splashWindow) {
+      this.splashWindow.close();
+      this.splashWindow = null;
+    }
   }
 
   private closeSetupWindow(): void {

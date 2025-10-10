@@ -10,6 +10,7 @@ import log from 'electron-log';
 import * as path from 'path';
 import * as fs from 'fs';
 import { executePythonCode } from './python-utils';
+import type { PythonServerManager } from './python-manager';
 
 export interface ApiKeyConfig {
   providerId: string;
@@ -29,6 +30,14 @@ export interface ApiValidationResult {
 class ApiKeyManager {
   private encryptedStore: Store;
   private encryptionKey: string;
+  private pythonManager: PythonServerManager | null = null;
+  private static readonly PROVIDER_ENV_MAP: Record<string, string> = {
+    openai: 'OPENAI_API_KEY',
+    anthropic: 'ANTHROPIC_API_KEY',
+    google: 'GOOGLE_API_KEY',
+    gemini: 'GOOGLE_API_KEY',
+    together: 'TOGETHER_API_KEY'
+  };
 
   constructor() {
     // Generate machine-specific encryption key
@@ -65,6 +74,10 @@ class ApiKeyManager {
     }
 
     log.info('[ApiKeyManager] Initialized with encrypted storage');
+  }
+
+  public setPythonManager(manager: PythonServerManager): void {
+    this.pythonManager = manager;
   }
 
   /**
@@ -108,6 +121,7 @@ class ApiKeyManager {
       });
       
       log.info(`[ApiKeyManager] Stored API key for provider: ${config.providerId}`);
+      void this.propagateApiKeyChange(config.providerId, config.keyValue, config.isActive);
     } catch (error) {
       log.error(`[ApiKeyManager] Failed to store API key for ${config.providerId}:`, error);
       throw new Error('Failed to store API key securely');
@@ -163,6 +177,7 @@ class ApiKeyManager {
     try {
       this.encryptedStore.delete(`keys.${providerId}`);
       log.info(`[ApiKeyManager] Removed API key for provider: ${providerId}`);
+      void this.propagateApiKeyChange(providerId, undefined, false);
       return true;
     } catch (error) {
       log.error(`[ApiKeyManager] Failed to remove API key for ${providerId}:`, error);
@@ -186,6 +201,7 @@ class ApiKeyManager {
 
       this.encryptedStore.set(`keys.${providerId}`, updated);
       log.info(`[ApiKeyManager] Updated API key status for provider: ${providerId}`);
+      void this.propagateApiKeyChange(providerId, updated.keyValue, updated.isActive);
       return true;
     } catch (error) {
       log.error(`[ApiKeyManager] Failed to update API key status for ${providerId}:`, error);
@@ -197,6 +213,12 @@ class ApiKeyManager {
    * Validate API key using Oumi configuration
    */
   public async validateApiKeyWithOumi(providerId: string): Promise<ApiValidationResult> {
+    if (!this.pythonManager) {
+      const errorMsg = 'Python manager not configured for API key validation';
+      log.error(`[ApiKeyManager] ${errorMsg}`);
+      throw new Error(errorMsg);
+    }
+
     const apiKey = this.getApiKey(providerId);
     if (!apiKey) {
       return { isValid: false, error: 'API key not found' };
@@ -205,6 +227,9 @@ class ApiKeyManager {
     try {
       log.info(`[ApiKeyManager] Validating API key for ${providerId} using Oumi`);
 
+      const { pythonPath, env: baseEnv } = await this.pythonManager.getPythonExecutionContext();
+      const env = { ...baseEnv };
+
       // Find appropriate API config for the provider
       const configPath = await this.findApiConfigForProvider(providerId);
       if (!configPath) {
@@ -212,7 +237,13 @@ class ApiKeyManager {
       }
 
       // Test the API key using Oumi
-      const result = await this.testWithOumiConfig(configPath, providerId, apiKey.keyValue);
+      const result = await this.testWithOumiConfig(
+        configPath,
+        providerId,
+        apiKey.keyValue,
+        pythonPath,
+        env
+      );
       
       // Update the stored key with validation result
       this.updateApiKeyStatus(providerId, {
@@ -261,7 +292,9 @@ class ApiKeyManager {
       const providerConfigMap: Record<string, string> = {
         'openai': 'openai/infer_gpt_4o.yaml',
         'anthropic': 'anthropic/infer_claude_3_5_sonnet.yaml',
-        'google': 'gemini/infer_gemini_1_5_pro.yaml'
+        'google': 'gemini/infer_gemini_1_5_pro.yaml',
+        'gemini': 'gemini/infer_gemini_1_5_pro.yaml',
+        'together': 'together/infer_llama3_70b_chat.yaml'
       };
 
       const configFile = providerConfigMap[providerId];
@@ -281,20 +314,22 @@ class ApiKeyManager {
   /**
    * Test API key using Oumi configuration
    */
-  private async testWithOumiConfig(configPath: string, providerId: string, apiKey: string): Promise<ApiValidationResult> {
+  private async testWithOumiConfig(
+    configPath: string,
+    providerId: string,
+    apiKey: string,
+    pythonPath: string,
+    baseEnv: NodeJS.ProcessEnv
+  ): Promise<ApiValidationResult> {
     try {
       // Set up environment with API key
-      const env = { ...process.env };
+      const env = { ...baseEnv };
       const envVarMap: Record<string, string> = {
         'openai': 'OPENAI_API_KEY',
         'anthropic': 'ANTHROPIC_API_KEY', 
         'google': 'GOOGLE_API_KEY',
         'gemini': 'GOOGLE_API_KEY',
-        'together': 'TOGETHER_API_KEY',
-        'deepseek': 'DEEPSEEK_API_KEY',
-        'sambanova': 'SAMBANOVA_API_KEY',
-        'parasail': 'PARASAIL_API_KEY',
-        'lambda': 'LAMBDA_API_KEY'
+        'together': 'TOGETHER_API_KEY'
       };
 
       const envVar = envVarMap[providerId];
@@ -320,7 +355,8 @@ except Exception as e:
 
       const result = await executePythonCode(testScript, {
         env,
-        timeout: 10000
+        timeout: 10000,
+        pythonPath
       });
 
       if (result.success && result.stdout) {
@@ -414,7 +450,7 @@ except Exception as e:
       }
       
       // Approach 2: Try using the existing getApiKey method for known providers
-      const knownProviders = ['openai', 'anthropic', 'google', 'gemini', 'together', 'deepseek'];
+      const knownProviders = ['openai', 'anthropic', 'google', 'gemini', 'together'];
       log.info(`[ApiKeyManager] Trying getApiKey method for known providers...`);
       
       for (const providerId of knownProviders) {
@@ -438,15 +474,58 @@ except Exception as e:
   /**
    * Clear all stored API keys (for security reset)
    */
-  public clearAllKeys(): void {
+  public async clearAllKeys(): Promise<void> {
     try {
       this.encryptedStore.clear();
       log.info('[ApiKeyManager] Cleared all stored API keys');
+      const providers = Object.keys(ApiKeyManager.PROVIDER_ENV_MAP);
+      await Promise.all(
+        providers.map((providerId) => this.propagateApiKeyChange(providerId, undefined, false, false))
+      );
+      if (this.pythonManager && this.pythonManager.isServerRunning()) {
+        try {
+          log.info('[ApiKeyManager] Restarting backend after clearing API keys');
+          await this.pythonManager.restart();
+        } catch (error) {
+          log.warn('[ApiKeyManager] Failed to restart backend after clearing API keys:', error);
+        }
+      }
     } catch (error) {
       log.error('[ApiKeyManager] Failed to clear API keys:', error);
       throw new Error('Failed to clear API keys');
     }
   }
+
+  private async propagateApiKeyChange(providerId: string, keyValue?: string, isActive?: boolean, restart: boolean = true): Promise<void> {
+    const envVar = ApiKeyManager.PROVIDER_ENV_MAP[providerId.toLowerCase()];
+    if (!envVar) {
+      return;
+    }
+
+    const value = keyValue && isActive !== false ? keyValue : null;
+
+    if (value) {
+      process.env[envVar] = value;
+    } else {
+      delete process.env[envVar];
+    }
+
+    if (!this.pythonManager) {
+      log.info(`[ApiKeyManager] Propagated ${providerId} -> ${envVar} locally (no python manager attached)`);
+      return;
+    }
+
+    try {
+      log.info(`[ApiKeyManager] Propagating ${providerId} key to backend (${envVar}); restart=${restart}`);
+      await this.pythonManager.applyApiKeyUpdate(envVar, value, restart);
+    } catch (error) {
+      log.warn(`[ApiKeyManager] Failed to propagate API key change for ${providerId}:`, error);
+    }
+  }
 }
 
 export const apiKeyManager = new ApiKeyManager();
+
+export function attachPythonManager(manager: PythonServerManager): void {
+  apiKeyManager.setPythonManager(manager);
+}

@@ -232,6 +232,35 @@ export class PythonServerManager {
   }
 
   /**
+   * Apply environment variable changes related to API keys and restart if needed.
+   */
+  public async applyApiKeyUpdate(envVar: string, value: string | null, restart: boolean = true): Promise<void> {
+    if (value) {
+      process.env[envVar] = value;
+    } else {
+      delete process.env[envVar];
+    }
+
+    if (!restart) {
+      log.info(`[PythonServerManager] API key update applied for ${envVar}; restart not requested.`);
+      return;
+    }
+
+    if (!this.isServerRunning()) {
+      log.info(`[PythonServerManager] API key update applied for ${envVar}; server not running so no restart needed.`);
+      return;
+    }
+
+    try {
+      log.info(`[PythonServerManager] Restarting backend to apply API key update for ${envVar}`);
+      await this.restart();
+    } catch (error) {
+      log.error('[PythonServerManager] Failed to restart after API key update:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Get server port
    */
   public getPort(): number {
@@ -785,17 +814,7 @@ export class PythonServerManager {
         'anthropic': 'ANTHROPIC_API_KEY',
         'google': 'GOOGLE_API_KEY',
         'gemini': 'GOOGLE_API_KEY',
-        'together': 'TOGETHER_API_KEY',
-        'deepseek': 'DEEPSEEK_API_KEY',
-        'sambanova': 'SAMBANOVA_API_KEY',
-        'parasail': 'PARASAIL_API_KEY',
-        'lambda': 'LAMBDA_API_KEY',
-        'perplexity': 'PERPLEXITY_API_KEY',
-        'fireworks': 'FIREWORKS_API_KEY',
-        'groq': 'GROQ_API_KEY',
-        'azure': 'AZURE_OPENAI_KEY',
-        'cohere': 'COHERE_API_KEY',
-        'mistral': 'MISTRAL_API_KEY'
+        'together': 'TOGETHER_API_KEY'
       };
 
       // Add API keys to environment if they exist
@@ -1359,6 +1378,56 @@ export class PythonServerManager {
    */
   public getEnvironmentInfo(): EnvironmentInfo | null {
     return this.environmentInfo;
+  }
+
+  /**
+   * Ensure the managed Python environment exists and is ready for use.
+   */
+  public async ensureEnvironmentReady(): Promise<EnvironmentInfo> {
+    await this.ensurePythonEnvironment();
+
+    if (!this.environmentInfo || !this.environmentInfo.isValid || !this.environmentInfo.pythonPath) {
+      const errorMsg = 'Managed Python environment is not ready';
+      log.error(`[PythonServerManager] ${errorMsg}`, this.environmentInfo);
+      throw new Error(errorMsg);
+    }
+
+    return this.environmentInfo;
+  }
+
+  /**
+   * Provide a ready-to-use Python interpreter path and environment variables for auxiliary tasks.
+   */
+  public async getPythonExecutionContext(): Promise<{ pythonPath: string; env: NodeJS.ProcessEnv }> {
+    const info = await this.ensureEnvironmentReady();
+    const env = await this.getCleanEnvironment();
+
+    const envPath = info.path;
+    const pythonPath = info.pythonPath;
+
+    if (!envPath || !pythonPath) {
+      const errorMsg = 'Python execution context missing environment path or interpreter';
+      log.error(`[PythonServerManager] ${errorMsg}`, { envPath, pythonPath });
+      throw new Error(errorMsg);
+    }
+
+    const binDir = process.platform === 'win32'
+      ? path.join(envPath, 'Scripts')
+      : path.join(envPath, 'bin');
+
+    const delimiter = path.delimiter;
+    const existingPath = env.PATH ?? process.env.PATH ?? '';
+    const combinedPath = binDir
+      ? `${binDir}${delimiter}${existingPath}`
+      : existingPath;
+
+    env.PATH = combinedPath;
+    if (process.platform === 'win32') {
+      env.Path = combinedPath;
+    }
+    env.VIRTUAL_ENV = envPath;
+
+    return { pythonPath, env };
   }
 
   /**
