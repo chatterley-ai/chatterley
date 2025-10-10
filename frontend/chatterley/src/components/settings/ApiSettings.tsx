@@ -4,7 +4,7 @@
 
 "use client";
 
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { 
   Key, 
   Eye, 
@@ -416,6 +416,7 @@ export default function ApiSettings({ onClose }: ApiSettingsProps) {
   const [isValidatingOnClose, setIsValidatingOnClose] = useState(false);
   const [validationResults, setValidationResults] = useState<{ [providerId: string]: { isValid: boolean; error?: string } }>({});
   const [showHfToken, setShowHfToken] = useState(false);
+  const editingSectionRef = useRef<HTMLDivElement | null>(null);
 
   const providers = useMemo(() => {
     const allowed = new Set(['openai', 'anthropic', 'google', 'together']);
@@ -445,6 +446,12 @@ export default function ApiSettings({ onClose }: ApiSettingsProps) {
   };
 
   const popularProviders = providers.filter(p => ['openai', 'anthropic', 'google', 'together'].includes(p.id));
+
+  useEffect(() => {
+    if (editingProvider && editingSectionRef.current) {
+      editingSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [editingProvider]);
 
   const handleHuggingFaceUpdate = (field: 'username' | 'token', value: string) => {
     updateSettings({
@@ -621,30 +628,35 @@ export default function ApiSettings({ onClose }: ApiSettingsProps) {
         </div>
       )}
 
-      {/* Editing Form */}
-      {editingProvider && (
-        <ApiKeyInput
-          provider={providers.find(p => p.id === editingProvider)!}
-          existingKey={settings.apiKeys[editingProvider]}
-          onSave={(key) => handleSaveKey(editingProvider, key)}
-          onCancel={() => setEditingProvider(null)}
-          onRemove={settings.apiKeys[editingProvider] ? () => handleRemoveKey(editingProvider) : undefined}
-        />
-      )}
-
       {/* Provider Cards */}
       <div className="grid gap-4">
-        {providers.map((provider) => (
-          <ProviderCard
-            key={provider.id}
-            provider={provider}
-            apiKey={settings.apiKeys[provider.id]}
-            onAddKey={() => setEditingProvider(provider.id)}
-            onEditKey={() => setEditingProvider(provider.id)}
-            onRemoveKey={() => handleRemoveKey(provider.id)}
-            onToggleActive={(isActive) => setActiveApiKey(provider.id, isActive)}
-          />
-        ))}
+        {providers.map((provider) => {
+          const apiKey = settings.apiKeys[provider.id];
+          const isEditing = editingProvider === provider.id;
+          return (
+            <div key={provider.id} className="space-y-3">
+              <ProviderCard
+                provider={provider}
+                apiKey={apiKey}
+                onAddKey={() => setEditingProvider(provider.id)}
+                onEditKey={() => setEditingProvider(provider.id)}
+                onRemoveKey={() => handleRemoveKey(provider.id)}
+                onToggleActive={(isActive) => setActiveApiKey(provider.id, isActive)}
+              />
+              {isEditing && (
+                <div ref={editingSectionRef} className="scroll-mt-24">
+                  <ApiKeyInput
+                    provider={provider}
+                    existingKey={apiKey}
+                    onSave={(key) => handleSaveKey(provider.id, key)}
+                    onCancel={() => setEditingProvider(null)}
+                    onRemove={apiKey ? () => handleRemoveKey(provider.id) : undefined}
+                  />
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {/* HuggingFace Integration */}
