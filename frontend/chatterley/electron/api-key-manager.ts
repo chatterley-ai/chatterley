@@ -472,7 +472,7 @@ except Exception as e:
   /**
    * Clear all stored API keys (for security reset)
    */
-  public clearAllKeys(): void {
+  public async clearAllKeys(): Promise<void> {
     try {
       this.encryptedStore.clear();
       log.info('[ApiKeyManager] Cleared all stored API keys');
@@ -509,10 +509,12 @@ except Exception as e:
     }
 
     if (!this.pythonManager) {
+      log.info(`[ApiKeyManager] Propagated ${providerId} -> ${envVar} locally (no python manager attached)`);
       return;
     }
 
     try {
+      log.info(`[ApiKeyManager] Propagating ${providerId} key to backend (${envVar}); restart=${restart}`);
       await this.pythonManager.applyApiKeyUpdate(envVar, value, restart);
     } catch (error) {
       log.warn(`[ApiKeyManager] Failed to propagate API key change for ${providerId}:`, error);
