@@ -44,6 +44,18 @@ Chatterley is a pretty, private, powerful, local-first desktop AI chat app for M
   <img alt="Chatterley" width="720" src="frontend/chatterley/public/images/gallery-03.png">
 </div>
 
+## Getting Started
+
+### Getting Started with Local Models
+
+For local models, Chatterley includes an automatic recommendation system which calculates which models are likely to run well on your system. For current-generation (M4) Mac Pro laptops, we generally recommend 20B models or smaller if you want to maximize your context window, although 32B models and MOEs will usually run as well.
+
+To get started with local models, simply **select your configuration and chat template** from the selection screens. After a delay while the model loads, you should be transferred to the chat screen. If that doesn't happen and you are bounced back to the model selection screen, it means you encountered an error. Please log an issue if that happens, and include the error message.
+
+### Getting Started with API Models
+
+If your computer isn't that powerful or you need to run the biggest and best models, you can do that in Chatterley as well! Get started by selecting the Settings gear from your config selection page, inputting your API key, and then selecting an API-based config such as GPT 5 Mini from OpenAI. API models and local models are *freely interchangeable* in Chatterley; you can branch and swap mid-conversation.
+
 ## Under the Hood
 
 This section contains some technical details about Chatterley for those who are interested in diving deeper into the interface or becoming contributors.

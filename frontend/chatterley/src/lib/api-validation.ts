@@ -71,8 +71,6 @@ class ApiValidationService {
         return this.validateAnthropic(apiKey);
       case 'google':
         return this.validateGoogle(apiKey);
-      case 'groq':
-        return this.validateGroq(apiKey);
       case 'together':
         return this.validateTogether(apiKey);
       default:
@@ -103,12 +101,6 @@ class ApiValidationService {
       case 'google':
         if (!key.startsWith('AI') || key.length < 20) {
           return { isValid: false, error: 'Google API keys should start with "AI" and be at least 20 characters long' };
-        }
-        break;
-      
-      case 'groq':
-        if (!key.startsWith('gsk_') || key.length < 20) {
-          return { isValid: false, error: 'Groq API keys should start with "gsk_" and be at least 20 characters long' };
         }
         break;
       
@@ -236,45 +228,6 @@ class ApiValidationService {
         isValid: true,
         details: {
           model: models[0]?.name?.split('/').pop() || 'gemini-pro',
-        },
-      };
-    } catch (error) {
-      if (error instanceof TypeError && error.message.includes('fetch')) {
-        return { isValid: false, error: 'Network error - please check your connection' };
-      }
-      return { isValid: false, error: 'Failed to validate API key' };
-    }
-  }
-
-  private async validateGroq(apiKey: string): Promise<ApiValidationResult> {
-    try {
-      const response = await fetch('https://api.groq.com/openai/v1/models', {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (response.status === 401) {
-        return { isValid: false, error: 'Invalid API key' };
-      }
-
-      if (response.status === 429) {
-        return { isValid: false, error: 'Rate limit exceeded' };
-      }
-
-      if (!response.ok) {
-        return { isValid: false, error: `API error: ${response.status}` };
-      }
-
-      const data = await response.json();
-      const models = data.data || [];
-
-      return {
-        isValid: true,
-        details: {
-          model: models[0]?.id || 'llama3-groq-70b-8192-tool-use-preview',
         },
       };
     } catch (error) {
