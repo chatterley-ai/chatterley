@@ -30,7 +30,6 @@ Chatterley is a pretty, private, powerful, local-first desktop AI chat app for M
 
 ## Why Chatterley?
 
-* **Any model, any backend, anytime.** Chatterley supports dynamic model swapping mid-chat, allowing for quick experimentation and A/B testing of nearly any open or closed model. Swap between any supported backend (VLLM, SGLang, LlamaCPP, Native) and run speed comparisons in your local environment. Compare GGUF checkpoint response quality. All without leaving the chat.
 * **Branch your chat.** Chatterley supports chat branching. Try out new ideas or follow new threads, without having to start over or leave your active chat.
 * **WYSIWYG edit your chat.** Edit user turns and model responses just like you're editing a Word document.
 * **Save and load your chat.** Save and load chats in compliant JSON for easy transfer to other platforms.
@@ -38,6 +37,8 @@ Chatterley is a pretty, private, powerful, local-first desktop AI chat app for M
 * **Chat with any type of data.** Why limit yourself to text? Chatterley allows you to attach images, videos, audio, fetch websites, load PDFs ...
 * **Generate images.** Want to generate images too? Chatterley can do that. Run image synthesis (local-only) without leaving the chat interface.
 * **Chat in style.** Chatterley allows extensive customization of the chat experience; design your own color palettes, change the font, change the text size.
+* **Any model, any backend, anytime (pre-alpha).** Chatterley supports dynamic model swapping mid-chat, allowing for quick experimentation and A/B testing of nearly any open or closed model. Swap between any supported backend (VLLM, SGLang, LlamaCPP, Native) and run speed comparisons in your local environment. Compare GGUF checkpoint response quality. All without leaving the chat. LlamaCPP and Native on MacOS supported today, VLLM and SGLang support coming soon.
+
 
 <div align="center">
   <img alt="Chatterley" width="720" src="frontend/chatterley/public/images/gallery-03.png">
