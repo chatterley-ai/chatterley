@@ -177,6 +177,13 @@
         ]
       },
       {
+        "from": "windows-tools/",
+        "to": "windows-tools",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
         "from": "windows-runners/",
         "to": "windows-runners",
         "filter": [

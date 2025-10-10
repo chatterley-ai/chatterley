@@ -58,3 +58,6 @@ windows-runners/*
 !windows-runners/**/.gitkeep
 windows-runners/**/*.zip
 windows-runners/**/*.dll
+windows-tools/*
+!windows-tools/**/
+!windows-tools/**/.gitkeep

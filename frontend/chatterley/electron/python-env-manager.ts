@@ -13,7 +13,6 @@ import * as http from 'http';
 import { URL } from 'url';
 import log from 'electron-log';
 import { SystemDetector, SystemInfo } from './system-detector';
-import { executePythonCode, checkPythonPackage } from './python-utils';
 
 export interface SetupProgress {
   step: string;
@@ -49,6 +48,172 @@ export class PythonEnvironmentManager {
     if (!this.extraPathDirs.includes(dir)) {
       this.extraPathDirs.push(dir);
     }
+  }
+
+  private getWindowsWheelProfile(): string {
+    let profile = (process.env.VLLM_WHEEL_PROFILE || process.env.LLAMA_WHEEL_PROFILE || '').toLowerCase();
+    if (profile) {
+      return profile;
+    }
+
+    try {
+      const resourcesRoot = app.isPackaged
+        ? process.resourcesPath
+        : path.resolve(__dirname, '../..');
+
+      const candidates: Array<{ profile: string; paths: string[] }> = [
+        {
+          profile: 'cuda12.6',
+          paths: [
+            path.join(resourcesRoot, 'python-wheels', 'vllm', 'cuda12.6'),
+            path.join(resourcesRoot, 'python-wheels', 'cuda12.6')
+          ]
+        },
+        {
+          profile: 'cuda12.4',
+          paths: [
+            path.join(resourcesRoot, 'python-wheels', 'vllm', 'cuda12.4'),
+            path.join(resourcesRoot, 'python-wheels', 'cuda12.4')
+          ]
+        }
+      ];
+
+      for (const candidate of candidates) {
+        if (candidate.paths.some((p) => fs.existsSync(p))) {
+          return candidate.profile;
+        }
+      }
+    } catch (error) {
+      log.debug('[PythonEnvManager] Failed to auto-detect Windows profile:', error);
+    }
+
+    return 'cpu';
+  }
+
+  private getWindowsTorchSpec(profile: string): {
+    packages: string[];
+    indexUrl?: string;
+    torchVersion?: string;
+    cudaVersion?: string;
+  } | null {
+    const specs: Record<string, { packages: string[]; indexUrl: string; torchVersion: string; cudaVersion: string; }> = {
+      'cuda12.6': {
+        packages: [
+          'torch==2.7.1+cu126',
+          'torchaudio==2.7.1+cu126',
+          'torchvision==0.22.1+cu126',
+        ],
+        indexUrl: 'https://download.pytorch.org/whl/cu126',
+        torchVersion: '2.7.1',
+        cudaVersion: '12.6',
+      },
+      'cuda12.4': {
+        packages: [
+          'torch==2.6.0+cu124',
+          'torchaudio==2.6.0+cu124',
+          'torchvision==0.21.0+cu124',
+        ],
+        indexUrl: 'https://download.pytorch.org/whl/cu124',
+        torchVersion: '2.6.0',
+        cudaVersion: '12.4',
+      },
+    };
+
+    if (specs[profile]) {
+      return specs[profile];
+    }
+    if (profile === 'cpu') {
+      return null;
+    }
+    return null;
+  }
+
+  private async installWindowsTorchRuntime(
+    envPath: string,
+    uvPath: string,
+    pythonPath: string
+  ): Promise<void> {
+    if (process.platform !== 'win32') {
+      return;
+    }
+
+    const profile = this.getWindowsWheelProfile();
+    const spec = this.getWindowsTorchSpec(profile);
+    if (!spec) {
+      return;
+    }
+
+    let needsInstall = true;
+    try {
+      const stdout = await new Promise<string>((resolve, reject) => {
+        let out = '';
+        let err = '';
+        const child = spawn(pythonPath, ['-c', 'import json, torch\nprint(json.dumps({"version": torch.__version__, "cuda": getattr(torch.version, "cuda", None)}))'], {
+          env: this.buildVirtualEnvProcessEnv(envPath),
+          stdio: ['ignore', 'pipe', 'pipe']
+        });
+        child.stdout?.on('data', (data) => { out += data.toString(); });
+        child.stderr?.on('data', (data) => { err += data.toString(); });
+        child.on('error', reject);
+        child.on('close', (code) => {
+          if (code === 0) {
+            resolve(out);
+          } else {
+            reject(new Error(err));
+          }
+        });
+      });
+      const lines = stdout.trim().split(/\r?\n/).filter(Boolean);
+      const payload = JSON.parse(lines.pop() ?? '{}');
+      if (payload.version && typeof payload.version === 'string') {
+        const versionMatches = spec.torchVersion ? payload.version.startsWith(spec.torchVersion) : true;
+        const cudaMatches = spec.cudaVersion ? ((payload.cuda ?? '') as string).startsWith(spec.cudaVersion) : true;
+        if (versionMatches && cudaMatches) {
+          needsInstall = false;
+        }
+      }
+    } catch (error) {
+      log.debug('[PythonEnvManager] Torch inspection failed, reinstalling runtime:', error);
+    }
+
+    if (!needsInstall) {
+      log.info('[PythonEnvManager] Torch runtime already matches profile %s', profile);
+      return;
+    }
+
+    const description = `Installing Torch runtime (${profile})`;
+    await this.reportProgress('torch', 60, `${description}...`);
+
+    const args = ['pip', 'install', '--upgrade'];
+    args.push(...spec.packages);
+    if (spec.indexUrl) {
+      args.push('--index-url', spec.indexUrl);
+    }
+
+    log.info('[PythonEnvManager] Installing Torch with args: %s', args.join(' '));
+    await this.runUvCommand(uvPath, envPath, args, description);
+  }
+
+  private applyWindowsBackendDefaults(result: { sglang: boolean; vllm: boolean; llamacpp: boolean }): { sglang: boolean; vllm: boolean; llamacpp: boolean } {
+    if (process.platform !== 'win32') {
+      return result;
+    }
+    const profile = this.getWindowsWheelProfile();
+    if (profile === 'cuda12.6' || profile === 'cuda12.4') {
+      return {
+        sglang: result.sglang,
+        vllm: true,
+        llamacpp: true
+      };
+    }
+    if (profile === 'cpu') {
+      return {
+        sglang: result.sglang,
+        vllm: result.vllm,
+        llamacpp: true
+      };
+    }
+    return result;
   }
 
   /**
@@ -331,6 +496,40 @@ export class PythonEnvironmentManager {
     const gitCmdDir = path.join(gitRoot, 'cmd');
     const gitExe = path.join(gitCmdDir, 'git.exe');
 
+    const resourcesRoot = app.isPackaged
+      ? process.resourcesPath
+      : path.resolve(__dirname, '../..');
+    const packagedCandidates = [
+      path.join(resourcesRoot, 'windows-tools', 'mingit'),
+      path.join(resourcesRoot, 'windows-tools', 'MinGit-2.46.0-64-bit'),
+      path.join(resourcesRoot, 'windows-tools')
+    ];
+
+    for (const candidateRoot of packagedCandidates) {
+      if (!candidateRoot || !fs.existsSync(candidateRoot)) {
+        continue;
+      }
+
+      const candidatePaths = fs.statSync(candidateRoot).isDirectory()
+        ? fs.readdirSync(candidateRoot).map((name) => path.join(candidateRoot, name))
+        : [];
+
+      const allCandidates = [candidateRoot, ...candidatePaths];
+      for (const candidate of allCandidates) {
+        const cmdPath = path.join(candidate, 'cmd', 'git.exe');
+        if (fs.existsSync(cmdPath)) {
+          log.info('[PythonEnvManager] Found packaged MinGit at %s', candidate);
+          await fs.promises.rm(gitRoot, { recursive: true, force: true });
+          await fs.promises.mkdir(path.dirname(gitRoot), { recursive: true });
+          await fs.promises.cp(candidate, gitRoot, { recursive: true });
+          break;
+        }
+      }
+      if (fs.existsSync(gitExe)) {
+        break;
+      }
+    }
+
     if (!fs.existsSync(gitExe)) {
       const version = '2.46.0';
       const release = `v${version}.windows.1`;
@@ -504,7 +703,7 @@ export class PythonEnvironmentManager {
     }
 
     let fallback: string | null = null;
-
+    const mismatched: string[] = [];
     for (const dir of candidateDirs) {
       if (!fs.existsSync(dir)) {
         continue;
@@ -516,9 +715,13 @@ export class PythonEnvironmentManager {
         if (lower.startsWith('vllm') && entry.endsWith('.whl')) {
           const fullPath = path.join(dir, entry);
           log.info(`[PythonEnvManager] Candidate vLLM wheel found: ${fullPath}`);
-          if (targetPythonTag && entry.includes(targetPythonTag)) {
-            log.info(`[PythonEnvManager] Selecting vLLM wheel ${entry} for tag ${targetPythonTag}`);
-            return fullPath;
+          if (targetPythonTag) {
+            if (entry.includes(targetPythonTag)) {
+              log.info(`[PythonEnvManager] Selecting vLLM wheel ${entry} for tag ${targetPythonTag}`);
+              return fullPath;
+            }
+            mismatched.push(entry);
+            continue;
           }
           if (!fallback) {
             fallback = fullPath;
@@ -527,11 +730,17 @@ export class PythonEnvironmentManager {
       }
     }
 
+    if (targetPythonTag && mismatched.length > 0) {
+      log.warn(
+        `[PythonEnvManager] Found ${mismatched.length} vLLM wheel(s) but none match required tag ${targetPythonTag}: ${mismatched.join(', ')}`
+      );
+    }
+
     return fallback;
   }
 
   /**
-   * Determine the Python major.minor tag (e.g., cp311) for the given interpreter
+   * Determine the Python major.minor tag (e.g., cp312) for the given interpreter
    */
   private async getPythonTag(pythonPath: string): Promise<string | null> {
     return new Promise((resolve) => {
@@ -1026,9 +1235,17 @@ export class PythonEnvironmentManager {
       if (systemInfo.cudaAvailable && systemInfo.cudaDevices.length > 0) {
         // CUDA is available - choose platform-appropriate GPU extras
         if (systemInfo.platform === 'win32') {
-          // On Windows, avoid linux-only/unavailable wheels (triton/liger-kernel, vllm, deepspeed, bitsandbytes)
-          extras.push('gpu_win');
-          log.info(`[PythonEnvManager] CUDA detected on Windows: ${systemInfo.cudaDevices.length} device(s) - using gpu_win extras`);
+          // On Windows, avoid linux-only/unavailable wheels (triton/liger-kernel, deepspeed, bitsandbytes)
+          if (!extras.includes('gpu_win')) {
+            extras.push('gpu_win');
+          }
+          // Include llama_cpp so we can install the bundled wheel for native/GPU fallback execution
+          if (!extras.includes('llama_cpp')) {
+            extras.push('llama_cpp');
+          }
+          log.info(
+            `[PythonEnvManager] CUDA detected on Windows: ${systemInfo.cudaDevices.length} device(s) - using gpu_win + llama_cpp extras`
+          );
         } else {
           // Non-Windows platforms: use full GPU stack + quantization
           extras.push('gpu', 'quantization');
@@ -1051,7 +1268,9 @@ export class PythonEnvironmentManager {
       // If system detection fails, use conservative approach
       
       // Add llama_cpp for CPU inference as fallback
-      extras.push('llama_cpp');
+      if (!extras.includes('llama_cpp')) {
+        extras.push('llama_cpp');
+      }
       
       // Add ci_cpu only for Linux as a safe fallback (avoid Windows due to vLLM)
       if (process.platform === 'linux') {
@@ -1123,6 +1342,7 @@ export class PythonEnvironmentManager {
 
     await this.ensureWindowsBuildDependencies(envPath, uvPath, extras);
     await this.ensureGitAvailable(envPath);
+    await this.installWindowsTorchRuntime(envPath, uvPath, pythonPath);
     await this.installPrebuiltVllmWheel(envPath, uvPath, extras, pythonPath);
     await this.installPrebuiltLlamaWheel(envPath, uvPath, extras, pythonPath);
 
@@ -1449,10 +1669,10 @@ export class PythonEnvironmentManager {
    */
   public async getInstalledBackends(): Promise<{ sglang: boolean; vllm: boolean; llamacpp: boolean }> {
     const envInfo = await this.checkEnvironment();
-    const result = { sglang: false, vllm: false, llamacpp: false };
+    const baseResult = { sglang: false, vllm: false, llamacpp: false };
 
     if (!envInfo.isValid || !envInfo.pythonPath) {
-      return result;
+      return this.applyWindowsBackendDefaults(baseResult);
     }
 
     return await new Promise((resolve) => {
@@ -1463,16 +1683,16 @@ export class PythonEnvironmentManager {
       p.on('close', () => {
         try {
           const parsed = JSON.parse(out.trim());
-          resolve({
+          resolve(this.applyWindowsBackendDefaults({
             sglang: !!parsed.sglang,
             vllm: !!parsed.vllm,
             llamacpp: !!parsed.llamacpp
-          });
+          }));
         } catch {
-          resolve(result);
+          resolve(this.applyWindowsBackendDefaults(baseResult));
         }
       });
-      p.on('error', () => resolve(result));
+      p.on('error', () => resolve(this.applyWindowsBackendDefaults(baseResult)));
     });
   }
 
