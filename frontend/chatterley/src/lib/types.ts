@@ -361,4 +361,10 @@ export interface AppSettings {
   user?: {
     displayName?: string;
   };
+  // Notification preferences
+  notifications?: {
+    lowBalance?: boolean;
+    highUsage?: boolean;
+    keyExpiry?: boolean;
+  };
 }
