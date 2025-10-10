@@ -1,5 +1,7 @@
 model:
   model_name: "gpt-4o"
+  is_vision_capable: true
+  is_omni_capable: true
 
 inference_engine: OPENAI
 

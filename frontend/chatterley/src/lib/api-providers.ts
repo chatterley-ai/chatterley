@@ -30,6 +30,8 @@ export const API_PROVIDERS: Record<string, ApiProvider> = {
         inputCost: 5.00,
         outputCost: 15.00,
         isMultimodal: true,
+        isVisionCapable: true,
+        isOmniCapable: true,
         tags: ['reasoning', 'multimodal', 'latest'],
       },
       {
@@ -41,6 +43,8 @@ export const API_PROVIDERS: Record<string, ApiProvider> = {
         inputCost: 0.15,
         outputCost: 0.60,
         isMultimodal: true,
+        isVisionCapable: true,
+        isOmniCapable: false,
         tags: ['fast', 'affordable', 'multimodal'],
       },
       {
@@ -52,6 +56,8 @@ export const API_PROVIDERS: Record<string, ApiProvider> = {
         inputCost: 10.00,
         outputCost: 30.00,
         isMultimodal: true,
+        isVisionCapable: true,
+        isOmniCapable: false,
         tags: ['reasoning', 'multimodal'],
       },
       {
@@ -91,6 +97,8 @@ export const API_PROVIDERS: Record<string, ApiProvider> = {
         inputCost: 3.00,
         outputCost: 15.00,
         isMultimodal: true,
+        isVisionCapable: true,
+        isOmniCapable: false,
         tags: ['reasoning', 'coding', 'multimodal', 'latest'],
       },
       {
@@ -102,6 +110,8 @@ export const API_PROVIDERS: Record<string, ApiProvider> = {
         inputCost: 0.25,
         outputCost: 1.25,
         isMultimodal: true,
+        isVisionCapable: true,
+        isOmniCapable: false,
         tags: ['fast', 'affordable', 'multimodal'],
       },
       {
@@ -113,6 +123,8 @@ export const API_PROVIDERS: Record<string, ApiProvider> = {
         inputCost: 15.00,
         outputCost: 75.00,
         isMultimodal: true,
+        isVisionCapable: true,
+        isOmniCapable: false,
         tags: ['reasoning', 'premium', 'multimodal'],
       },
     ],
@@ -142,6 +154,8 @@ export const API_PROVIDERS: Record<string, ApiProvider> = {
         inputCost: 3.50,
         outputCost: 10.50,
         isMultimodal: true,
+        isVisionCapable: true,
+        isOmniCapable: true,
         tags: ['long-context', 'multimodal', 'reasoning'],
       },
       {
@@ -153,6 +167,8 @@ export const API_PROVIDERS: Record<string, ApiProvider> = {
         inputCost: 0.075,
         outputCost: 0.30,
         isMultimodal: true,
+        isVisionCapable: true,
+        isOmniCapable: true,
         tags: ['fast', 'affordable', 'multimodal'],
       },
     ],

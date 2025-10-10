@@ -205,6 +205,16 @@ class ModelParams(BaseParams):
     other parts fixed.
     """
 
+    is_vision_capable: Optional[bool] = None
+    """Whether the model accepts single-image inputs."""
+
+    is_omni_capable: Optional[bool] = None
+    """Whether the model supports broader multimodal (omni) inputs.
+
+    Omni capability implies vision capability. If both are explicitly provided and
+    inconsistent, omni takes precedence and vision will be coerced to True.
+    """
+
     model_revision: Optional[str] = None
     """The revision of the model to use.
 
@@ -213,6 +223,15 @@ class ModelParams(BaseParams):
 
     def __post_init__(self):
         """Populate additional params."""
+        if self.is_omni_capable and self.is_vision_capable is not True:
+            if self.is_vision_capable is False:
+                logger.warning(
+                    "ModelParams for '%s' set is_omni_capable=True but "
+                    "is_vision_capable=False; coercing vision capability to True.",
+                    self.model_name,
+                )
+            self.is_vision_capable = True
+
         self.torch_dtype = None
         if self.torch_dtype_str != "auto":
             self.torch_dtype = get_torch_dtype(self.torch_dtype_str)

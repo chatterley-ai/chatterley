@@ -14,6 +14,8 @@
 
 model:
   model_name: "gpt-4.1"
+  is_vision_capable: true
+  is_omni_capable: true
 
 engine: OPENAI
 

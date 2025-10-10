@@ -23,7 +23,7 @@ from oumi.core.inference import BaseInferenceEngine
 from oumi.core.types.conversation import Conversation, Message, Role
 from oumi.infer import get_engine, infer
 from oumi.utils.logging import logger
-from oumi.utils.model_utils import is_qwen_omni_model
+from oumi.utils.model_utils import resolve_model_capabilities
 from oumi.webchat.utils.fallbacks import model_name_fallback
 
 
@@ -44,8 +44,11 @@ class OpenAICompatibleServer:
         if not model_id:
             model_id = model_name_fallback("config.model.model_name")
             logger.warning(f"Model name missing on config.model; using fallback '{model_id}'.")
-        # Compute basic capability flags for frontend gating (best-effort)
-        is_omni = is_qwen_omni_model(model_id)
+        config_path = getattr(config, "config_path", None)
+        # Compute capability flags for frontend gating (best-effort)
+        is_vision_capable, is_omni_capable = resolve_model_capabilities(
+            config.model, config_path=config_path
+        )
 
         self.model_info = {
             "id": model_id,
@@ -53,7 +56,8 @@ class OpenAICompatibleServer:
             "created": int(time.time()),
             "owned_by": "oumi",
             "config_metadata": {
-                "is_omni_capable": is_omni,
+                "is_vision_capable": is_vision_capable,
+                "is_omni_capable": is_omni_capable,
             },
         }
 
