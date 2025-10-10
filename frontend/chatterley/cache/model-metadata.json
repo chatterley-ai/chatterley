@@ -1190,5 +1190,21 @@
     "error": "Invalid username or password.. URL: https://huggingface.co/api/models/undefined/revision/HEAD?expand=pipeline_tag&expand=private&expand=gated&expand=downloads&expand=likes&expand=lastModified. Request ID: Root=1-68dd2e97-28d77add6ae2b7917717f90c",
     "lastUpdated": "2025-10-01T13:37:27.316Z",
     "expires": "2025-10-01T14:37:27.316Z"
+  },
+  "meta-llama/Meta-Llama-3.1-70B-Instruct": {
+    "parameterCount": 0,
+    "tags": [],
+    "isSpecialist": false,
+    "error": "Invalid username or password.. URL: https://huggingface.co/api/models/undefined/revision/HEAD?expand=pipeline_tag&expand=private&expand=gated&expand=downloads&expand=likes&expand=lastModified. Request ID: Root=1-68e92257-1493b1486d0973d15f8189a5",
+    "lastUpdated": "2025-10-10T15:12:23.783Z",
+    "expires": "2025-10-10T16:12:23.783Z"
+  },
+  "mistralai/Mixtral-8x22B-Instruct-v0.1": {
+    "parameterCount": 0,
+    "tags": [],
+    "isSpecialist": false,
+    "error": "Invalid username or password.. URL: https://huggingface.co/api/models/undefined/revision/HEAD?expand=pipeline_tag&expand=private&expand=gated&expand=downloads&expand=likes&expand=lastModified. Request ID: Root=1-68e92257-3ede222e0e0a0ae72d3040c2",
+    "lastUpdated": "2025-10-10T15:12:23.850Z",
+    "expires": "2025-10-10T16:12:23.850Z"
   }
 }
