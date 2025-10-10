@@ -240,7 +240,7 @@ export default function AppearanceSettingsSection() {
             <label className="block text-sm font-medium mb-2">Line Height</label>
             <input
               type="range"
-              min={1.2}
+              min={0.5}
               max={1.8}
               step={0.05}
               value={appearance.lineHeight}

@@ -292,7 +292,9 @@ class ApiKeyManager {
       const providerConfigMap: Record<string, string> = {
         'openai': 'openai/infer_gpt_4o.yaml',
         'anthropic': 'anthropic/infer_claude_3_5_sonnet.yaml',
-        'google': 'gemini/infer_gemini_1_5_pro.yaml'
+        'google': 'gemini/infer_gemini_1_5_pro.yaml',
+        'gemini': 'gemini/infer_gemini_1_5_pro.yaml',
+        'together': 'together/infer_llama3_70b_chat.yaml'
       };
 
       const configFile = providerConfigMap[providerId];
