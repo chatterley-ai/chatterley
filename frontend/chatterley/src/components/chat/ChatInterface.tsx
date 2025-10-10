@@ -645,7 +645,8 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
       }
 
       // Add the current user message (possibly multimodal)
-      const contentOrParts = isOmniCapable ? buildContentParts(content, attachments) : content;
+      const allowMultimodal = isOmniCapable || isVisionCapable;
+      const contentOrParts = allowMultimodal ? buildContentParts(content, attachments) : content;
       const lastHistoryEntry = history[history.length - 1];
       if (lastHistoryEntry?.role === 'user' && apiMessages.length > 0) {
         apiMessages[apiMessages.length - 1] = {

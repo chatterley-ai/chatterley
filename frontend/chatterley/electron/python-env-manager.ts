@@ -601,6 +601,10 @@ export class PythonEnvironmentManager {
       'cuda124': 'cuda12.4',
       'cuda12_4': 'cuda12.4',
       'cuda12.4': 'cuda12.4',
+      'mac': 'mac',
+      'darwin': 'mac',
+      'macos': 'mac',
+      'macos-arm64': 'mac',
     };
 
     return aliases[cleaned] ?? cleaned;
@@ -611,6 +615,9 @@ export class PythonEnvironmentManager {
     const requested = this.normalizeWheelProfile(profileEnv);
 
     if (!requested) {
+      if (process.platform === 'darwin') {
+        return ['mac', 'cpu'];
+      }
       return ['cuda12.6', 'cuda12.4', 'cpu'];
     }
 
@@ -618,13 +625,15 @@ export class PythonEnvironmentManager {
       return ['cpu'];
     }
 
-    const order = new Set<string>();
-    order.add(requested);
-    const fallbacks = requested === 'cuda12.6'
-      ? ['cuda12.4', 'cpu']
-      : requested === 'cuda12.4'
-        ? ['cuda12.6', 'cpu']
-        : ['cpu'];
+    const order = new Set<string>([requested]);
+    const fallbacks =
+      requested === 'cuda12.6'
+        ? ['cuda12.4', 'cpu']
+        : requested === 'cuda12.4'
+          ? ['cuda12.6', 'cpu']
+          : requested === 'mac'
+            ? ['cpu']
+            : ['cpu'];
 
     fallbacks.forEach(profile => order.add(profile));
     return Array.from(order);
@@ -777,11 +786,16 @@ export class PythonEnvironmentManager {
     extras: string[],
     pythonPath: string
   ): Promise<void> {
-    if (process.platform !== 'win32') {
+    if (process.platform !== 'win32' && process.platform !== 'darwin') {
       return;
     }
 
     if (!extras.includes('llama_cpp')) {
+      return;
+    }
+
+    if (process.platform === 'darwin' && process.arch !== 'arm64') {
+      log.info('[PythonEnvManager] Skipping bundled llama-cpp wheel install: not running on Apple Silicon');
       return;
     }
 
