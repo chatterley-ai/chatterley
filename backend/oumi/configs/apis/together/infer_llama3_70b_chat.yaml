@@ -1,0 +1,21 @@
+# TogetherAI inference config for Meta Llama 3.1 70B Instruct.
+#
+# Requirements:
+#   - Set environment variable: export TOGETHER_API_KEY=your_key_here
+#
+# Usage:
+#   oumi infer -i -c configs/apis/together/infer_llama3_70b_chat.yaml
+#
+# Notes:
+#   - This configuration uses the Together API compatible inference engine.
+#   - The Meta Llama 3.1 70B Instruct model supports an extended 128K context window.
+
+model:
+  model_name: "meta-llama/Meta-Llama-3.1-70B-Instruct"
+  model_max_length: 131072
+
+engine: TOGETHER
+
+generation:
+  max_new_tokens: 8192
+  temperature: 0.7

@@ -1,5 +1,6 @@
 model:
   model_name: "claude-3-7-sonnet-latest"
+  model_max_length: 200000
 
 inference_engine: ANTHROPIC
 

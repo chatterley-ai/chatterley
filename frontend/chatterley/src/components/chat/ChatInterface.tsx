@@ -262,9 +262,17 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
 
     try {
       setLoading(true);
+      let promptOverride: string | undefined;
+      if (lastAssistant && lastUser?.content?.trim()) {
+        promptOverride = lastUser.content;
+      } else if (!lastAssistant && lastUser?.content?.trim()) {
+        promptOverride = lastUser.content;
+      }
+
       const resp = await apiClient.regenNode({
         assistantId: lastAssistant?.id,
         userMessageId: lastAssistant ? undefined : lastUser?.id,
+        prompt: promptOverride,
         sessionId: getCurrentSessionId(),
         branchId: currentBranchId || 'main',
         historyMode: 'full',

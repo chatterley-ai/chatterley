@@ -96,7 +96,7 @@ export function normalizeAppearance(input?: Partial<AppearanceSettings>): Appear
     borderColor: normalizeHex(input.borderColor, base.borderColor),
     fontFamily: input.fontFamily && input.fontFamily.trim().length > 0 ? input.fontFamily : base.fontFamily,
     textScale: typeof input.textScale === 'number' ? Math.max(0.2, Math.min(1.5, input.textScale)) : base.textScale,
-    lineHeight: typeof input.lineHeight === 'number' ? Math.max(1.2, Math.min(2, input.lineHeight)) : base.lineHeight,
+    lineHeight: typeof input.lineHeight === 'number' ? Math.max(0.5, Math.min(2, input.lineHeight)) : base.lineHeight,
     compactMode: Boolean(input.compactMode),
     cornerRadius: typeof input.cornerRadius === 'number' ? Math.max(0, Math.min(28, input.cornerRadius)) : base.cornerRadius,
   };

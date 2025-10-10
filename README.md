@@ -6,7 +6,9 @@
 
 Chatterley is a pretty, private, powerful, local-first desktop AI chat app for MacOS, Windows and Linux, supporting gpt-oss, DeepSeek-R1, Gemma 3, Qwen3 Coder, Qwen3 Omni, GPT-5, Claude Sonnet 4.5, and more.
 
-> **⚠️ macOS Users**: The application is currently unsigned. After installation, if macOS prevents you from opening the app, run this command in Terminal:
+> **Platform Status:** The macOS build (Apple Silicon only) is our primary release today. Windows and Linux builds are in a pre-alpha state and still evolving—community contributions to harden them for future releases are very welcome.
+
+> **⚠️ macOS Users**: The application is signed; however, if after installation, if macOS prevents you from opening the app, run this command in Terminal:
 > ```bash
 > xattr -cr /Applications/Chatterley.app
 > ```
@@ -28,7 +30,6 @@ Chatterley is a pretty, private, powerful, local-first desktop AI chat app for M
 
 ## Why Chatterley?
 
-* **Any model, any backend, anytime.** Chatterley supports dynamic model swapping mid-chat, allowing for quick experimentation and A/B testing of nearly any open or closed model. Swap between any supported backend (VLLM, SGLang, LlamaCPP, Native) and run speed comparisons in your local environment. Compare GGUF checkpoint response quality. All without leaving the chat.
 * **Branch your chat.** Chatterley supports chat branching. Try out new ideas or follow new threads, without having to start over or leave your active chat.
 * **WYSIWYG edit your chat.** Edit user turns and model responses just like you're editing a Word document.
 * **Save and load your chat.** Save and load chats in compliant JSON for easy transfer to other platforms.
@@ -36,10 +37,24 @@ Chatterley is a pretty, private, powerful, local-first desktop AI chat app for M
 * **Chat with any type of data.** Why limit yourself to text? Chatterley allows you to attach images, videos, audio, fetch websites, load PDFs ...
 * **Generate images.** Want to generate images too? Chatterley can do that. Run image synthesis (local-only) without leaving the chat interface.
 * **Chat in style.** Chatterley allows extensive customization of the chat experience; design your own color palettes, change the font, change the text size.
+* **Any model, any backend, anytime (pre-alpha).** Chatterley supports dynamic model swapping mid-chat, allowing for quick experimentation and A/B testing of nearly any open or closed model. Swap between any supported backend (VLLM, SGLang, LlamaCPP, Native) and run speed comparisons in your local environment. Compare GGUF checkpoint response quality. All without leaving the chat. LlamaCPP and Native on MacOS supported today, VLLM and SGLang support coming soon.
+
 
 <div align="center">
   <img alt="Chatterley" width="720" src="frontend/chatterley/public/images/gallery-03.png">
 </div>
+
+## Getting Started
+
+### Getting Started with Local Models
+
+For local models, Chatterley includes an automatic recommendation system which calculates which models are likely to run well on your system. For current-generation (M4) Mac Pro laptops, we generally recommend 20B models or smaller if you want to maximize your context window, although 32B models and MOEs will usually run as well.
+
+To get started with local models, simply **select your configuration and chat template** from the selection screens. After a delay while the model loads, you should be transferred to the chat screen. If that doesn't happen and you are bounced back to the model selection screen, it means you encountered an error. Please log an issue if that happens, and include the error message.
+
+### Getting Started with API Models
+
+If your computer isn't that powerful or you need to run the biggest and best models, you can do that in Chatterley as well! Get started by selecting the Settings gear from your config selection page, inputting your API key, and then selecting an API-based config such as GPT 5 Mini from OpenAI. API models and local models are *freely interchangeable* in Chatterley; you can branch and swap mid-conversation.
 
 ## Under the Hood
 
@@ -47,7 +62,7 @@ This section contains some technical details about Chatterley for those who are 
 
 ### How to Add New Models
 
-Chatterley discovers model configurations from `backend/oumi/configs`. It supports:
+Chatterley's backend is powered by the open-source [Oumi platform](https://github.com/oumi-ai/oumi). Model configurations are delved from `backend/oumi/configs`. It supports:
 
 - Chat/inference YAMLs (Transformers, vLLM, llama.cpp)
 - API providers (OpenAI, Anthropic, Gemini) via config files
@@ -103,19 +118,6 @@ curl -s http://localhost:9000/v1/chat/completions -X POST \\
   }'
 ```
 
-#### Oumi WebChat endpoints
-
-- `GET /health`
-- `GET /v1/oumi/configs` – discover available configs
-- `GET /v1/oumi/branches` – list conversation branches
-- `POST /v1/oumi/command` – branch/session operations
-- `GET /v1/oumi/conversation` – fetch conversation for a branch
-- `POST /v1/oumi/regen_node` – regenerate a node
-- `GET /v1/oumi/system_stats` – backend system information
-- `POST /v1/oumi/clear_model` – unload model from memory
-
-See `backend/oumi/src/oumi/webchat/routes.py` for the full set.
-
 ## Contributing
 
-If you're interested in contributing, please open an issue or submit a PR with improvements. We are particularly interested in contributors with strong backgrounds in Node.JS, frontend devs, UI specialists, UX specialists, and technical writers.
+If you're interested in contributing, please open an issue or submit a PR with improvements. We are particularly interested in contributors with strong backgrounds in Windows and Linux cross-platform app development, Node.JS, frontend devs, UI specialists, UX specialists, and technical writers.

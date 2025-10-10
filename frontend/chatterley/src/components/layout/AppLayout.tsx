@@ -12,7 +12,7 @@ import SystemChangeWarning from '@/components/monitoring/SystemChangeWarning';
 import { useChatStore } from '@/lib/store';
 import apiClient from '@/lib/unified-api';
 import { useConversationCommand, COMMAND_CONFIGS } from '@/hooks/useConversationCommand';
-import { Settings, Eraser, PanelLeft, PanelLeftClose, X, Search, History, ChevronDown, ChevronRight } from 'lucide-react';
+import { Settings, Eraser, PanelLeft, PanelLeftClose, X, Search, History, ChevronDown, ChevronRight, Minus, Maximize2, Square } from 'lucide-react';
 import ConfirmationDialog from '@/components/ui/ConfirmationDialog';
 import SettingsScreen from '@/components/settings/SettingsScreen';
 import dynamic from 'next/dynamic';
@@ -40,6 +40,8 @@ export default function AppLayout() {
   const [isResetting, setIsResetting] = React.useState(false);
   const [resetProgress, setResetProgress] = React.useState<string[]>([]);
   const [resetSuccess, setResetSuccess] = React.useState<string | undefined>(undefined);
+  const [isWindows, setIsWindows] = React.useState(false);
+  const [isWindowMaximized, setIsWindowMaximized] = React.useState(false);
   const { clearMessages, currentBranchId, currentConversationId, setCurrentBranch, getCurrentSessionId } = useChatStore();
   // Note: setBranches is no longer needed as branches are derived on demand
   const { executeCommand, isExecuting } = useConversationCommand();
@@ -149,6 +151,110 @@ React.useEffect(() => {
     return () => {
       window.console.error = originalError;
     };
+  }, []);
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    interface ElectronAPI {
+      platform?: { os: string };
+      app?: {
+        minimize?: () => void;
+        toggleMaximize?: () => void;
+        close?: () => void;
+        isMaximized?: () => Promise<boolean>;
+        onWindowStateChange?: (handler: (state: { isMaximized: boolean }) => void) => void;
+        offWindowStateChange?: (handler: (state: { isMaximized: boolean }) => void) => void;
+      };
+    }
+    const electronAPI = (window as Window & { electronAPI?: ElectronAPI }).electronAPI;
+    if (!electronAPI?.platform || electronAPI.platform.os !== 'win32') {
+      return;
+    }
+
+    setIsWindows(true);
+
+    let isMounted = true;
+
+    const synchronizeWindowState = async () => {
+      try {
+        const maximized = await electronAPI.app.isMaximized();
+        if (isMounted) {
+          setIsWindowMaximized(Boolean(maximized));
+        }
+      } catch (error) {
+        console.error('Failed to query window maximize state:', error);
+      }
+    };
+
+    synchronizeWindowState();
+
+    const handleWindowStateChange = (state: { isMaximized: boolean }) => {
+      setIsWindowMaximized(Boolean(state.isMaximized));
+    };
+
+    electronAPI.app.onWindowStateChange(handleWindowStateChange);
+
+    return () => {
+      isMounted = false;
+      electronAPI.app.offWindowStateChange(handleWindowStateChange);
+    };
+  }, []);
+
+  const handleMinimizeClick = React.useCallback(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      interface ElectronAPI {
+        app?: {
+          minimize?: () => void;
+        };
+      }
+      const electronAPI = (window as Window & { electronAPI?: ElectronAPI }).electronAPI;
+      electronAPI?.app?.minimize?.();
+    } catch (error) {
+      console.error('Failed to minimize window:', error);
+    }
+  }, []);
+
+  const handleMaximizeClick = React.useCallback(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      interface ElectronAPI {
+        app?: {
+          toggleMaximize?: () => void;
+        };
+      }
+      const electronAPI = (window as Window & { electronAPI?: ElectronAPI }).electronAPI;
+      electronAPI?.app?.toggleMaximize?.();
+    } catch (error) {
+      console.error('Failed to toggle maximize state:', error);
+    }
+  }, []);
+
+  const handleCloseClick = React.useCallback(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      interface ElectronAPI {
+        app?: {
+          close?: () => void;
+        };
+      }
+      const electronAPI = (window as Window & { electronAPI?: ElectronAPI }).electronAPI;
+      electronAPI?.app?.close?.();
+    } catch (error) {
+      console.error('Failed to close window:', error);
+    }
   }, []);
 
   // Handle React ready state and menu messages from Electron
@@ -705,6 +811,37 @@ React.useEffect(() => {
               >
                 {isSidebarCollapsed ? <PanelLeft size={18} /> : <PanelLeftClose size={18} />}
               </button>
+              {isWindows && (
+                <div className="ml-3 flex items-center gap-[2px]">
+                  <button
+                    type="button"
+                    onClick={handleMinimizeClick}
+                    className="no-drag inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                    title="Minimize window"
+                    aria-label="Minimize window"
+                  >
+                    <Minus size={14} strokeWidth={2} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleMaximizeClick}
+                    className="no-drag inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                    title={isWindowMaximized ? 'Restore window' : 'Maximize window'}
+                    aria-label={isWindowMaximized ? 'Restore window' : 'Maximize window'}
+                  >
+                    {isWindowMaximized ? <Square size={13} strokeWidth={2} /> : <Maximize2 size={14} strokeWidth={2} />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCloseClick}
+                    className="no-drag inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/80 hover:text-destructive-foreground"
+                    title="Close window"
+                    aria-label="Close window"
+                  >
+                    <X size={14} strokeWidth={2} />
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
