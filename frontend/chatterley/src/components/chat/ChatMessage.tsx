@@ -85,8 +85,34 @@ export default function ChatMessage({ message, isLatest = false, messageIndex }:
   const handleRegen = async () => {
     setActionInProgress('regen');
     try {
-      const { getCurrentSessionId, currentBranchId } = useChatStore.getState();
-      const resp = await apiClient.regenNode({ assistantId: message.id, sessionId: getCurrentSessionId(), branchId: currentBranchId || 'main', historyMode: 'full' });
+      const { getCurrentSessionId, currentBranchId, getCurrentMessages } = useChatStore.getState();
+      const sessionId = getCurrentSessionId();
+      const branchId = currentBranchId || 'main';
+
+      let promptOverride: string | undefined;
+      if (message.role === 'assistant') {
+        const conversationMessages = getCurrentMessages();
+        if (Array.isArray(conversationMessages) && typeof messageIndex === 'number') {
+          for (let i = messageIndex - 1; i >= 0; i -= 1) {
+            const candidate = conversationMessages[i];
+            if (candidate?.role === 'user' && candidate.content?.trim()) {
+              promptOverride = candidate.content;
+              break;
+            }
+          }
+        }
+      } else if (message.role === 'user' && message.content?.trim()) {
+        promptOverride = message.content;
+      }
+
+      const resp = await apiClient.regenNode({
+        assistantId: message.role === 'assistant' ? message.id : undefined,
+        userMessageId: message.role === 'user' ? message.id : undefined,
+        prompt: promptOverride,
+        sessionId,
+        branchId,
+        historyMode: 'full'
+      });
       if (!resp.success) {
         alert(resp.message || 'Failed to regenerate');
       } else {
