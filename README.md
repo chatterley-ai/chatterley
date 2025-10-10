@@ -50,7 +50,7 @@ This section contains some technical details about Chatterley for those who are 
 
 ### How to Add New Models
 
-Chatterley discovers model configurations from `backend/oumi/configs`. It supports:
+Chatterley's backend is powered by the open-source [Oumi platform](https://github.com/oumi-ai/oumi). Model configurations are delved from `backend/oumi/configs`. It supports:
 
 - Chat/inference YAMLs (Transformers, vLLM, llama.cpp)
 - API providers (OpenAI, Anthropic, Gemini) via config files
@@ -106,19 +106,6 @@ curl -s http://localhost:9000/v1/chat/completions -X POST \\
   }'
 ```
 
-#### Oumi WebChat endpoints
-
-- `GET /health`
-- `GET /v1/oumi/configs` – discover available configs
-- `GET /v1/oumi/branches` – list conversation branches
-- `POST /v1/oumi/command` – branch/session operations
-- `GET /v1/oumi/conversation` – fetch conversation for a branch
-- `POST /v1/oumi/regen_node` – regenerate a node
-- `GET /v1/oumi/system_stats` – backend system information
-- `POST /v1/oumi/clear_model` – unload model from memory
-
-See `backend/oumi/src/oumi/webchat/routes.py` for the full set.
-
 ## Contributing
 
-If you're interested in contributing, please open an issue or submit a PR with improvements. We are particularly interested in contributors with strong backgrounds in Node.JS, frontend devs, UI specialists, UX specialists, and technical writers.
+If you're interested in contributing, please open an issue or submit a PR with improvements. We are particularly interested in contributors with strong backgrounds in Windows and Linux cross-platform app development, Node.JS, frontend devs, UI specialists, UX specialists, and technical writers.
