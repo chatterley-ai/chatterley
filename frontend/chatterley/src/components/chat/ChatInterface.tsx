@@ -17,22 +17,50 @@ import { isValidCommand, parseCommand } from '@/lib/constants';
 import ChatHistory from './ChatHistory';
 import MessageInput, { PreparedAttachment } from './MessageInput';
 
-const deriveOmniCapability = (
+const deriveCapabilities = (
   metadata: {
     model_name?: string;
+    is_vision_capable?: boolean;
     is_omni_capable?: boolean;
     [key: string]: unknown;
   } | null | undefined,
   modelId?: string | null
-): boolean | undefined => {
-  if (metadata && typeof metadata.is_omni_capable === 'boolean') {
-    return metadata.is_omni_capable;
+): { vision: boolean; omni: boolean } => {
+  const result = { vision: false, omni: false };
+  if (metadata) {
+    if (typeof metadata.is_vision_capable === 'boolean') {
+      result.vision = metadata.is_vision_capable;
+    }
+    if (typeof metadata.is_omni_capable === 'boolean') {
+      result.omni = metadata.is_omni_capable;
+    }
   }
-  const source = metadata?.model_name ?? modelId ?? '';
-  const lower = String(source).toLowerCase();
-  if (!lower) return undefined;
-  const isOmni = lower.includes('omni') && lower.includes('qwen');
-  return isOmni;
+
+  const source = (metadata?.model_name ?? modelId ?? '').toString().toLowerCase();
+
+  if (result.omni) {
+    result.vision = true;
+  }
+
+  if (!result.omni && source.includes('qwen') && source.includes('omni')) {
+    result.omni = true;
+    result.vision = true;
+  }
+
+  if (!result.vision && source) {
+    const hasVisionKeyword = ['vision', 'vl', 'gemini', 'gpt-4', 'claude-3', 'sonnet', 'flash'].some((keyword) =>
+      source.includes(keyword)
+    );
+    if (hasVisionKeyword) {
+      result.vision = true;
+    }
+  }
+
+  if (result.omni && !result.vision) {
+    result.vision = true;
+  }
+
+  return result;
 };
 
 interface ChatInterfaceProps {
@@ -72,7 +100,8 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
   // Initialize auto-save functionality
   useAutoSave();
   
-  // State for omni capability
+  // State for model capability flags
+  const [isVisionCapable, setIsVisionCapable] = React.useState(false);
   const [isOmniCapable, setIsOmniCapable] = React.useState(false);
 
   // State for stopping generation
@@ -171,11 +200,12 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
         const existingMessages = currentConversationId
           ? getBranchMessages(currentConversationId, currentBranchId)
           : [];
+        const appSettings = useChatStore.getState().settings;
         const transformedMessages: Message[] = transformBackendMessages(response.data?.conversation as unknown as Message[], {
-          settings,
+          settings: appSettings,
           existingMessages,
-          fallbackModel: settings.selectedModel,
-          fallbackEngine: settings.selectedProvider,
+          fallbackModel: appSettings.selectedModel,
+          fallbackEngine: appSettings.selectedProvider,
           conversationId: currentConversationId || undefined,
           branchId: currentBranchId,
         });
@@ -206,7 +236,7 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
     } finally {
       setLoading(false);
     }
-  }, [getCurrentSessionId, currentBranchId, setLoading, setMessages, settings, currentConversationId, getBranchMessages]);
+  }, [getCurrentSessionId, currentBranchId, setLoading, setMessages, currentConversationId, getBranchMessages]);
 
   const refreshBranches = React.useCallback(async () => {
     try {
@@ -388,15 +418,15 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
           const modelEntry = modelResponse.data.data[0];
           const md: {
             model_name?: string;
+            is_vision_capable?: boolean;
             is_omni_capable?: boolean;
             [key: string]: unknown;
           } | null | undefined = modelEntry.config_metadata;
           console.log('[ChatInterface] config metadata from getModels:', md);
-          const derived = deriveOmniCapability(md, modelEntry.id);
-          if (typeof derived === 'boolean') {
-            console.log('[ChatInterface] Setting isOmniCapable from getModels:', derived);
-            setIsOmniCapable(derived);
-          }
+          const derived = deriveCapabilities(md, modelEntry.id);
+          console.log('[ChatInterface] Setting capabilities from getModels:', derived);
+          setIsVisionCapable(derived.vision);
+          setIsOmniCapable(derived.omni);
           await safeSyncSettings(modelEntry as any, md as any);
         } catch (metaError) {
           console.warn('[ChatInterface] Failed to interpret config metadata from getModels:', metaError);
@@ -432,15 +462,15 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
           const modelEntry = recheckResponse.data.data[0];
           const md: {
             model_name?: string;
+            is_vision_capable?: boolean;
             is_omni_capable?: boolean;
             [key: string]: unknown;
           } | null | undefined = modelEntry.config_metadata;
           console.log('[ChatInterface] config metadata from recheck:', md);
-          const derived = deriveOmniCapability(md, modelEntry.id);
-          if (typeof derived === 'boolean') {
-            console.log('[ChatInterface] Setting isOmniCapable from recheck:', derived);
-            setIsOmniCapable(derived);
-          }
+          const derived = deriveCapabilities(md, modelEntry.id);
+          console.log('[ChatInterface] Setting capabilities from recheck:', derived);
+          setIsVisionCapable(derived.vision);
+          setIsOmniCapable(derived.omni);
           await safeSyncSettings(modelEntry as any, md as any);
         } catch (metaError) {
           console.warn('[ChatInterface] Failed to interpret config metadata from recheck:', metaError);
@@ -471,13 +501,32 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
       
       throw new Error('Model not available');
     }
-  }, [addMessage, setIsOmniCapable]);
+  }, [addMessage, setIsOmniCapable, setIsVisionCapable]);
 
   const buildContentParts = (text: string, attachments?: PreparedAttachment[]) => {
     if (!attachments || attachments.length === 0) {
       return text; // plain string
     }
-    const map = new Map(attachments.map(a => [a.id, a] as const));
+
+    const allowedAttachments = attachments.filter((att) => {
+      if (att.type === 'image') {
+        return isVisionCapable || isOmniCapable;
+      }
+      if (att.type === 'audio' || att.type === 'video') {
+        return isOmniCapable;
+      }
+      return true;
+    });
+
+    const allowedIds = new Set(allowedAttachments.map((att) => att.id));
+    const filteredOut = attachments.filter((att) => !allowedIds.has(att.id));
+    if (filteredOut.length > 0) {
+      console.warn('[ChatInterface] Dropping attachments due to capability limits', {
+        dropped: filteredOut.map((att) => att.type),
+      });
+    }
+
+    const map = new Map(allowedAttachments.map(a => [a.id, a] as const));
     const parts: Array<{
       type: string;
       content: string;
@@ -487,6 +536,9 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
     for (const token of tokens) {
       const m = token.match(/^\[attachment:([^\]]+)\]$/);
       if (m) {
+        if (!allowedIds.has(m[1])) {
+          continue;
+        }
         const att = map.get(m[1]);
         if (!att) continue;
         if (att.type === 'image') {
@@ -502,7 +554,11 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
         parts.push({ type: 'text', content: token });
       }
     }
-    return parts.length > 0 ? parts : text;
+    if (parts.length === 0) {
+      const cleaned = text.replace(/\[attachment:[^\]]+\]/g, '').trim();
+      return cleaned.length > 0 ? cleaned : '';
+    }
+    return parts;
   };
 
   // Error dialog state for actionable errors
@@ -759,7 +815,7 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
     } finally {
       setTyping(false);
     }
-  }, [setTyping, setShouldStop, messages, isOmniCapable, buildContentParts, ensureModelLoaded, generationParams, getCurrentSessionId, currentBranchId, settings, addMessage, currentConversationId, updateMessage, showError, refreshBranches, clearError, reloadEngine]);
+  }, [setTyping, setShouldStop, messages, isVisionCapable, isOmniCapable, buildContentParts, ensureModelLoaded, generationParams, getCurrentSessionId, currentBranchId, settings, addMessage, currentConversationId, updateMessage, showError, refreshBranches, clearError, reloadEngine]);
 
   const handleAttachFiles = async (files: FileList) => {
     // PLACEHOLDER: File attachment not fully implemented
@@ -828,6 +884,7 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
           onAttachFiles={handleAttachFiles}
           disabled={isLoading}
           isLoading={isLoading || isTyping}
+          isVisionCapable={isVisionCapable}
           isOmniCapable={isOmniCapable}
         />
       </div>

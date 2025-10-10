@@ -37,6 +37,7 @@ interface MessageInputProps {
   disabled?: boolean;
   isLoading?: boolean;
   placeholder?: string;
+  isVisionCapable?: boolean;
   isOmniCapable?: boolean;
 }
 
@@ -52,6 +53,7 @@ export default function MessageInput({
   disabled = false,
   isLoading = false,
   placeholder = "Type your message...",
+  isVisionCapable = false,
   isOmniCapable = false,
 }: MessageInputProps) {
   const [message, setMessage] = React.useState('');
@@ -73,12 +75,13 @@ export default function MessageInput({
       '[MessageInput] omni capability changed %o',
       {
         isOmniCapable,
+        isVisionCapable,
         disabled,
         isLoading,
         timestamp: new Date().toISOString(),
       }
     );
-  }, [isOmniCapable, disabled, isLoading]);
+  }, [isOmniCapable, isVisionCapable, disabled, isLoading]);
 
   // Supported file types based on Oumi backend analysis
   const SUPPORTED_IMAGE_TYPES = '.jpg,.jpeg,.png,.gif,.bmp,.tiff,.webp,.svg';
@@ -300,6 +303,14 @@ export default function MessageInput({
   }, [imageProcessingSettings, loadImageElement, readFileAsDataUrl]);
 
   const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!isVisionCapable) {
+      console.warn('[MessageInput] Image attachment blocked because vision capability is false');
+      alert('🖼️ Image attachments require a vision-capable model.');
+      if (e.target) {
+        e.target.value = '';
+      }
+      return;
+    }
     if (!e.target.files || e.target.files.length === 0) return;
 
     const validation = validateFiles(e.target.files, SUPPORTED_IMAGE_TYPES, {
@@ -607,12 +618,16 @@ export default function MessageInput({
                 />
                 <button
                   type="button"
-                  onClick={() => imageInputRef.current?.click()}
-                  disabled={disabled || isLoading || isProcessingAttachments}
+              onClick={() => imageInputRef.current?.click()}
+                  disabled={disabled || isLoading || isProcessingAttachments || !isVisionCapable}
                   className="p-2 rounded-md border border-border hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  title="Attach images (jpg, png, gif, etc.)"
+                  title={
+                    isVisionCapable
+                      ? 'Attach images (jpg, png, gif, etc.)'
+                      : 'Image attachments require a vision-capable model'
+                  }
                 >
-                  <ImageIcon size={20} className="text-blue-600" />
+                  <ImageIcon size={20} className={isVisionCapable ? 'text-blue-600' : 'text-muted-foreground'} />
                 </button>
               </>
 

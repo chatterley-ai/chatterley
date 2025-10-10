@@ -1,5 +1,7 @@
 model:
   model_name: "gemini-1.5-pro"
+  is_vision_capable: true
+  is_omni_capable: true
 
 inference_engine: GOOGLE_GEMINI
 

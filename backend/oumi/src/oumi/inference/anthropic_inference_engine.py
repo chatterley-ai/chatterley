@@ -95,17 +95,27 @@ class AnthropicInferenceEngine(RemoteInferenceEngine):
         else:
             system_message = None
 
-        messages = [
+        conversation_messages = [
             message for message in conversation.messages if message.role != Role.SYSTEM
+        ]
+        raw_messages = self._get_list_of_message_json_dicts(
+            conversation_messages, group_adjacent_same_role_turns=True
+        )
+        formatted_messages = [
+            {
+                _ROLE_KEY: raw_message.get(_ROLE_KEY, "user"),
+                _CONTENT_KEY: self._normalize_content_for_anthropic(
+                    raw_message.get(_CONTENT_KEY)
+                ),
+            }
+            for raw_message in raw_messages
         ]
 
         # Build request body
         # See https://docs.anthropic.com/claude/reference/messages_post
         body = {
             "model": model_params.model_name,
-            "messages": self._get_list_of_message_json_dicts(
-                messages, group_adjacent_same_role_turns=True
-            ),
+            "messages": formatted_messages,
             "max_tokens": generation_params.max_new_tokens,
             "temperature": generation_params.temperature,
             "top_p": generation_params.top_p,
@@ -156,3 +166,80 @@ class AnthropicInferenceEngine(RemoteInferenceEngine):
     def _default_remote_params(self) -> RemoteParams:
         """Returns the default remote parameters."""
         return RemoteParams(num_workers=5, politeness_policy=60.0)
+
+    def _normalize_content_for_anthropic(self, content: Any) -> list[dict[str, Any]]:
+        """Convert OpenAI-style content into Anthropic message blocks."""
+
+        if isinstance(content, str):
+            return [{"type": "text", "text": content}]
+
+        if not isinstance(content, list):
+            return [{"type": "text", "text": str(content) if content is not None else ""}]
+
+        normalized: list[dict[str, Any]] = []
+        for part in content:
+            if not isinstance(part, dict):
+                normalized.append({"type": "text", "text": str(part)})
+                continue
+
+            part_type = str(part.get("type", "")).lower()
+            if part_type == "text":
+                text_value = part.get("text") or part.get("content") or ""
+                normalized.append({"type": "text", "text": text_value})
+            elif part_type == "image_url":
+                normalized.append(
+                    self._build_media_block("image", part.get("image_url") or {})
+                )
+            elif part_type == "audio_url":
+                normalized.append(
+                    self._build_media_block("audio", part.get("audio_url") or {})
+                )
+            elif part_type == "video_url":
+                normalized.append(
+                    self._build_media_block("video", part.get("video_url") or {})
+                )
+            else:
+                normalized.append({"type": "text", "text": str(part)})
+
+        return normalized if normalized else [{"type": "text", "text": ""}]
+
+    def _build_media_block(self, media_type: str, payload: Any) -> dict[str, Any]:
+        """Create a Claude-compatible media block from OpenAI-style payloads."""
+
+        url = ""
+        if isinstance(payload, dict):
+            url = payload.get("url") or payload.get("content") or ""
+        elif isinstance(payload, str):
+            url = payload
+
+        if not url:
+            raise ValueError(f"Missing {media_type} payload for Anthropic request.")
+
+        if url.startswith("data:"):
+            header, _, data = url.partition(",")
+            media = header.split("data:", 1)[-1].split(";")[0] or self._default_mime(media_type)
+            base64_data = data
+            return {
+                "type": media_type,
+                "source": {
+                    "type": "base64",
+                    "media_type": media,
+                    "data": base64_data,
+                },
+            }
+
+        return {
+            "type": media_type,
+            "source": {
+                "type": "url",
+                "url": url,
+            },
+        }
+
+    @staticmethod
+    def _default_mime(media_type: str) -> str:
+        if media_type == "audio":
+            return "audio/wav"
+        if media_type == "video":
+            return "video/mp4"
+        return "image/png"

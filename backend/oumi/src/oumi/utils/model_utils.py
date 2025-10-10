@@ -16,7 +16,22 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Tuple
+
+from oumi.core.configs.params.model_params import ModelParams
+
+_VISION_KEYWORDS = (
+    "vision",
+    "vl",
+    "gpt-4o",
+    "gemini",
+    "claude-3",
+    "sonnet",
+    "flash",
+    "imagebind",
+    "internvl",
+    "llava",
+)
 
 
 def is_qwen_omni_model(model_name: Optional[str]) -> bool:
@@ -28,4 +43,49 @@ def is_qwen_omni_model(model_name: Optional[str]) -> bool:
     return "qwen" in lowered and "omni" in lowered
 
 
-__all__ = ["is_qwen_omni_model"]
+def _infer_vision_from_name(model_name: Optional[str]) -> bool:
+    if not model_name:
+        return False
+    lowered = model_name.lower()
+    return any(keyword in lowered for keyword in _VISION_KEYWORDS)
+
+
+def resolve_model_capabilities(
+    model_params: Optional[ModelParams],
+    *,
+    config_path: Optional[str] = None,
+    model_name: Optional[str] = None,
+) -> Tuple[bool, bool]:
+    """Resolve (is_vision_capable, is_omni_capable) tuple for the supplied config."""
+
+    is_vision: Optional[bool] = None
+    is_omni: Optional[bool] = None
+
+    resolved_name = model_name
+
+    if model_params is not None:
+        is_vision = model_params.is_vision_capable
+        is_omni = model_params.is_omni_capable
+        resolved_name = model_params.model_name
+
+    if resolved_name is None:
+        resolved_name = model_name
+
+    if is_omni is None:
+        is_omni = is_qwen_omni_model(resolved_name)
+
+    if is_vision is None:
+        if is_omni:
+            is_vision = True
+        elif config_path and "vision" in config_path.replace("\\", "/"):
+            is_vision = True
+        else:
+            is_vision = _infer_vision_from_name(resolved_name)
+
+    if is_omni and not is_vision:
+        is_vision = True
+
+    return bool(is_vision), bool(is_omni)
+
+
+__all__ = ["is_qwen_omni_model", "resolve_model_capabilities"]

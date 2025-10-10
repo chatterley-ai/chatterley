@@ -23,7 +23,7 @@ from aiohttp import web
 from oumi.utils.logging import logger
 from oumi.webchat.core.session_manager import SessionManager
 from oumi.webchat.utils.fallbacks import model_name_fallback
-from oumi.utils.model_utils import is_qwen_omni_model
+from oumi.utils.model_utils import resolve_model_capabilities
 
 
 class SystemHandler:
@@ -57,11 +57,20 @@ class SystemHandler:
         if not model_id:
             model_id = model_name_fallback("default_config.model.model_name")
             logger.warning(f"Default config model_name missing; using fallback '{model_id}'.")
+        vision_capable, omni_capable = resolve_model_capabilities(
+            session_manager.default_config.model,
+            config_path=getattr(session_manager.default_config, "config_path", None),
+            model_name=model_id,
+        )
         self.model_info = {
             "id": model_id,
             "object": "model",
             "created": int(time.time()),
             "owned_by": "oumi",
+            "config_metadata": {
+                "is_vision_capable": vision_capable,
+                "is_omni_capable": omni_capable,
+            },
         }
     
     async def handle_health(self, request: web.Request) -> web.Response:
@@ -133,7 +142,11 @@ class SystemHandler:
             config_path = getattr(active_config, "config_path", None)
             
             # Create enhanced model info with config metadata
-            is_omni = is_qwen_omni_model(model_name)
+            is_vision_capable, is_omni_capable = resolve_model_capabilities(
+                active_config.model,
+                config_path=config_path,
+                model_name=model_name,
+            )
 
             enhanced_model_info = {
                 "id": model_name,
@@ -150,7 +163,8 @@ class SystemHandler:
                     "model_family": self._extract_model_family(model_name),
                     "config_path": config_path,
                     "is_active_config": True,  # Flag to indicate this is the active config
-                    "is_omni_capable": is_omni,
+                    "is_vision_capable": is_vision_capable,
+                    "is_omni_capable": is_omni_capable,
                 }
             }
             
@@ -162,10 +176,17 @@ class SystemHandler:
             # Fallback to basic model info
             fallback_info = dict(self.model_info)
             fallback_metadata = dict(fallback_info.get("config_metadata", {}))
+            model_name = fallback_info.get("id", "")
             if "is_omni_capable" not in fallback_metadata:
-                fallback_metadata["is_omni_capable"] = is_qwen_omni_model(
-                    fallback_info.get("id", "")
+                _, omni_capable = resolve_model_capabilities(
+                    None, model_name=model_name, config_path=None
                 )
+                fallback_metadata["is_omni_capable"] = omni_capable
+            if "is_vision_capable" not in fallback_metadata:
+                vision_capable, _ = resolve_model_capabilities(
+                    None, model_name=model_name, config_path=None
+                )
+                fallback_metadata["is_vision_capable"] = vision_capable
             fallback_info["config_metadata"] = fallback_metadata
             return web.json_response({"object": "list", "data": [fallback_info]})
     

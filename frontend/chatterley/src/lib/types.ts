@@ -246,6 +246,8 @@ export interface ApiModel {
   inputCost?: number; // per 1M tokens
   outputCost?: number; // per 1M tokens
   isMultimodal?: boolean;
+   isVisionCapable?: boolean;
+   isOmniCapable?: boolean;
   tags?: string[];
 }
 
