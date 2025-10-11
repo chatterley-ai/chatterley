@@ -14,6 +14,14 @@ import { URL } from 'url';
 import log from 'electron-log';
 import { SystemDetector, SystemInfo } from './system-detector';
 
+const LLAMA_WHEEL_RELEASE_BASE = 'https://github.com/chatterley-ai/chatterley/releases/download/extra-wheels-v0.1.0';
+const LLAMA_WHEEL_FILENAMES: Record<string, string> = {
+  mac: 'llama_cpp_python-0.3.16-cp312-cp312-macosx_15_0_arm64.whl',
+  cpu: 'llama_cpp_python-0.3.15-cp312-cp312-win_amd64_cpu.whl',
+  'cuda12.4': 'llama_cpp_python-0.3.15-cp312-cp312-win_amd64_cu124.whl',
+  'cuda12.6': 'llama_cpp_python-0.3.15-cp312-cp312-win_amd64_cu126.whl'
+};
+
 export interface SetupProgress {
   step: string;
   progress: number;      // 0-100
@@ -639,7 +647,55 @@ export class PythonEnvironmentManager {
     return Array.from(order);
   }
 
-  private findPrebuiltLlamaWheel(targetPythonTag?: string): string | null {
+  private getWheelCacheDir(profile: string): string {
+    return path.join(this.getUserDataDir(), 'python-wheels', profile);
+  }
+
+  private getLlamaWheelFilename(profile: string, pythonTag?: string): string | undefined {
+    const filename = LLAMA_WHEEL_FILENAMES[profile];
+    if (!filename) {
+      return undefined;
+    }
+    if (pythonTag && !filename.includes(pythonTag)) {
+      log.warn(
+        `[PythonEnvManager] Wheel ${filename} does not match requested Python tag ${pythonTag}; continuing anyway`
+      );
+    }
+    return filename;
+  }
+
+  private async ensureRemoteLlamaWheel(profile: string, pythonTag?: string): Promise<string | null> {
+    const filename = this.getLlamaWheelFilename(profile, pythonTag);
+    if (!filename) {
+      return null;
+    }
+
+    const cacheDir = this.getWheelCacheDir(profile);
+    const targetPath = path.join(cacheDir, filename);
+    if (fs.existsSync(targetPath)) {
+      log.info(`[PythonEnvManager] Using cached llama wheel: ${targetPath}`);
+      return targetPath;
+    }
+
+    const url = `${LLAMA_WHEEL_RELEASE_BASE}/${encodeURIComponent(filename)}`;
+    try {
+      await this.reportProgress('llama_cpp', 58, `Downloading ${filename}...`);
+      await this.downloadFile(url, targetPath);
+      log.info(`[PythonEnvManager] Downloaded llama wheel: ${targetPath}`);
+      return targetPath;
+    } catch (error) {
+      log.warn(`[PythonEnvManager] Failed to download llama wheel from ${url}:`, error);
+      try {
+        await fs.promises.unlink(targetPath);
+      } catch {
+        // ignore cleanup errors
+      }
+      return null;
+    }
+  }
+
+  private async findPrebuiltLlamaWheel(targetPythonTag?: string): Promise<string | null> {
+    const profileOrder = this.getPreferredWheelProfiles(process.env.LLAMA_WHEEL_PROFILE ?? process.env.VLLM_WHEEL_PROFILE);
     const resourcesPath = app.isPackaged
       ? process.resourcesPath
       : path.resolve(__dirname, '../..');
@@ -650,7 +706,6 @@ export class PythonEnvironmentManager {
       path.join(resourcesPath, '..', '..', 'python-wheels'),
     ];
 
-    const profileOrder = this.getPreferredWheelProfiles(process.env.LLAMA_WHEEL_PROFILE ?? process.env.VLLM_WHEEL_PROFILE);
     log.info(`[PythonEnvManager] Wheel profile preference order: ${profileOrder.join(', ')}`);
 
     const candidateDirs: string[] = [];
@@ -684,7 +739,18 @@ export class PythonEnvironmentManager {
       }
     }
 
-    return fallback;
+    if (fallback) {
+      return fallback;
+    }
+
+    for (const profile of profileOrder) {
+      const downloaded = await this.ensureRemoteLlamaWheel(profile, targetPythonTag);
+      if (downloaded) {
+        return downloaded;
+      }
+    }
+
+    return null;
   }
 
   private findPrebuiltVllmWheel(targetPythonTag?: string): string | null {
@@ -800,9 +866,9 @@ export class PythonEnvironmentManager {
     }
 
     const pythonTag = await this.getPythonTag(pythonPath);
-    const wheelPath = this.findPrebuiltLlamaWheel(pythonTag || undefined);
+    const wheelPath = await this.findPrebuiltLlamaWheel(pythonTag || undefined);
     if (!wheelPath) {
-      log.info('[PythonEnvManager] No bundled llama-cpp wheel found, continuing with default installation');
+      log.info('[PythonEnvManager] No prebuilt llama-cpp wheel available, continuing with default installation');
       return;
     }
 

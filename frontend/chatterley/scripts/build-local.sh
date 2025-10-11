@@ -51,48 +51,6 @@ cleanup_macos_dmg_volume() {
     fi
 }
 
-sign_macos_llama_wheel() {
-    local wheel_dir="$PROJECT_DIR/python-wheels/mac"
-    local wheel_path
-    wheel_path=$(find "$wheel_dir" -maxdepth 1 -type f -name 'llama_cpp_python-*.whl' | head -n 1 || true)
-
-    if [[ -z "$wheel_path" ]]; then
-        echo "ℹ️  No mac llama.cpp wheel found to sign (expected in $wheel_dir)."
-        return 0
-    fi
-
-    local identity="${APPLE_CODESIGN_IDENTITY:-${CSC_NAME:-${MAC_CODESIGN_NAME:-}}}"
-    if [[ -z "$identity" ]]; then
-        echo "⚠️  Skipping llama.cpp wheel signing: no macOS code signing identity provided (APPLE_CODESIGN_IDENTITY / CSC_NAME)."
-        return 0
-    fi
-
-    echo "🪪 Signing bundled llama.cpp wheel with identity: $identity"
-    local temp_dir
-    temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/llama-wheel-XXXXXXXX") || {
-        echo "❌ Failed to create temporary directory for wheel signing."
-        return 1
-    }
-
-    cleanup() { rm -rf "$temp_dir"; }
-    trap cleanup EXIT
-
-    unzip -q "$wheel_path" -d "$temp_dir"
-
-    while IFS= read -r -d '' dylib; do
-        echo "  • codesign $(basename "$dylib")"
-        codesign --force --options runtime --timestamp --sign "$identity" "$dylib"
-    done < <(find "$temp_dir" -type f -name '*.dylib' -print0)
-
-    local new_wheel="${wheel_path}.signed"
-    (cd "$temp_dir" && zip -qr "$new_wheel" .)
-    mv "$new_wheel" "$wheel_path"
-
-    rm -rf "$temp_dir"
-    trap - EXIT
-    echo "✅ llama.cpp wheel signed and repacked: $(basename "$wheel_path")"
-}
-
 echo "🚀 Building Chatterley Desktop for platform: $PLATFORM"
 echo "📁 Project directory: $PROJECT_DIR"
 
@@ -139,7 +97,6 @@ case "$PLATFORM" in
         else
             echo "🔎 Using existing DEBUG: $DEBUG"
         fi
-        sign_macos_llama_wheel
         npm run dist:mac
         ;;
     "win" | "windows" | "win-cpu" | "win-cuda12.4" | "win-cuda12.6")
@@ -175,7 +132,6 @@ case "$PLATFORM" in
         else
             echo "🔎 Using existing DEBUG: $DEBUG"
         fi
-        sign_macos_llama_wheel
         npm run dist:mac
         if [[ "${LLAMA_WHEEL_PROFILE}" == "mac" ]]; then
             export LLAMA_WHEEL_PROFILE="cpu"

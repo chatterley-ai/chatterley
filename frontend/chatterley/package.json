@@ -192,13 +192,6 @@
             "!**/*.pyc",
             "!**/*.pyo"
           ]
-        },
-        {
-          "from": "python-wheels/",
-          "to": "python-wheels",
-          "filter": [
-            "**/*"
-          ]
         }
       ],
       "target": [
