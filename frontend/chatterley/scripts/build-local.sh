@@ -99,11 +99,13 @@ case "$PLATFORM" in
         fi
         npm run dist:mac
         ;;
-    "win" | "windows" | "win-cpu" | "win-cuda12.4" | "win-cuda12.6")
+    "win" | "windows" | "win-cpu" | "win-cuda12.6")
         case "$PLATFORM" in
             win-cpu) export LLAMA_WHEEL_PROFILE="cpu" ;;
-            win-cuda12.4) export LLAMA_WHEEL_PROFILE="cuda12.4" ;;
             win-cuda12.6) export LLAMA_WHEEL_PROFILE="cuda12.6" ;;
+            win* )
+                export LLAMA_WHEEL_PROFILE="${LLAMA_WHEEL_PROFILE:-cpu}"
+                ;;
         esac
         export VLLM_WHEEL_PROFILE="${VLLM_WHEEL_PROFILE:-$LLAMA_WHEEL_PROFILE}"
         echo "🪟 Building for Windows..."

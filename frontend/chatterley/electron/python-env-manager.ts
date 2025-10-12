@@ -14,12 +14,17 @@ import { URL } from 'url';
 import log from 'electron-log';
 import { SystemDetector, SystemInfo } from './system-detector';
 
-const LLAMA_WHEEL_RELEASE_BASE = 'https://github.com/chatterley-ai/chatterley/releases/download/extra-wheels-v0.1.0';
-const LLAMA_WHEEL_FILENAMES: Record<string, string> = {
-  mac: 'llama_cpp_python-0.3.16-cp312-cp312-macosx_15_0_arm64.whl',
-  cpu: 'llama_cpp_python-0.3.15-cp312-cp312-win_amd64_cpu.whl',
-  'cuda12.4': 'llama_cpp_python-0.3.15-cp312-cp312-win_amd64_cu124.whl',
-  'cuda12.6': 'llama_cpp_python-0.3.15-cp312-cp312-win_amd64_cu126.whl'
+type WindowsWheelProfile = 'cpu' | 'cuda12.6';
+type LlamaWheelProfile = WindowsWheelProfile | 'mac';
+
+const LLAMA_WHEEL_RESOURCES: Record<LlamaWheelProfile, { relativePath: string }> = {
+  mac: { relativePath: path.join('python-wheels', 'mac', 'llama_cpp_python-0.3.16-cp312-cp312-macosx_15_0_arm64.whl') },
+  cpu: { relativePath: path.join('python-wheels', 'cpu', 'llama_cpp_python-0.3.16-cp312-cp312-win_amd64_cpu.whl') },
+  'cuda12.6': { relativePath: path.join('python-wheels', 'cuda12.6', 'llama_cpp_python-0.3.16-cp312-cp312-win_amd64_cu126.whl') },
+};
+
+const WINDOWS_VLLM_WHEEL_RESOURCES: Partial<Record<WindowsWheelProfile, { relativePath: string }>> = {
+  'cuda12.6': { relativePath: path.join('python-wheels', 'vllm', 'cuda12.6', 'vllm-0.11.0+cu124-cp312-cp312-win_amd64.whl') },
 };
 
 export interface SetupProgress {
@@ -58,53 +63,35 @@ export class PythonEnvironmentManager {
     }
   }
 
-  private getWindowsWheelProfile(): string {
-    let profile = (process.env.VLLM_WHEEL_PROFILE || process.env.LLAMA_WHEEL_PROFILE || '').toLowerCase();
-    if (profile) {
-      return profile;
+  private getWindowsWheelProfile(): WindowsWheelProfile {
+    const requested = (process.env.VLLM_WHEEL_PROFILE || process.env.LLAMA_WHEEL_PROFILE || '').trim().toLowerCase();
+    if (requested === 'cuda12.6') {
+      log.info('[PythonEnvManager] Using wheel profile from environment: cuda12.6');
+      return 'cuda12.6';
     }
-
-    try {
-      const resourcesRoot = app.isPackaged
-        ? process.resourcesPath
-        : path.resolve(__dirname, '../..');
-
-      const candidates: Array<{ profile: string; paths: string[] }> = [
-        {
-          profile: 'cuda12.6',
-          paths: [
-            path.join(resourcesRoot, 'python-wheels', 'vllm', 'cuda12.6'),
-            path.join(resourcesRoot, 'python-wheels', 'cuda12.6')
-          ]
-        },
-        {
-          profile: 'cuda12.4',
-          paths: [
-            path.join(resourcesRoot, 'python-wheels', 'vllm', 'cuda12.4'),
-            path.join(resourcesRoot, 'python-wheels', 'cuda12.4')
-          ]
-        }
-      ];
-
-      for (const candidate of candidates) {
-        if (candidate.paths.some((p) => fs.existsSync(p))) {
-          return candidate.profile;
-        }
+    if (requested === 'cpu' || requested === '') {
+      if (requested === 'cpu') {
+        log.info('[PythonEnvManager] Using wheel profile from environment: cpu');
+      } else {
+        log.info('[PythonEnvManager] Wheel profile not set; defaulting to cpu');
       }
-    } catch (error) {
-      log.debug('[PythonEnvManager] Failed to auto-detect Windows profile:', error);
+      return 'cpu';
     }
-
+    if (requested === 'cuda12.4') {
+      log.warn('[PythonEnvManager] Wheel profile cuda12.4 is no longer supported; defaulting to cpu');
+      return 'cpu';
+    }
+    log.warn('[PythonEnvManager] Unknown wheel profile "%s"; defaulting to cpu', requested);
     return 'cpu';
   }
 
-  private getWindowsTorchSpec(profile: string): {
+  private getWindowsTorchSpec(profile: WindowsWheelProfile): {
     packages: string[];
     indexUrl?: string;
     torchVersion?: string;
     cudaVersion?: string;
   } | null {
-    const specs: Record<string, { packages: string[]; indexUrl: string; torchVersion: string; cudaVersion: string; }> = {
+    const specs: Partial<Record<WindowsWheelProfile, { packages: string[]; indexUrl: string; torchVersion: string; cudaVersion: string; }>> = {
       'cuda12.6': {
         packages: [
           'torch==2.7.1+cu126',
@@ -115,25 +102,10 @@ export class PythonEnvironmentManager {
         torchVersion: '2.7.1',
         cudaVersion: '12.6',
       },
-      'cuda12.4': {
-        packages: [
-          'torch==2.6.0+cu124',
-          'torchaudio==2.6.0+cu124',
-          'torchvision==0.21.0+cu124',
-        ],
-        indexUrl: 'https://download.pytorch.org/whl/cu124',
-        torchVersion: '2.6.0',
-        cudaVersion: '12.4',
-      },
     };
 
-    if (specs[profile]) {
-      return specs[profile];
-    }
-    if (profile === 'cpu') {
-      return null;
-    }
-    return null;
+    const spec = specs[profile];
+    return spec ?? null;
   }
 
   private async installWindowsTorchRuntime(
@@ -207,7 +179,7 @@ export class PythonEnvironmentManager {
       return result;
     }
     const profile = this.getWindowsWheelProfile();
-    if (profile === 'cuda12.6' || profile === 'cuda12.4') {
+    if (profile === 'cuda12.6') {
       return {
         sglang: result.sglang,
         vllm: true,
@@ -265,6 +237,7 @@ export class PythonEnvironmentManager {
       VIRTUAL_ENV: envPath,
       PATH: combinedPath,
       Path: combinedPath, // Some Windows environments read capitalized variant
+      GGML_CCACHE: 'OFF',
     };
   }
 
@@ -585,233 +558,78 @@ export class PythonEnvironmentManager {
     log.info('[PythonEnvManager] Portable Git configured successfully.');
   }
 
-  /**
-   * Locate a prebuilt llama-cpp wheel shipped with the application (if available)
-   */
-  private normalizeWheelProfile(profile?: string | null): string | null {
-    if (!profile) {
-      return null;
+  private getResourcesRoots(): string[] {
+    if (!app.isPackaged) {
+      const devRoot = path.resolve(__dirname, '../..');
+      log.info('[PythonEnvManager] Resources root (dev): %s', devRoot);
+      return [devRoot];
     }
 
-    const cleaned = profile.trim().toLowerCase();
-    if (!cleaned) {
-      return null;
-    }
-
-    const aliases: Record<string, string> = {
-      'cpu': 'cpu',
-      'default': 'cpu',
-      'cuda': 'cuda12.6',
-      'cuda12': 'cuda12.6',
-      'cuda126': 'cuda12.6',
-      'cuda12_6': 'cuda12.6',
-      'cuda12.6': 'cuda12.6',
-      'cuda124': 'cuda12.4',
-      'cuda12_4': 'cuda12.4',
-      'cuda12.4': 'cuda12.4',
-      'mac': 'mac',
-      'darwin': 'mac',
-      'macos': 'mac',
-      'macos-arm64': 'mac',
-    };
-
-    return aliases[cleaned] ?? cleaned;
-  }
-
-  private getPreferredWheelProfiles(preferred?: string | null): string[] {
-    const profileEnv = preferred ?? process.env.VLLM_WHEEL_PROFILE ?? process.env.LLAMA_WHEEL_PROFILE;
-    const requested = this.normalizeWheelProfile(profileEnv);
-
-    if (!requested) {
-      if (process.platform === 'darwin') {
-        return ['mac', 'cpu'];
-      }
-      return ['cuda12.6', 'cuda12.4', 'cpu'];
-    }
-
-    if (requested === 'cpu') {
-      return ['cpu'];
-    }
-
-    const order = new Set<string>([requested]);
-    const fallbacks =
-      requested === 'cuda12.6'
-        ? ['cuda12.4', 'cpu']
-        : requested === 'cuda12.4'
-          ? ['cuda12.6', 'cpu']
-          : requested === 'mac'
-            ? ['cpu']
-            : ['cpu'];
-
-    fallbacks.forEach(profile => order.add(profile));
-    return Array.from(order);
-  }
-
-  private getWheelCacheDir(profile: string): string {
-    return path.join(this.getUserDataDir(), 'python-wheels', profile);
-  }
-
-  private getLlamaWheelFilename(profile: string, pythonTag?: string): string | undefined {
-    const filename = LLAMA_WHEEL_FILENAMES[profile];
-    if (!filename) {
-      return undefined;
-    }
-    if (pythonTag && !filename.includes(pythonTag)) {
-      log.warn(
-        `[PythonEnvManager] Wheel ${filename} does not match requested Python tag ${pythonTag}; continuing anyway`
-      );
-    }
-    return filename;
-  }
-
-  private async ensureRemoteLlamaWheel(profile: string, pythonTag?: string): Promise<string | null> {
-    const filename = this.getLlamaWheelFilename(profile, pythonTag);
-    if (!filename) {
-      return null;
-    }
-
-    const cacheDir = this.getWheelCacheDir(profile);
-    const targetPath = path.join(cacheDir, filename);
-    if (fs.existsSync(targetPath)) {
-      log.info(`[PythonEnvManager] Using cached llama wheel: ${targetPath}`);
-      return targetPath;
-    }
-
-    const url = `${LLAMA_WHEEL_RELEASE_BASE}/${encodeURIComponent(filename)}`;
-    try {
-      await this.reportProgress('llama_cpp', 58, `Downloading ${filename}...`);
-      await this.downloadFile(url, targetPath);
-      log.info(`[PythonEnvManager] Downloaded llama wheel: ${targetPath}`);
-      return targetPath;
-    } catch (error) {
-      log.warn(`[PythonEnvManager] Failed to download llama wheel from ${url}:`, error);
-      try {
-        await fs.promises.unlink(targetPath);
-      } catch {
-        // ignore cleanup errors
-      }
-      return null;
-    }
-  }
-
-  private async findPrebuiltLlamaWheel(targetPythonTag?: string): Promise<string | null> {
-    const profileOrder = this.getPreferredWheelProfiles(process.env.LLAMA_WHEEL_PROFILE ?? process.env.VLLM_WHEEL_PROFILE);
-    const resourcesPath = app.isPackaged
-      ? process.resourcesPath
-      : path.resolve(__dirname, '../..');
-
-    const baseDirs = [
-      path.join(resourcesPath, 'python-wheels'),
-      path.join(resourcesPath, 'python', 'wheels'),
-      path.join(resourcesPath, '..', '..', 'python-wheels'),
+    const primary = process.resourcesPath;
+    const roots = [
+      primary,
+      path.join(primary, 'app.asar.unpacked'),
+      path.join(primary, '..', 'app.asar.unpacked'),
     ];
 
-    log.info(`[PythonEnvManager] Wheel profile preference order: ${profileOrder.join(', ')}`);
-
-    const candidateDirs: string[] = [];
-    for (const base of baseDirs) {
-      for (const profile of profileOrder) {
-        candidateDirs.push(path.join(base, profile));
-      }
-      candidateDirs.push(base); // legacy fallback
-    }
-
-    let fallback: string | null = null;
-
-    for (const dir of candidateDirs) {
-      if (!fs.existsSync(dir)) {
-        continue;
-      }
-
-      const entries = fs.readdirSync(dir);
-      for (const entry of entries) {
-        if (entry.toLowerCase().startsWith('llama_cpp_python') && entry.endsWith('.whl')) {
-          const fullPath = path.join(dir, entry);
-          log.info(`[PythonEnvManager] Candidate prebuilt llama wheel found: ${fullPath}`);
-          if (targetPythonTag && entry.includes(targetPythonTag)) {
-            log.info(`[PythonEnvManager] Selecting wheel ${entry} for tag ${targetPythonTag}`);
-            return fullPath;
-          }
-          if (!fallback) {
-            fallback = fullPath;
-          }
-        }
-      }
-    }
-
-    if (fallback) {
-      return fallback;
-    }
-
-    for (const profile of profileOrder) {
-      const downloaded = await this.ensureRemoteLlamaWheel(profile, targetPythonTag);
-      if (downloaded) {
-        return downloaded;
-      }
-    }
-
-    return null;
+    log.info('[PythonEnvManager] Resources roots (packaged): %s', roots.join(' | '));
+    return roots;
   }
 
-  private findPrebuiltVllmWheel(targetPythonTag?: string): string | null {
-    if (process.platform !== 'win32') {
+  private resolveResourcePath(relativePath: string): string {
+    log.info('[PythonEnvManager] Resolving resource: %s', relativePath);
+    for (const root of this.getResourcesRoots()) {
+      const candidate = path.join(root, relativePath);
+      if (fs.existsSync(candidate)) {
+        log.info('[PythonEnvManager] Found resource at %s', candidate);
+        return candidate;
+      }
+      log.info('[PythonEnvManager] Resource not found at %s', candidate);
+    }
+
+    return path.join(this.getResourcesRoots()[0], relativePath);
+  }
+
+  private resolveLlamaWheel(profile: LlamaWheelProfile, pythonTag?: string): string | null {
+    const entry = LLAMA_WHEEL_RESOURCES[profile];
+    if (!entry) {
       return null;
     }
 
-    const resourcesPath = app.isPackaged
-      ? process.resourcesPath
-      : path.resolve(__dirname, '../..');
-
-    const baseDirs = [
-      path.join(resourcesPath, 'python-wheels', 'vllm'),
-      path.join(resourcesPath, 'python', 'wheels', 'vllm'),
-      path.join(resourcesPath, '..', '..', 'python-wheels', 'vllm'),
-    ];
-
-    const profileOrder = this.getPreferredWheelProfiles(process.env.VLLM_WHEEL_PROFILE ?? process.env.LLAMA_WHEEL_PROFILE);
-    const candidateDirs: string[] = [];
-    for (const base of baseDirs) {
-      for (const profile of profileOrder) {
-        candidateDirs.push(path.join(base, profile));
-      }
-      candidateDirs.push(base);
+    const absolutePath = this.resolveResourcePath(entry.relativePath);
+    if (!fs.existsSync(absolutePath)) {
+      log.warn('[PythonEnvManager] Expected llama-cpp wheel missing at %s', absolutePath);
+      return null;
     }
 
-    let fallback: string | null = null;
-    const mismatched: string[] = [];
-    for (const dir of candidateDirs) {
-      if (!fs.existsSync(dir)) {
-        continue;
-      }
-
-      const entries = fs.readdirSync(dir);
-      for (const entry of entries) {
-        const lower = entry.toLowerCase();
-        if (lower.startsWith('vllm') && entry.endsWith('.whl')) {
-          const fullPath = path.join(dir, entry);
-          log.info(`[PythonEnvManager] Candidate vLLM wheel found: ${fullPath}`);
-          if (targetPythonTag) {
-            if (entry.includes(targetPythonTag)) {
-              log.info(`[PythonEnvManager] Selecting vLLM wheel ${entry} for tag ${targetPythonTag}`);
-              return fullPath;
-            }
-            mismatched.push(entry);
-            continue;
-          }
-          if (!fallback) {
-            fallback = fullPath;
-          }
-        }
-      }
+    if (pythonTag && !path.basename(absolutePath).includes(pythonTag)) {
+      log.warn('[PythonEnvManager] Llama wheel %s does not match required Python tag %s', path.basename(absolutePath), pythonTag);
+      return null;
     }
 
-    if (targetPythonTag && mismatched.length > 0) {
-      log.warn(
-        `[PythonEnvManager] Found ${mismatched.length} vLLM wheel(s) but none match required tag ${targetPythonTag}: ${mismatched.join(', ')}`
-      );
+    log.info('[PythonEnvManager] Selected llama-cpp wheel: %s', absolutePath);
+    return absolutePath;
+  }
+
+  private resolveVllmWheel(profile: WindowsWheelProfile, pythonTag?: string): string | null {
+    const entry = WINDOWS_VLLM_WHEEL_RESOURCES[profile];
+    if (!entry) {
+      return null;
     }
 
-    return fallback;
+    const absolutePath = this.resolveResourcePath(entry.relativePath);
+    if (!fs.existsSync(absolutePath)) {
+      log.warn('[PythonEnvManager] Expected vLLM wheel missing at %s', absolutePath);
+      return null;
+    }
+
+    if (pythonTag && !path.basename(absolutePath).includes(pythonTag)) {
+      log.warn('[PythonEnvManager] vLLM wheel %s does not match required Python tag %s', path.basename(absolutePath), pythonTag);
+      return null;
+    }
+
+    log.info('[PythonEnvManager] Selected vLLM wheel: %s', absolutePath);
+    return absolutePath;
   }
 
   /**
@@ -857,6 +675,7 @@ export class PythonEnvironmentManager {
     }
 
     if (!extras.includes('llama_cpp')) {
+      log.info('[PythonEnvManager] Skipping bundled llama-cpp wheel install: extras missing llama_cpp (extras=%s)', extras.join(', '));
       return;
     }
 
@@ -866,7 +685,9 @@ export class PythonEnvironmentManager {
     }
 
     const pythonTag = await this.getPythonTag(pythonPath);
-    const wheelPath = await this.findPrebuiltLlamaWheel(pythonTag || undefined);
+    const profile: LlamaWheelProfile = process.platform === 'darwin' ? 'mac' : this.getWindowsWheelProfile();
+    log.info('[PythonEnvManager] Attempting bundled llama-cpp install (profile=%s, pythonTag=%s)', profile, pythonTag || 'unknown');
+    const wheelPath = this.resolveLlamaWheel(profile, pythonTag || undefined);
     if (!wheelPath) {
       log.info('[PythonEnvManager] No prebuilt llama-cpp wheel available, continuing with default installation');
       return;
@@ -899,11 +720,14 @@ export class PythonEnvironmentManager {
 
     const requiresVllm = extras.some((extra) => ['gpu_win', 'gpu', 'vllm'].includes(extra));
     if (!requiresVllm) {
+      log.info('[PythonEnvManager] Skipping bundled vLLM wheel install: extras do not require vLLM (extras=%s)', extras.join(', '));
       return;
     }
 
     const pythonTag = await this.getPythonTag(pythonPath);
-    const wheelPath = this.findPrebuiltVllmWheel(pythonTag || undefined);
+    const profile = this.getWindowsWheelProfile();
+    log.info('[PythonEnvManager] Attempting bundled vLLM install (profile=%s, pythonTag=%s)', profile, pythonTag || 'unknown');
+    const wheelPath = this.resolveVllmWheel(profile, pythonTag || undefined);
     if (!wheelPath) {
       log.info('[PythonEnvManager] No bundled vLLM wheel found; proceeding with default installation');
       return;

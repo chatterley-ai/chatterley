@@ -14,6 +14,7 @@ notes/
 # frontend build
 frontend/chatterley/windows-tools
 frontend/chatterley/windows-runners
+frontend/chatterley/python-wheels
 
 # Pyright Config
 pyrightconfig.json
