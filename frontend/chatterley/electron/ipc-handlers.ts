@@ -105,6 +105,14 @@ export function setupIpcHandlers(pythonManager: PythonServerManager): void {
     // API key management handlers
     log.info('Setting up API key management handlers...');
     setupApiKeyHandlers(pythonManager);
+    setupHuggingFaceHandlers(pythonManager);
+
+    const savedHfCreds = store.get('huggingFaceCredentials') as { username?: string; token?: string } | undefined;
+    if (savedHfCreds && (savedHfCreds.username || savedHfCreds.token)) {
+      pythonManager.applyHuggingFaceCredentials(savedHfCreds, false).catch((error) => {
+        log.warn('[IPC] Failed to apply persisted HuggingFace credentials:', error);
+      });
+    }
     
     log.info('IPC handlers set up successfully');
   } catch (error) {
@@ -1207,6 +1215,34 @@ function setupApiKeyHandlers(pythonManager: PythonServerManager): void {
         success: false, 
         error: error instanceof Error ? error.message : 'Failed to clear API keys' 
       };
+    }
+  });
+}
+
+function setupHuggingFaceHandlers(pythonManager: PythonServerManager): void {
+  ipcMain.handle('settings:update-huggingface', async (_, credentials: { username?: string; token?: string; restart?: boolean }) => {
+    try {
+      const sanitized = {
+        username: credentials?.username?.trim() || undefined,
+        token: credentials?.token?.trim() || undefined,
+      };
+
+      store.set('huggingFaceCredentials', sanitized);
+      await pythonManager.applyHuggingFaceCredentials(sanitized, credentials?.restart !== false);
+      return { success: true };
+    } catch (error) {
+      log.error('[IPC] Failed to update HuggingFace credentials:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Failed to update HuggingFace credentials' };
+    }
+  });
+
+  ipcMain.handle('settings:get-huggingface', async () => {
+    try {
+      const creds = store.get('huggingFaceCredentials') as { username?: string; token?: string } | undefined;
+      return { success: true, data: creds || {} };
+    } catch (error) {
+      log.error('[IPC] Failed to read HuggingFace credentials:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Failed to read HuggingFace credentials' };
     }
   });
 }

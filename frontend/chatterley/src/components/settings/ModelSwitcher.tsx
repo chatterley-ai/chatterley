@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Model switching component with branch-specific model selection
  */
 
@@ -29,7 +29,7 @@ interface ConfigOption {
 }
 
 // Engine display strictly reflects the engine reported by the active config.
-// No heuristics here — we rely on the backend/config source of truth.
+// No heuristics here â€” we rely on the backend/config source of truth.
 
 const getEngineAbbreviation = (engine: string) => {
   switch (engine.toUpperCase()) {
@@ -92,6 +92,12 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
   const [isModelActionLoading, setIsModelActionLoading] = React.useState(false);
   const [modelStatus, setModelStatus] = React.useState<{ loaded: boolean; modelName?: string; lastTested?: number; testResult?: 'success'|'failure'|'unknown' }>({ loaded: false, testResult: 'unknown' });
 
+  const platformInfo = React.useMemo(() => apiClient.getPlatform(), []);
+  const isWindowsDesktop = React.useMemo(() => {
+    const osName = (platformInfo?.os || '').toLowerCase();
+    return apiClient.isElectronApp() && osName.includes('win');
+  }, [platformInfo]);
+
   // Load available configs on mount
   React.useEffect(() => {
     const loadConfigs = async () => {
@@ -112,7 +118,7 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
             filename: c.filename || '',
           }));
           setAvailableConfigs(sanitized);
-          debugLog(`📋 Loaded ${configsResponse.data.configs.length} inference configurations`);
+          debugLog(`ðŸ“‹ Loaded ${configsResponse.data.configs.length} inference configurations`);
         }
       } catch (error) {
         console.error('Failed to load configs:', error);
@@ -223,27 +229,37 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
 
   const isEngineAvailable = (engine: string): boolean => {
     const e = (engine || '').toLowerCase();
-    if (!apiClient.isElectronApp() || !installedBackends) return true; // allow if web or not yet known
+    if (isWindowsDesktop && e === 'vllm') return false;
+    if (!apiClient.isElectronApp() || !installedBackends) {
+      return !(isWindowsDesktop && e === 'vllm');
+    }
     if (e === 'sglang') return !!installedBackends.sglang;
     if (e === 'vllm') return !!installedBackends.vllm;
     if (e === 'llamacpp') return !!installedBackends.llamacpp;
     return true;
   };
 
+  const configsForPlatform = React.useMemo(() => {
+    if (!isWindowsDesktop) {
+      return availableConfigs;
+    }
+    return availableConfigs.filter((config) => (config.engine || '').toLowerCase() !== 'vllm');
+  }, [availableConfigs, isWindowsDesktop]);
+
   // Filter configs based on search term
   const filteredConfigs = React.useMemo(() => {
-    if (!searchTerm) return availableConfigs;
+    if (!searchTerm) return configsForPlatform;
 
     const term = searchTerm.toLowerCase();
     const safe = (v: unknown) => (typeof v === 'string' ? v.toLowerCase() : '');
-    return availableConfigs.filter(config =>
+    return configsForPlatform.filter(config =>
       safe(config.display_name).includes(term) ||
       safe(config.model_name).includes(term) ||
       safe(config.filename).includes(term) ||
       safe(config.engine).includes(term) ||
       safe(config.model_family).includes(term)
     );
-  }, [searchTerm, availableConfigs]);
+  }, [searchTerm, configsForPlatform]);
 
   // Group filtered configs by model family
   const groupedFilteredConfigs = React.useMemo(() => {
@@ -267,7 +283,7 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
     setIsDropdownOpen(false);
 
     // Show descriptive loading messages
-    const selectedConfig = availableConfigs.find(config => config.config_path === configPath);
+    const selectedConfig = configsForPlatform.find(config => config.config_path === configPath);
     if (selectedConfig) {
       setLoadingMessage(`Switching to ${selectedConfig.display_name}...`);
     } else {
@@ -283,17 +299,17 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
 
     try {
       // Clear model from memory before switching
-      debugLog('🧹 Clearing model before model switch...');
+      debugLog('ðŸ§¹ Clearing model before model switch...');
       const clearResult = await apiClient.clearModel();
       if (!clearResult.success) {
-        console.warn('⚠️ Model clear failed, continuing with model switch:', clearResult.message);
+        console.warn('âš ï¸ Model clear failed, continuing with model switch:', clearResult.message);
       }
 
       // Execute swap command - backend will update active model atomically
-      debugLog(`🔄 Attempting to switch model using config: ${configPath}`);
+      debugLog(`ðŸ”„ Attempting to switch model using config: ${configPath}`);
       const response = await apiClient.executeCommand('swap', [configPath]);
 
-      debugLog('🔄 Model switch response:', response);
+      debugLog('ðŸ”„ Model switch response:', response);
       console.log('[ModelSwitcher] Swap command executed', { success: response.success, message: response.message });
 
       if (response.success) {
@@ -308,7 +324,7 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
         // Show success toast
         try {
           const { showToast } = await import('@/lib/toastBus');
-          showToast({ message: `✅ Switched to ${selectedConfig?.display_name || configPath}`, variant: 'success' });
+          showToast({ message: `âœ… Switched to ${selectedConfig?.display_name || configPath}`, variant: 'success' });
         } catch (e) {
           console.error('[ModelSwitcher] Failed to show swap toast', e);
         }
@@ -316,23 +332,23 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
         setIsDropdownOpen(false);
         setSearchTerm('');
         setError(null);
-        debugLog(`✅ Successfully switched to config: ${configPath}`);
+        debugLog(`âœ… Successfully switched to config: ${configPath}`);
       } else {
         const msg = response.message || 'Failed to switch model';
         try {
           const { showToast } = await import('@/lib/toastBus');
-          showToast({ message: `❌ ${msg}`, variant: 'error' });
+          showToast({ message: `âŒ ${msg}`, variant: 'error' });
         } catch (e) {
           console.error('[ModelSwitcher] Failed to show error toast', e);
         }
         throw new Error(msg);
       }
     } catch (err) {
-      console.error('❌ Model switch error:', err);
+      console.error('âŒ Model switch error:', err);
       setError(err instanceof Error ? err.message : 'Failed to switch model');
       try {
         const { showToast } = await import('@/lib/toastBus');
-        showToast({ message: '❌ Model switch failed', variant: 'error' });
+        showToast({ message: 'âŒ Model switch failed', variant: 'error' });
       } catch (e) {
         console.error('[ModelSwitcher] Failed to show switch-failed toast', e);
       }
@@ -355,7 +371,7 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
     }
 
     // Find matching config for additional metadata
-    const matchingConfig = availableConfigs.find(config =>
+    const matchingConfig = configsForPlatform.find(config =>
       config.display_name === selectedModel ||
       config.model_name === selectedModel
     );
@@ -498,7 +514,7 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
                             </div>
                           </div>
                           <div className="text-xs text-primary">
-                            Enter ↵
+                            Enter â†µ
                           </div>
                         </button>
                       </div>
@@ -534,7 +550,7 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
                                   {config.model_name}
                                 </div>
                                 <div className="text-xs text-muted-foreground mt-1">
-                                  Context: {formatContextLength(config.context_length, config.engine)} tokens • {config.filename}
+                                  Context: {formatContextLength(config.context_length, config.engine)} tokens â€¢ {config.filename}
                                 </div>
                               </div>
                             </div>
@@ -631,3 +647,4 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
     </div>
   );
 }
+

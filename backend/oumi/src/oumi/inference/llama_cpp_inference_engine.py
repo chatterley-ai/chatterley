@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import importlib
 import warnings
 from pathlib import Path
 from typing import Optional, cast
@@ -25,10 +26,22 @@ from oumi.core.types.conversation import Conversation, Message, Role
 from oumi.utils.logging import logger
 from oumi.utils.model_caching import get_local_filepath_for_gguf
 
-try:
-    from llama_cpp import Llama  # pyright: ignore[reportMissingImports]
-except ModuleNotFoundError:
-    Llama = None
+
+def _load_llama_cpp() -> tuple[Optional[type], Exception | None]:
+    try:
+        module = importlib.import_module("llama_cpp")
+        llama_cls = getattr(module, "Llama", None)
+        if llama_cls is None:
+            return None, RuntimeError("llama_cpp module found without `Llama` attribute")
+        return llama_cls, None
+    except ModuleNotFoundError as exc:
+        return None, exc
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("Unexpected error importing llama_cpp: %s", exc, exc_info=True)
+        return None, exc
+
+
+Llama, _LLAMA_IMPORT_ERROR = _load_llama_cpp()
 
 
 class LlamaCppInferenceEngine(BaseInferenceEngine):
@@ -95,9 +108,15 @@ class LlamaCppInferenceEngine(BaseInferenceEngine):
         super().__init__(model_params=model_params, generation_params=generation_params)
 
         if not Llama:
+            detail = (
+                f" (import error: {_LLAMA_IMPORT_ERROR})"
+                if _LLAMA_IMPORT_ERROR
+                else ""
+            )
             raise RuntimeError(
                 "llama-cpp-python is not installed. "
                 "Please install it with 'pip install llama-cpp-python'."
+                f"{detail}"
             )
 
         # `model_max_length` is required by llama-cpp, but optional in our config

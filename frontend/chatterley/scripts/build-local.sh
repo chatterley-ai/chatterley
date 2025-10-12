@@ -1,163 +1,176 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# Local build script for Chatterley Desktop
-# Usage: ./scripts/build-local.sh [platform]
-# Platforms: mac, win, linux, all
+###############################################################################
+# Local build script for Chatterley Desktop (macOS / Windows / Linux)
+# Usage: ./scripts/build-local.sh [platform] [profile]
+#   platform: mac | win | win-cpu | win-cuda12.6 | linux | all
+#   profile : optional llama wheel profile override (e.g. cpu, cuda12.6)
+###############################################################################
 
-set -e
+set -euo pipefail
 
-PLATFORM=${1:-"$(uname | tr '[:upper:]' '[:lower:]')"}
-PROFILE_ARG=${2:-}
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+# --- Helpers -----------------------------------------------------------------
 
-if [[ -z "${LLAMA_WHEEL_PROFILE:-}" && -n "$PROFILE_ARG" ]]; then
-    export LLAMA_WHEEL_PROFILE="$PROFILE_ARG"
-fi
-
-if [[ -z "${LLAMA_WHEEL_PROFILE:-}" ]]; then
-    export LLAMA_WHEEL_PROFILE="cpu"
-fi
-
-if [[ -z "${VLLM_WHEEL_PROFILE:-}" ]]; then
-    export VLLM_WHEEL_PROFILE="$LLAMA_WHEEL_PROFILE"
-fi
-
-# Best-effort cleanup so rebuilds don't fail on existing artifacts/symlinks
 cleanup_macos_dmg_volume() {
-    # Determine product name and version from package.json
-    local product_name
-    local version
-    product_name=$(node -p "(p=> (p.build && p.build.productName) || p.productName || p.name || 'App')(require('./package.json'))" 2>/dev/null || echo "App")
-    version=$(node -p "require('./package.json').version" 2>/dev/null || echo "")
+  local product_name version volume
 
-    # If we couldn't determine, do nothing
-    if [[ -z "$product_name" || -z "$version" ]]; then
-        return 0
-    fi
+  product_name=$(node -p "(p=> (p.build && p.build.productName) || p.productName || p.name || 'App')(require('./package.json'))" 2>/dev/null || echo "App")
+  version=$(node -p "require('./package.json').version" 2>/dev/null || echo "")
 
-    local volume="/Volumes/${product_name} ${version}"
+  [[ -z "${product_name}" || -z "${version}" ]] && return 0
 
-    # Detach if mounted
-    if mount | grep -Fq "$volume"; then
-        echo "🔌 Detaching existing DMG volume: $volume"
-        hdiutil detach -force "$volume" || true
-    fi
+  volume="/Volumes/${product_name} ${version}"
 
-    # Remove any stale mount directory or symlinks inside
-    if [[ -d "$volume" ]]; then
-        echo "🧹 Removing stale volume directory: $volume"
-        rm -rf "$volume" || true
-    fi
+  if mount | grep -Fq "${volume}"; then
+    echo "dY\"O Detaching existing DMG volume: ${volume}"
+    hdiutil detach -force "${volume}" || true
+  fi
+
+  if [[ -d "${volume}" ]]; then
+    echo "dY1 Removing stale volume directory: ${volume}"
+    rm -rf "${volume}" || true
+  fi
 }
 
-echo "🚀 Building Chatterley Desktop for platform: $PLATFORM"
-echo "📁 Project directory: $PROJECT_DIR"
+# --- Script setup ------------------------------------------------------------
 
-cd "$PROJECT_DIR"
+PLATFORM_INPUT=${1:-""}
+PROFILE_ARG=${2:-""}
 
-# Check if we're in the frontend directory
-if [[ ! -f "package.json" ]]; then
-    echo "❌ Error: Must run from frontend directory"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "${SCRIPT_DIR}")"
+
+cd "${PROJECT_DIR}"
+
+if [[ ! -f package.json ]]; then
+  echo "�?O Error: build-local.sh must be run from the frontend directory"
+  exit 1
+fi
+
+if [[ -n "${PROFILE_ARG}" ]]; then
+  export LLAMA_WHEEL_PROFILE="${PROFILE_ARG}"
+fi
+
+export LLAMA_WHEEL_PROFILE="${LLAMA_WHEEL_PROFILE:-cpu}"
+
+# Normalize platform name
+if [[ -z "${PLATFORM_INPUT}" ]]; then
+  PLATFORM_INPUT="$(uname | tr '[:upper:]' '[:lower:]')"
+fi
+
+case "${PLATFORM_INPUT}" in
+  mac|darwin) PLATFORM="mac" ;;
+  win|windows|msys*|mingw*|cygwin*) PLATFORM="win" ;;
+  win-cpu) PLATFORM="win-cpu" ;;
+  win-cuda12.6) PLATFORM="win-cuda12.6" ;;
+  linux|gnu/linux*) PLATFORM="linux" ;;
+  all) PLATFORM="all" ;;
+  *)
+    echo "�?O Unknown platform: ${PLATFORM_INPUT}"
+    echo "Supported platforms: mac, win, win-cpu, win-cuda12.6, linux, all"
     exit 1
-fi
-
-# Install dependencies if needed
-if [[ ! -d "node_modules" ]]; then
-    echo "📦 Installing npm dependencies..."
-    npm install
-fi
-
-# Clean existing build artifacts
-if [[ -d "dist" ]]; then
-    echo "🧹 Removing existing dist directory..."
-    rm -rf dist
-fi
-
-# Generate static configs
-echo "⚙️ Generating static configs..."
-npm run generate-configs
-
-# Download Python distributions based on platform
-case "$PLATFORM" in
-    "mac" | "darwin")
-        echo "🍎 Building for macOS..."
-        echo "🧽 Pre-cleaning any stale DMG mounts/symlinks..."
-        cleanup_macos_dmg_volume
-        if [[ -z "${LLAMA_WHEEL_PROFILE:-}" ]]; then
-            export LLAMA_WHEEL_PROFILE="mac"
-            echo "🎯 Llama wheel profile set to: ${LLAMA_WHEEL_PROFILE}"
-        else
-            echo "🎯 Using existing Llama wheel profile: ${LLAMA_WHEEL_PROFILE}"
-        fi
-        # Enable detailed signing/build logs unless DEBUG is already set by the user
-        if [[ -z "${DEBUG:-}" ]]; then
-            export DEBUG="electron-osx-sign*,electron-builder"
-            echo "🔎 Debug logging enabled: $DEBUG"
-        else
-            echo "🔎 Using existing DEBUG: $DEBUG"
-        fi
-        npm run dist:mac
-        ;;
-    "win" | "windows" | "win-cpu" | "win-cuda12.6")
-        case "$PLATFORM" in
-            win-cpu) export LLAMA_WHEEL_PROFILE="cpu" ;;
-            win-cuda12.6) export LLAMA_WHEEL_PROFILE="cuda12.6" ;;
-            win* )
-                export LLAMA_WHEEL_PROFILE="${LLAMA_WHEEL_PROFILE:-cpu}"
-                ;;
-        esac
-        export VLLM_WHEEL_PROFILE="${VLLM_WHEEL_PROFILE:-$LLAMA_WHEEL_PROFILE}"
-        echo "🪟 Building for Windows..."
-        echo "🎯 Llama wheel profile: ${LLAMA_WHEEL_PROFILE}"
-        echo "🎯 vLLM wheel profile: ${VLLM_WHEEL_PROFILE}"
-        npm run dist:win
-        ;;
-    "linux")
-        echo "🐧 Building for Linux..."
-        npm run dist:linux
-        ;;
-    "all")
-        echo "🌍 Building for all platforms..."
-        echo "📦 Downloading Python distributions for all platforms..."
-        npm run download-python -- --all-platforms
-        echo "🍎 Building macOS packages..."
-        echo "🧽 Pre-cleaning any stale DMG mounts/symlinks..."
-        cleanup_macos_dmg_volume
-        if [[ -z "${LLAMA_WHEEL_PROFILE:-}" ]]; then
-            export LLAMA_WHEEL_PROFILE="mac"
-        fi
-        echo "🎯 Llama wheel profile (mac): ${LLAMA_WHEEL_PROFILE}"
-        if [[ -z "${DEBUG:-}" ]]; then
-            export DEBUG="electron-osx-sign*,electron-builder"
-            echo "🔎 Debug logging enabled: $DEBUG"
-        else
-            echo "🔎 Using existing DEBUG: $DEBUG"
-        fi
-        npm run dist:mac
-        if [[ "${LLAMA_WHEEL_PROFILE}" == "mac" ]]; then
-            export LLAMA_WHEEL_PROFILE="cpu"
-        fi
-        echo "🪟 Building Windows packages (profile: ${LLAMA_WHEEL_PROFILE})..."
-        export VLLM_WHEEL_PROFILE="${VLLM_WHEEL_PROFILE:-$LLAMA_WHEEL_PROFILE}"
-        npm run dist:win
-        echo "🐧 Building Linux packages..."
-        npm run dist:linux
-        ;;
-    *)
-        echo "❌ Unknown platform: $PLATFORM"
-        echo "Supported platforms: mac, win, linux, all"
-        exit 1
-        ;;
+    ;;
 esac
 
-echo "✅ Build completed! Check dist/packages/ for installers."
+echo "dYs? Building Chatterley Desktop for platform: ${PLATFORM}"
+echo "dY\"? Project directory: ${PROJECT_DIR}"
 
-# Show build artifacts
+# Ensure dependencies
+if [[ ! -d node_modules ]]; then
+  echo "dY\"� Installing npm dependencies..."
+  npm install
+fi
+
+# Clean previous artifacts
+if [[ -d dist ]]; then
+  echo "dY1 Removing existing dist directory..."
+  rm -rf dist
+fi
+
+echo "�sT�,? Generating static configs..."
+npm run generate-configs
+
+# --- Platform builds ---------------------------------------------------------
+
+build_mac() {
+  echo "dY?Z Building for macOS..."
+  echo "dYt? Pre-cleaning any stale DMG mounts/symlinks..."
+  cleanup_macos_dmg_volume
+
+  export LLAMA_WHEEL_PROFILE="${LLAMA_WHEEL_PROFILE:-mac}"
+  echo "dYZ_ Llama wheel profile set to: ${LLAMA_WHEEL_PROFILE}"
+
+  if [[ -z "${DEBUG:-}" ]]; then
+    export DEBUG="electron-osx-sign*,electron-builder"
+    echo "dY\"Z Debug logging enabled: ${DEBUG}"
+  else
+    echo "dY\"Z Using existing DEBUG: ${DEBUG}"
+  fi
+
+  npm run dist:mac
+}
+
+build_win() {
+  local profile_msg="Windows"
+
+  case "${1:-}" in
+    cpu)
+      export LLAMA_WHEEL_PROFILE="cpu"
+      profile_msg="Windows (CPU profile)"
+      ;;
+    cuda12.6|"")
+      export LLAMA_WHEEL_PROFILE="${LLAMA_WHEEL_PROFILE:-cuda12.6}"
+      profile_msg="Windows (CUDA 12.6 profile)"
+      ;;
+    *)
+      export LLAMA_WHEEL_PROFILE="${1}"
+      profile_msg="Windows (${LLAMA_WHEEL_PROFILE} profile)"
+      ;;
+  esac
+
+  echo "dY?Y Building for ${profile_msg}..."
+  echo "dYZ_ Llama wheel profile: ${LLAMA_WHEEL_PROFILE}"
+  npm run dist:win
+}
+
+build_linux() {
+  echo "dY?5 Building for Linux..."
+  npm run dist:linux
+}
+
+build_all() {
+  echo "dYO? Building for all platforms..."
+  echo "dY\"� Downloading Python distributions for all platforms..."
+  npm run download-python -- --all-platforms
+
+  # macOS
+  export LLAMA_WHEEL_PROFILE="mac"
+  build_mac
+
+  # Windows CUDA 12.6
+  export LLAMA_WHEEL_PROFILE="cuda12.6"
+  build_win "cuda12.6"
+
+  # Linux
+  build_linux
+}
+
+# --- Dispatch ----------------------------------------------------------------
+
+case "${PLATFORM}" in
+  mac) build_mac ;;
+  win) build_win ;;
+  win-cpu) build_win "cpu" ;;
+  win-cuda12.6) build_win "cuda12.6" ;;
+  linux) build_linux ;;
+  all) build_all ;;
+esac
+
+echo "�o. Build completed! Check dist/packages/ for installers."
 echo ""
-echo "📦 Build artifacts:"
-if [[ -d "dist/packages" ]]; then
-    ls -la dist/packages/
+echo "dY\"� Build artifacts:"
+if [[ -d dist/packages ]]; then
+  ls -la dist/packages/
 else
-    echo "No build artifacts found."
+  echo "No build artifacts found."
 fi

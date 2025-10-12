@@ -111,7 +111,7 @@ export WIN_CSC_KEY_PASSWORD="certificate-password"
 - The packaged app ships these DLLs so end users do not need to install the CUDA toolkit manually.
 
 During setup the Windows runtime also installs the matching Torch stack:
-- `cuda12.6`: `torch==2.7.1+cu126`, `torchaudio==2.7.1+cu126`, `torchvision==0.22.1+cu126` (index: `https://download.pytorch.org/whl/cu126`)
+- `cuda12.6`: `torch==2.7.1+cu128`, `torchaudio==2.7.1+cu128`, `torchvision==0.22.1+cu128` (index: `https://download.pytorch.org/whl/cu128`)
 - `cpu`: defaults to the CPU torch build pulled in by the Oumi extras
 
 #### Selecting a wheel profile when building

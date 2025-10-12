@@ -26,6 +26,9 @@ const nextConfig = {
       if (isElectron) {
         config.target = 'electron-renderer';
       }
+
+      config.output = config.output || {};
+      config.output.globalObject = 'globalThis';
       
       // Define environment variables
       config.plugins.push(
@@ -33,6 +36,15 @@ const nextConfig = {
           global: 'globalThis',
           'process.env.ELECTRON': JSON.stringify(isElectron),
           'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'production'),
+        })
+      );
+
+      config.plugins.push(
+        new webpack.BannerPlugin({
+          banner: 'var global = globalThis;',
+          raw: true,
+          entryOnly: true,
+          test: /\.(js|mjs|cjs)$/,
         })
       );
     }

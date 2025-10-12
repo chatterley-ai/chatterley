@@ -149,6 +149,17 @@ export class ConfigMatcher {
       }
     }
 
+    if (system.platform === 'win32') {
+      if (engineLower === 'vllm') {
+        warnings.push('vLLM is not available on Windows builds of Chatterley');
+        return {
+          score: -50,
+          reason: '',
+          warnings
+        };
+      }
+    }
+
     // Windows/Linux with CUDA
     if (system.platform !== 'darwin' && system.cudaAvailable && system.cudaDevices.length > 0) {
       if (engineLower === 'vllm') {

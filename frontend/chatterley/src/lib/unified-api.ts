@@ -898,6 +898,20 @@ class UnifiedApiClient {
     }
   }
 
+  async updateHuggingFaceCredentials(credentials: { username?: string | null; token?: string | null; restart?: boolean } = {}): Promise<ApiResponse> {
+    if (this.isElectron()) {
+      return this.electronClient.updateHuggingFaceCredentials(credentials);
+    }
+    return { success: true };
+  }
+
+  async getHuggingFaceCredentials(): Promise<ApiResponse<{ username?: string; token?: string }>> {
+    if (this.isElectron()) {
+      return this.electronClient.getHuggingFaceCredentials();
+    }
+    return { success: true, data: {} };
+  }
+
   // Enhanced conversation management with automatic persistence
   async saveConversation(
     sessionId: string,

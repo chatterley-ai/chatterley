@@ -15,6 +15,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
+        {/* Ensure global alias exists before any Next chunks execute */}
         {/* CRITICAL: This script MUST load synchronously before webpack chunks (Electron file:// export) */}
         <script src="./global-polyfill.js"></script>
         <style dangerouslySetInnerHTML={{

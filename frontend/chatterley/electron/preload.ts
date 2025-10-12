@@ -119,6 +119,12 @@ export interface ElectronAPI {
     resetWelcomeSettings: () => Promise<any>;
   };
 
+  // Settings helpers
+  settings: {
+    updateHuggingFace: (credentials: { username?: string; token?: string; restart?: boolean }) => Promise<{ success: boolean; error?: string }>;
+    getHuggingFace: () => Promise<{ success: boolean; data?: { username?: string; token?: string } }>;
+  };
+
   // System detection
   system: {
     getCapabilities: () => Promise<any>;
@@ -333,6 +339,11 @@ const electronAPI: ElectronAPI = {
     clear: () => ipcRenderer.invoke('storage:clear'),
     getAllKeys: () => ipcRenderer.invoke('storage:get-all-keys'),
     resetWelcomeSettings: () => ipcRenderer.invoke('storage:reset-welcome-settings')
+  },
+
+  settings: {
+    updateHuggingFace: (credentials) => ipcRenderer.invoke('settings:update-huggingface', credentials),
+    getHuggingFace: () => ipcRenderer.invoke('settings:get-huggingface')
   },
 
   // System detection

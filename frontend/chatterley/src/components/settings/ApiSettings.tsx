@@ -348,6 +348,12 @@ export default function ApiSettings({ onClose }: ApiSettingsProps) {
   const [validationResults, setValidationResults] = useState<{ [providerId: string]: { isValid: boolean; error?: string } }>({});
   const [showHfToken, setShowHfToken] = useState(false);
   const editingSectionRef = useRef<HTMLDivElement | null>(null);
+  const hfQueuedUpdateRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestHfCredsRef = useRef<{ username?: string; token?: string }>({
+    username: settings.huggingFace?.username ?? undefined,
+    token: settings.huggingFace?.token ?? undefined,
+  });
+  const hfDirtyRef = useRef(false);
 
   const providers = useMemo(() => {
     const allowed = new Set(['openai', 'anthropic', 'google', 'together']);
@@ -384,14 +390,108 @@ export default function ApiSettings({ onClose }: ApiSettingsProps) {
     }
   }, [editingProvider]);
 
+  useEffect(() => {
+    latestHfCredsRef.current = {
+      username: settings.huggingFace?.username ?? undefined,
+      token: settings.huggingFace?.token ?? undefined,
+    };
+  }, [settings.huggingFace?.username, settings.huggingFace?.token]);
+
+  useEffect(() => {
+    if (!apiClient.isElectron()) {
+      return;
+    }
+    let isActive = true;
+    (async () => {
+      try {
+        const response = await apiClient.getHuggingFaceCredentials();
+        if (!isActive || !response?.success || !response.data) {
+          return;
+        }
+        const normalized = {
+          username: response.data.username ?? undefined,
+          token: response.data.token ?? undefined,
+        };
+        const current = {
+          username: settings.huggingFace?.username ?? undefined,
+          token: settings.huggingFace?.token ?? undefined,
+        };
+        if (
+          normalized.username !== current.username ||
+          normalized.token !== current.token
+        ) {
+          updateSettings({ huggingFace: normalized });
+          latestHfCredsRef.current = normalized;
+        }
+      } catch (error) {
+        console.warn('Failed to load HuggingFace credentials from backend:', error);
+      }
+    })();
+    return () => {
+      isActive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleHuggingFaceUpdate = (field: 'username' | 'token', value: string) => {
+    const trimmed = value.trim();
+    const normalizedValue = trimmed ? trimmed : undefined;
+    const current = {
+      username: settings.huggingFace?.username ?? undefined,
+      token: settings.huggingFace?.token ?? undefined,
+    };
+    const nextCreds = {
+      ...current,
+      [field]: normalizedValue,
+    };
+
+    if (nextCreds.username === current.username && nextCreds.token === current.token) {
+      return;
+    }
+
     updateSettings({
-      huggingFace: {
-        ...(settings.huggingFace || {}),
-        [field]: value || undefined,
-      },
+      huggingFace: nextCreds,
     });
+    latestHfCredsRef.current = nextCreds;
+
+    if (apiClient.isElectron()) {
+      hfDirtyRef.current = true;
+      if (hfQueuedUpdateRef.current) {
+        clearTimeout(hfQueuedUpdateRef.current);
+      }
+      hfQueuedUpdateRef.current = setTimeout(() => {
+        hfQueuedUpdateRef.current = null;
+        void apiClient.updateHuggingFaceCredentials({
+          username: nextCreds.username,
+          token: nextCreds.token,
+          restart: false,
+        }).catch((error) => {
+          console.warn('Failed to apply HuggingFace credentials:', error);
+        });
+      }, 400);
+    }
   };
+
+  useEffect(() => {
+    return () => {
+      if (hfQueuedUpdateRef.current) {
+        clearTimeout(hfQueuedUpdateRef.current);
+        hfQueuedUpdateRef.current = null;
+      }
+      if (apiClient.isElectron() && hfDirtyRef.current) {
+        const finalCreds = latestHfCredsRef.current;
+        void apiClient.updateHuggingFaceCredentials({
+          username: finalCreds.username,
+          token: finalCreds.token,
+          restart: true,
+        }).catch((error) => {
+          console.warn('Failed to finalize HuggingFace credentials:', error);
+        });
+        hfDirtyRef.current = false;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Auto-validation when settings close
   const validateAllActiveKeys = useCallback(async () => {

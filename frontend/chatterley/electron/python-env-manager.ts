@@ -23,10 +23,6 @@ const LLAMA_WHEEL_RESOURCES: Record<LlamaWheelProfile, { relativePath: string }>
   'cuda12.6': { relativePath: path.join('python-wheels', 'cuda12.6', 'llama_cpp_python-0.3.16-cp312-cp312-win_amd64_cu126.whl') },
 };
 
-const WINDOWS_VLLM_WHEEL_RESOURCES: Partial<Record<WindowsWheelProfile, { relativePath: string }>> = {
-  'cuda12.6': { relativePath: path.join('python-wheels', 'vllm', 'cuda12.6', 'vllm-0.11.0+cu124-cp312-cp312-win_amd64.whl') },
-};
-
 export interface SetupProgress {
   step: string;
   progress: number;      // 0-100
@@ -48,6 +44,7 @@ export class PythonEnvironmentManager {
   private progressCallback?: (progress: SetupProgress) => void;
   private isSettingUp: boolean = false;
   private setupProcess: ChildProcess | null = null;
+  private cachedSystemInfo?: SystemInfo;
   
   constructor() {
     // Initialize logging
@@ -64,25 +61,130 @@ export class PythonEnvironmentManager {
   }
 
   private getWindowsWheelProfile(): WindowsWheelProfile {
-    const requested = (process.env.VLLM_WHEEL_PROFILE || process.env.LLAMA_WHEEL_PROFILE || '').trim().toLowerCase();
+    const requested = (process.env.LLAMA_WHEEL_PROFILE || '').trim().toLowerCase();
     if (requested === 'cuda12.6') {
       log.info('[PythonEnvManager] Using wheel profile from environment: cuda12.6');
       return 'cuda12.6';
     }
-    if (requested === 'cpu' || requested === '') {
-      if (requested === 'cpu') {
-        log.info('[PythonEnvManager] Using wheel profile from environment: cpu');
-      } else {
-        log.info('[PythonEnvManager] Wheel profile not set; defaulting to cpu');
-      }
+    if (requested === 'cpu') {
+      log.info('[PythonEnvManager] Using wheel profile from environment: cpu');
       return 'cpu';
     }
     if (requested === 'cuda12.4') {
       log.warn('[PythonEnvManager] Wheel profile cuda12.4 is no longer supported; defaulting to cpu');
       return 'cpu';
     }
-    log.warn('[PythonEnvManager] Unknown wheel profile "%s"; defaulting to cpu', requested);
+    if (requested.length > 0) {
+      log.warn('[PythonEnvManager] Unknown wheel profile "%s"; falling back to auto-detection', requested);
+    }
+
+    const shouldUseCudaProfile =
+      process.platform === 'win32' &&
+      this.cachedSystemInfo?.cudaAvailable &&
+      (this.cachedSystemInfo.cudaDevices?.length ?? 0) > 0;
+
+    if (shouldUseCudaProfile) {
+      log.info('[PythonEnvManager] Wheel profile not set; detected CUDA-capable Windows system. Using cuda12.6 profile.');
+      return 'cuda12.6';
+    }
+
+    log.info('[PythonEnvManager] Wheel profile not set; defaulting to cpu');
     return 'cpu';
+  }
+
+  private configureWindowsCudaRuntime(profile: WindowsWheelProfile): void {
+    if (process.platform !== 'win32') {
+      return;
+    }
+
+    if (profile !== 'cuda12.6') {
+      return;
+    }
+
+    const runnerBinRelative = path.join('windows-runners', 'cuda_v12.6', 'bin');
+    const runnerBin = this.resolveResourcePath(runnerBinRelative);
+    if (!fs.existsSync(runnerBin)) {
+      log.warn('[PythonEnvManager] CUDA runner bin directory not found at %s', runnerBin);
+      return;
+    }
+
+    this.addExtraPath(runnerBin);
+
+    const currentPath = process.env.PATH || process.env.Path || '';
+    const normalisedRunnerBin = path.normalize(runnerBin).toLowerCase();
+    const pathEntries = currentPath
+      .split(';')
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0)
+      .map((entry) => path.normalize(entry).toLowerCase());
+    if (!pathEntries.includes(normalisedRunnerBin)) {
+      const delimiter = path.delimiter;
+      process.env.PATH = currentPath ? `${runnerBin}${delimiter}${currentPath}` : runnerBin;
+      process.env.Path = process.env.PATH;
+    }
+
+    const runnerRoot = path.resolve(runnerBin, '..');
+    const ensureEnv = (key: string) => {
+      if (!process.env[key]) {
+        process.env[key] = runnerRoot;
+      }
+    };
+
+    ensureEnv('CUDA_PATH');
+    ensureEnv('CUDA_PATH_V12_6');
+    ensureEnv('CUDA_HOME');
+    if (!process.env.CUDA_VERSION) {
+      process.env.CUDA_VERSION = '12.6';
+    }
+
+    log.info('[PythonEnvManager] Configured CUDA runtime paths using bundled runners at %s', runnerBin);
+  }
+
+  private prepareWindowsWheelForInstallation(originalPath: string): string {
+    if (process.platform !== 'win32') {
+      return originalPath;
+    }
+
+    const basename = path.basename(originalPath);
+    const needsSanitization = /win_amd64_[^\\]+\.whl$/i.test(basename);
+
+    if (!needsSanitization) {
+      return originalPath;
+    }
+
+    const sanitizedBasename = basename.replace(/win_amd64_[^-.]+/i, 'win_amd64');
+    if (sanitizedBasename === basename) {
+      return originalPath;
+    }
+
+    const cacheDir = path.join(os.tmpdir(), 'chatterley-wheel-cache');
+    fs.mkdirSync(cacheDir, { recursive: true });
+    const sanitizedPath = path.join(cacheDir, sanitizedBasename);
+
+    if (!fs.existsSync(sanitizedPath)) {
+      try {
+        fs.copyFileSync(originalPath, sanitizedPath);
+        log.info(
+          '[PythonEnvManager] Copied wheel to sanitized path for installation: %s -> %s',
+          originalPath,
+          sanitizedPath
+        );
+      } catch (error) {
+        log.warn(
+          '[PythonEnvManager] Failed to copy wheel to sanitized path (%s); installing original path instead: %s',
+          sanitizedPath,
+          error
+        );
+        return originalPath;
+      }
+    } else {
+      log.info(
+        '[PythonEnvManager] Using cached sanitized wheel for installation: %s',
+        sanitizedPath
+      );
+    }
+
+    return sanitizedPath;
   }
 
   private getWindowsTorchSpec(profile: WindowsWheelProfile): {
@@ -119,6 +221,7 @@ export class PythonEnvironmentManager {
 
     const profile = this.getWindowsWheelProfile();
     const spec = this.getWindowsTorchSpec(profile);
+    this.configureWindowsCudaRuntime(profile);
     if (!spec) {
       return;
     }
@@ -180,16 +283,17 @@ export class PythonEnvironmentManager {
     }
     const profile = this.getWindowsWheelProfile();
     if (profile === 'cuda12.6') {
+      log.info('[PythonEnvManager] vLLM support disabled on Windows; forcing llamacpp-only configuration');
       return {
         sglang: result.sglang,
-        vllm: true,
+        vllm: false,
         llamacpp: true
       };
     }
     if (profile === 'cpu') {
       return {
         sglang: result.sglang,
-        vllm: result.vllm,
+        vllm: false,
         llamacpp: true
       };
     }
@@ -426,6 +530,11 @@ export class PythonEnvironmentManager {
       return;
     }
 
+    if (process.env.CH_FORCE_LLAMA_BUILD !== '1') {
+      log.info('[PythonEnvManager] Skipping Windows build dependency checks; prebuilt llama.cpp wheels will be used.');
+      return;
+    }
+
     if (await this.hasCMake(envPath)) {
       log.info('[PythonEnvManager] Detected CMake in PATH for llama.cpp build');
       return;
@@ -611,27 +720,6 @@ export class PythonEnvironmentManager {
     return absolutePath;
   }
 
-  private resolveVllmWheel(profile: WindowsWheelProfile, pythonTag?: string): string | null {
-    const entry = WINDOWS_VLLM_WHEEL_RESOURCES[profile];
-    if (!entry) {
-      return null;
-    }
-
-    const absolutePath = this.resolveResourcePath(entry.relativePath);
-    if (!fs.existsSync(absolutePath)) {
-      log.warn('[PythonEnvManager] Expected vLLM wheel missing at %s', absolutePath);
-      return null;
-    }
-
-    if (pythonTag && !path.basename(absolutePath).includes(pythonTag)) {
-      log.warn('[PythonEnvManager] vLLM wheel %s does not match required Python tag %s', path.basename(absolutePath), pythonTag);
-      return null;
-    }
-
-    log.info('[PythonEnvManager] Selected vLLM wheel: %s', absolutePath);
-    return absolutePath;
-  }
-
   /**
    * Determine the Python major.minor tag (e.g., cp312) for the given interpreter
    */
@@ -664,87 +752,75 @@ export class PythonEnvironmentManager {
   /**
    * Pre-install the bundled llama-cpp wheel so uv/pip does not try to build from source
    */
-  private async installPrebuiltLlamaWheel(
+  private async installPrebuiltGpuWheels(
     envPath: string,
     uvPath: string,
     extras: string[],
     pythonPath: string
   ): Promise<void> {
-    if (process.platform !== 'win32' && process.platform !== 'darwin') {
-      return;
-    }
-
-    if (!extras.includes('llama_cpp')) {
-      log.info('[PythonEnvManager] Skipping bundled llama-cpp wheel install: extras missing llama_cpp (extras=%s)', extras.join(', '));
-      return;
-    }
-
-    if (process.platform === 'darwin' && process.arch !== 'arm64') {
-      log.info('[PythonEnvManager] Skipping bundled llama-cpp wheel install: not running on Apple Silicon');
-      return;
-    }
-
+    const wheelEntries: Array<{ label: string; path: string; progressStep: string; progressValue: number }> = [];
     const pythonTag = await this.getPythonTag(pythonPath);
-    const profile: LlamaWheelProfile = process.platform === 'darwin' ? 'mac' : this.getWindowsWheelProfile();
-    log.info('[PythonEnvManager] Attempting bundled llama-cpp install (profile=%s, pythonTag=%s)', profile, pythonTag || 'unknown');
-    const wheelPath = this.resolveLlamaWheel(profile, pythonTag || undefined);
-    if (!wheelPath) {
-      log.info('[PythonEnvManager] No prebuilt llama-cpp wheel available, continuing with default installation');
+
+    if (process.platform === 'win32') {
+      const profile = this.getWindowsWheelProfile();
+
+      if (extras.includes('llama_cpp')) {
+        log.info('[PythonEnvManager] Attempting bundled llama-cpp install (profile=%s, pythonTag=%s)', profile, pythonTag || 'unknown');
+        const llamaWheel = this.resolveLlamaWheel(profile, pythonTag || undefined);
+        if (llamaWheel) {
+          const installPath = this.prepareWindowsWheelForInstallation(llamaWheel);
+          wheelEntries.push({
+            label: 'llama.cpp',
+            path: installPath,
+            progressStep: 'build_tools',
+            progressValue: 69,
+          });
+        } else {
+          log.info('[PythonEnvManager] No prebuilt llama-cpp wheel available, continuing without it');
+        }
+      }
+    } else if (process.platform === 'darwin' && process.arch === 'arm64') {
+      if (extras.includes('llama_cpp')) {
+        log.info('[PythonEnvManager] Attempting bundled llama-cpp install for macOS (pythonTag=%s)', pythonTag || 'unknown');
+        const llamaWheel = this.resolveLlamaWheel('mac', pythonTag || undefined);
+        if (llamaWheel) {
+          wheelEntries.push({
+            label: 'llama.cpp',
+            path: llamaWheel,
+            progressStep: 'build_tools',
+            progressValue: 69,
+          });
+        } else {
+          log.info('[PythonEnvManager] No prebuilt llama-cpp wheel available for macOS, continuing without it');
+        }
+      } else {
+        log.info('[PythonEnvManager] Skipping llama.cpp install on macOS; extras do not require it');
+      }
+    } else {
+      log.info('[PythonEnvManager] No bundled GPU wheels available for platform %s', process.platform);
+    }
+
+    if (!wheelEntries.length) {
       return;
     }
 
-    await this.reportProgress('build_tools', 69, 'Installing bundled llama.cpp wheel...');
+    for (const entry of wheelEntries) {
+      await this.reportProgress(entry.progressStep, entry.progressValue, `Installing bundled ${entry.label} wheel...`);
+    }
 
     try {
+      const installArgs = ['pip', 'install', ...wheelEntries.map((entry) => entry.path)];
       await this.runUvCommand(
         uvPath,
         envPath,
-        ['pip', 'install', wheelPath, '--no-deps'],
-        'Installing prebuilt llama.cpp wheel'
+        installArgs,
+        `Installing bundled GPU wheels (${wheelEntries.map((entry) => entry.label).join(', ')})`
       );
-      log.info('[PythonEnvManager] Bundled llama-cpp wheel installed successfully');
+      wheelEntries.forEach((entry) => {
+        log.info(`[PythonEnvManager] Bundled ${entry.label} wheel installed successfully`);
+      });
     } catch (error) {
-      log.warn('[PythonEnvManager] Failed to install bundled llama-cpp wheel, falling back to default behaviour:', error);
-    }
-  }
-
-  private async installPrebuiltVllmWheel(
-    envPath: string,
-    uvPath: string,
-    extras: string[],
-    pythonPath: string
-  ): Promise<void> {
-    if (process.platform !== 'win32') {
-      return;
-    }
-
-    const requiresVllm = extras.some((extra) => ['gpu_win', 'gpu', 'vllm'].includes(extra));
-    if (!requiresVllm) {
-      log.info('[PythonEnvManager] Skipping bundled vLLM wheel install: extras do not require vLLM (extras=%s)', extras.join(', '));
-      return;
-    }
-
-    const pythonTag = await this.getPythonTag(pythonPath);
-    const profile = this.getWindowsWheelProfile();
-    log.info('[PythonEnvManager] Attempting bundled vLLM install (profile=%s, pythonTag=%s)', profile, pythonTag || 'unknown');
-    const wheelPath = this.resolveVllmWheel(profile, pythonTag || undefined);
-    if (!wheelPath) {
-      log.info('[PythonEnvManager] No bundled vLLM wheel found; proceeding with default installation');
-      return;
-    }
-
-    await this.reportProgress('vllm', 67, 'Installing bundled vLLM wheel...');
-
-    try {
-      await this.runUvCommand(
-        uvPath,
-        envPath,
-        ['pip', 'install', wheelPath, '--no-deps'],
-        'Installing prebuilt vLLM wheel'
-      );
-      log.info('[PythonEnvManager] Bundled vLLM wheel installed successfully');
-    } catch (error) {
-      log.warn('[PythonEnvManager] Failed to install bundled vLLM wheel, falling back to default behaviour:', error);
+      log.warn('[PythonEnvManager] Failed to install bundled GPU wheels; falling back to default behaviour:', error);
     }
   }
 
@@ -863,6 +939,10 @@ export class PythonEnvironmentManager {
         result.createdAt = info.createdAt;
         result.lastUsed = info.lastUsed;
         result.systemInfo = info.systemInfo;
+        if (info.systemInfo) {
+          this.cachedSystemInfo = info.systemInfo;
+          this.configureWindowsCudaRuntime(this.getWindowsWheelProfile());
+        }
       } catch (error) {
         log.warn('[PythonEnvManager] Failed to read environment info:', error);
       }
@@ -894,6 +974,36 @@ export class PythonEnvironmentManager {
    */
   private async testEnvironment(pythonPath: string): Promise<boolean> {
     return new Promise((resolve) => {
+      const envDir = path.dirname(path.dirname(pythonPath));
+      const pipPath = process.platform === 'win32'
+        ? path.join(envDir, 'Scripts', 'pip.exe')
+        : path.join(envDir, 'bin', 'pip');
+
+      const freezeProcess = spawn(pipPath, ['freeze'], {
+        stdio: 'pipe',
+        timeout: 10000,
+      });
+
+      let freezeOutput = '';
+      freezeProcess.stdout?.on('data', (data) => {
+        freezeOutput += data.toString();
+      });
+      freezeProcess.on('close', (code) => {
+        const trimmed = freezeOutput.trim();
+        if (!trimmed) {
+          log.info(`[PythonEnvManager] pip freeze (code ${code}): <no output>`);
+          return;
+        }
+        const lines = trimmed.split(/\r?\n/);
+        log.info(`[PythonEnvManager] pip freeze (code ${code}) - ${lines.length} entries`);
+        for (const line of lines) {
+          log.info(`[PythonEnvManager] pip freeze >> ${line}`);
+        }
+      });
+      freezeProcess.on('error', (error) => {
+        log.warn('[PythonEnvManager] pip freeze failed:', error);
+      });
+
       const testProcess = spawn(pythonPath, ['-c', 'import oumi; print("OK")'], {
         stdio: 'pipe',
         timeout: 10000
@@ -991,13 +1101,14 @@ export class PythonEnvironmentManager {
       await this.reportProgress('finishing', 95, 'Detecting system capabilities...');
       
       let systemInfo: SystemInfo;
-      try {
-        systemInfo = await SystemDetector.detectSystem();
-        log.info('[PythonEnvManager] System detection completed:', {
-          platform: systemInfo.platform,
-          architecture: systemInfo.architecture,
-          totalRAM: `${systemInfo.totalRAM}GB`,
-          cudaAvailable: systemInfo.cudaAvailable,
+    try {
+      systemInfo = await SystemDetector.detectSystem();
+      this.cachedSystemInfo = systemInfo;
+      log.info('[PythonEnvManager] System detection completed:', {
+        platform: systemInfo.platform,
+        architecture: systemInfo.architecture,
+        totalRAM: `${systemInfo.totalRAM}GB`,
+        cudaAvailable: systemInfo.cudaAvailable,
           cudaDevices: systemInfo.cudaDevices.length
         });
       } catch (error) {
@@ -1009,13 +1120,14 @@ export class PythonEnvironmentManager {
           platformVersion: 'Unknown',
           cpuModel: 'Unknown',
           totalRAM: Math.round(os.totalmem() / (1024 * 1024 * 1024)),
-          availableRAM: Math.round(os.freemem() / (1024 * 1024 * 1024)),
-          cudaAvailable: false,
-          cudaDevices: [],
-          detectedAt: new Date().toISOString(),
-          fingerprint: 'unknown'
-        };
-      }
+        availableRAM: Math.round(os.freemem() / (1024 * 1024 * 1024)),
+        cudaAvailable: false,
+        cudaDevices: [],
+        detectedAt: new Date().toISOString(),
+        fingerprint: 'unknown'
+      };
+      this.cachedSystemInfo = systemInfo;
+    }
       
       const now = new Date().toISOString();
       await this.updateEnvironmentInfo({
@@ -1135,20 +1247,16 @@ export class PythonEnvironmentManager {
     try {
       // Detect system capabilities
       const systemInfo = await SystemDetector.detectSystem();
+      this.cachedSystemInfo = systemInfo;
+      this.configureWindowsCudaRuntime(this.getWindowsWheelProfile());
 
       if (systemInfo.cudaAvailable && systemInfo.cudaDevices.length > 0) {
-        // CUDA is available - choose platform-appropriate GPU extras
         if (systemInfo.platform === 'win32') {
-          // On Windows, avoid linux-only/unavailable wheels (triton/liger-kernel, deepspeed, bitsandbytes)
-          if (!extras.includes('gpu_win')) {
-            extras.push('gpu_win');
-          }
-          // Include llama_cpp so we can install the bundled wheel for native/GPU fallback execution
           if (!extras.includes('llama_cpp')) {
             extras.push('llama_cpp');
           }
           log.info(
-            `[PythonEnvManager] CUDA detected on Windows: ${systemInfo.cudaDevices.length} device(s) - using gpu_win + llama_cpp extras`
+            `[PythonEnvManager] CUDA detected on Windows: ${systemInfo.cudaDevices.length} device(s) - enabling llama_cpp (vLLM is disabled on Windows)`
           );
         } else {
           // Non-Windows platforms: use full GPU stack + quantization
@@ -1238,7 +1346,17 @@ export class PythonEnvironmentManager {
     // Determine appropriate extras based on system capabilities
     const extras = await this.getRequiredExtras();
     log.info(`[PythonEnvManager] Selected extras: ${extras.join(', ')}`);
-    await this.reportProgress('oumi', 70, `Installing Oumi with extras: ${extras.join(', ')}...`);
+
+    const installExtras = process.platform === 'win32'
+      ? extras.filter((extra) => extra !== 'llama_cpp')
+      : extras;
+
+    if (installExtras.length !== extras.length) {
+      log.info('[PythonEnvManager] Excluding llama_cpp extra from Windows install to preserve bundled wheel');
+    }
+
+    const installExtrasMessage = installExtras.length > 0 ? installExtras.join(', ') : 'none';
+    await this.reportProgress('oumi', 70, `Installing Oumi with extras: ${installExtrasMessage}...`);
 
     const uvPath = process.platform === 'win32'
       ? path.join(envPath, 'Scripts', 'uv.exe')
@@ -1247,15 +1365,14 @@ export class PythonEnvironmentManager {
     await this.ensureWindowsBuildDependencies(envPath, uvPath, extras);
     await this.ensureGitAvailable(envPath);
     await this.installWindowsTorchRuntime(envPath, uvPath, pythonPath);
-    await this.installPrebuiltVllmWheel(envPath, uvPath, extras, pythonPath);
-    await this.installPrebuiltLlamaWheel(envPath, uvPath, extras, pythonPath);
+    await this.installPrebuiltGpuWheels(envPath, uvPath, extras, pythonPath);
 
     return new Promise((resolve, reject) => {
       // Use uv to install oumi in development mode with appropriate extras
-      const packageSpec = extras.length > 0 
-        ? `${oumiSourcePath}[${extras.join(',')}]`  // Install with extras
+      const packageSpec = installExtras.length > 0 
+        ? `${oumiSourcePath}[${installExtras.join(',')}]`  // Install with filtered extras
         : oumiSourcePath;                            // Install without extras
-      
+    
       log.info(`[PythonEnvManager] Installing: ${packageSpec}`);
         
       const installProcess = spawn(uvPath, [
@@ -1389,6 +1506,7 @@ export class PythonEnvironmentManager {
       try {
         const { SystemDetector } = await import('./system-detector');
         systemInfo = await SystemDetector.detectSystem();
+        this.cachedSystemInfo = systemInfo;
         log.info('[PythonEnvManager] SystemInfo detected:', systemInfo);
       } catch (error) {
         log.error('[PythonEnvManager] Failed to detect system info:', error);
@@ -1405,6 +1523,7 @@ export class PythonEnvironmentManager {
           detectedAt: new Date().toISOString(),
           fingerprint: 'unknown'
         };
+        this.cachedSystemInfo = systemInfo;
       }
     }
     
@@ -1500,6 +1619,7 @@ export class PythonEnvironmentManager {
       }
 
       const currentSystem = await SystemDetector.detectSystem();
+      this.cachedSystemInfo = currentSystem;
       const oldSystem = environmentInfo.systemInfo;
       const changes: string[] = [];
       

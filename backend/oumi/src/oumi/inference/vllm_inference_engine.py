@@ -15,7 +15,9 @@
 from __future__ import annotations
 
 import copy
+import importlib
 import math
+import sys
 import warnings
 from typing import Any, cast, get_args
 
@@ -32,29 +34,55 @@ from oumi.utils.logging import logger
 from oumi.utils.model_caching import get_local_filepath_for_gguf
 from oumi.utils.peft_utils import get_lora_rank
 
-try:
-    import vllm  # pyright: ignore[reportMissingImports]
 
+def _load_vllm_module() -> tuple[Any | None, Exception | None]:
+    if sys.platform.startswith("win"):
+        return None, RuntimeError("vLLM is disabled on Windows in this build.")
+    try:
+        module = importlib.import_module("vllm")
+        return module, None
+    except ModuleNotFoundError as exc:
+        return None, exc
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("Unexpected error importing vLLM: %s", exc, exc_info=True)
+        return None, exc
+
+
+vllm, _VLLM_IMPORT_ERROR = _load_vllm_module()
+
+if vllm:
     try:
         from vllm.config import ModelDType  # pyright: ignore[reportMissingImports]
     except ImportError:
-        # For compatibility with newer vLLM versions
         ModelDType = str  # type: ignore
-    from vllm.entrypoints.chat_utils import (  # pyright: ignore[reportMissingImports]
-        ChatCompletionMessageParam,
-    )
-    from vllm.lora.request import LoRARequest  # pyright: ignore[reportMissingImports]
-    from vllm.model_executor.layers.quantization import (  # pyright: ignore[reportMissingImports]
-        QuantizationMethods,
-    )
-    from vllm.sampling_params import (  # pyright: ignore[reportMissingImports]
-        GuidedDecodingParams as VLLMGuidedDecodingParams,
-    )
-    from vllm.sampling_params import (  # pyright: ignore[reportMissingImports]
-        SamplingParams,
-    )
-except ModuleNotFoundError:
-    vllm = None
+    try:
+        from vllm.entrypoints.chat_utils import (  # pyright: ignore[reportMissingImports]
+            ChatCompletionMessageParam,
+        )
+        from vllm.lora.request import LoRARequest  # pyright: ignore[reportMissingImports]
+        from vllm.model_executor.layers.quantization import (  # pyright: ignore[reportMissingImports]
+            QuantizationMethods,
+        )
+        from vllm.sampling_params import (  # pyright: ignore[reportMissingImports]
+            GuidedDecodingParams as VLLMGuidedDecodingParams,
+        )
+        from vllm.sampling_params import (  # pyright: ignore[reportMissingImports]
+            SamplingParams,
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("Partial vLLM import failed: %s", exc, exc_info=True)
+        ChatCompletionMessageParam = Any  # type: ignore
+        LoRARequest = Any  # type: ignore
+        QuantizationMethods = Any  # type: ignore
+        VLLMGuidedDecodingParams = Any  # type: ignore
+        SamplingParams = Any  # type: ignore
+else:
+    ModelDType = str  # type: ignore
+    ChatCompletionMessageParam = Any  # type: ignore
+    LoRARequest = Any  # type: ignore
+    QuantizationMethods = Any  # type: ignore
+    VLLMGuidedDecodingParams = Any  # type: ignore
+    SamplingParams = Any  # type: ignore
 
 
 def _is_qwen_omni_model(model_name: str) -> bool:
@@ -96,9 +124,15 @@ class VLLMInferenceEngine(BaseInferenceEngine):
         super().__init__(model_params=model_params, generation_params=generation_params)
 
         if not vllm:
+            detail = (
+                f" (import error: {_VLLM_IMPORT_ERROR})"
+                if _VLLM_IMPORT_ERROR
+                else ""
+            )
             raise RuntimeError(
                 "vLLM is not installed. "
                 "Please install the GPU dependencies for this package."
+                f"{detail}"
             )
 
         if not (
@@ -114,7 +148,17 @@ class VLLMInferenceEngine(BaseInferenceEngine):
         # Infer the `quantization` type from the model's kwargs.
         gguf_source: str | list[str] | None = None
         gguf_filename: str | None = None
+        explicit_max_model_len: int | None = None
         if model_params.model_kwargs:
+            maybe_max_model_len = model_params.model_kwargs.get("max_model_len")
+            if maybe_max_model_len is not None:
+                try:
+                    explicit_max_model_len = int(maybe_max_model_len)
+                except (TypeError, ValueError) as err:
+                    raise ValueError(
+                        "Expected `model_kwargs['max_model_len']` to be an integer "
+                        "when using the vLLM engine."
+                    ) from err
             if not quantization:
                 # Check if quantization is BitsAndBytes.
                 bnb_quantization_kwargs = ["load_in_4bit", "load_in_8bit"]
@@ -181,6 +225,13 @@ class VLLMInferenceEngine(BaseInferenceEngine):
             gguf_input = gguf_source if gguf_source is not None else gguf_filename
             if gguf_input is None:
                 raise ValueError("GGUF quantization requested but no filename(s) provided")
+            if isinstance(gguf_input, (list, tuple)):
+                if len(gguf_input) != 1:
+                    raise ValueError(
+                        "vLLM currently supports GGUF quantization only when a single "
+                        "`.gguf` file is provided."
+                    )
+                gguf_input = gguf_input[0]
             gguf_local_path = get_local_filepath_for_gguf(
                 repo_id=model_params.model_name,
                 filename=gguf_input,
@@ -233,11 +284,35 @@ class VLLMInferenceEngine(BaseInferenceEngine):
                 self._processor = None
                 self._is_qwen_omni = False
 
-        supported_quantization_methods = list(get_args(QuantizationMethods))
-        if quantization and quantization not in supported_quantization_methods:
+        supported_quantization_methods: list[str] = []
+        if QuantizationMethods is not Any:
+            members = getattr(QuantizationMethods, "__members__", None)
+            if members:
+                supported_quantization_methods = [
+                    str(member.value if hasattr(member, "value") else name)
+                    for name, member in members.items()
+                ]
+            else:
+                supported_quantization_methods = [
+                    str(method)
+                    for method in get_args(QuantizationMethods)
+                    if method is not None
+                ]
+
+        quantization_lower = quantization.lower() if isinstance(quantization, str) else None
+        supported_quantization_methods_normalized = {
+            method.lower() for method in supported_quantization_methods
+        }
+
+        if (
+            quantization_lower
+            and supported_quantization_methods
+            and quantization_lower not in supported_quantization_methods_normalized
+            and quantization_lower != "gguf"
+        ):
             raise ValueError(
                 f"Unsupported quantization method: {quantization}. "
-                f"Supported methods are: {supported_quantization_methods}."
+                f"Supported methods are: {sorted(set(supported_quantization_methods))}."
             )
 
         final_vllm_kwargs = dict(
@@ -250,11 +325,13 @@ class VLLMInferenceEngine(BaseInferenceEngine):
             tensor_parallel_size=tensor_parallel_size,
             enable_prefix_caching=enable_prefix_caching,
             enable_lora=self._lora_request is not None,
-            max_model_len=model_params.model_max_length,
             gpu_memory_utilization=gpu_memory_utilization,
             enforce_eager=enforce_eager,
             **vllm_kwargs,
         )
+
+        if explicit_max_model_len is not None and "max_model_len" not in final_vllm_kwargs:
+            final_vllm_kwargs["max_model_len"] = explicit_max_model_len
 
         if self._is_qwen_omni and "limit_mm_per_prompt" not in final_vllm_kwargs:
             limit_mm = model_params.processor_kwargs.get("limit_mm_per_prompt")

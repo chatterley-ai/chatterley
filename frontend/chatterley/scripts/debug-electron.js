@@ -55,7 +55,11 @@ const env = {
 };
 
 // Launch Electron with debugging
-const electronProcess = spawn('electron', [
+const electronBinName = process.platform === 'win32' ? 'electron.cmd' : 'electron';
+const localElectronPath = path.join(__dirname, '..', 'node_modules', '.bin', electronBinName);
+const electronBinary = fs.existsSync(localElectronPath) ? localElectronPath : electronBinName;
+
+const electronProcess = spawn(electronBinary, [
   path.join(__dirname, '..', 'dist', 'electron', 'main.js'),
   '--inspect=9229',
   '--remote-debugging-port=9222',
@@ -65,7 +69,8 @@ const electronProcess = spawn('electron', [
 ], {
   env,
   stdio: 'inherit',
-  cwd: path.join(__dirname, '..')
+  cwd: path.join(__dirname, '..'),
+  shell: process.platform === 'win32'
 });
 
 electronProcess.on('close', (code) => {

@@ -24,6 +24,141 @@ const DISTRIBUTIONS = {
 
 const FRONTEND_DIR = path.resolve(__dirname, '..');
 const PYTHON_DIST_DIR = path.join(FRONTEND_DIR, 'python-dist');
+const WINDOWS_DEV_LIFECYCLE_PATTERN = /(^|:)(dev|debug)(:|$)/i;
+const WINDOWS_DEV_SCRIPTS = new Set([
+  'electron:build-debug',
+  'electron:debug',
+  'electron:debug-build',
+  'electron:dev',
+  'dev',
+  'dev:full'
+]);
+
+let cachedWslAvailability;
+
+function isDevLifecycle() {
+  if (process.env.CH_FORCE_WSL === '1') {
+    return true;
+  }
+
+  const nodeEnv = process.env.NODE_ENV;
+  if (nodeEnv && nodeEnv.toLowerCase() === 'development') {
+    return true;
+  }
+
+  const lifecycleEvent = (process.env.npm_lifecycle_event || '').toLowerCase();
+  if (!lifecycleEvent) {
+    return false;
+  }
+
+  if (WINDOWS_DEV_SCRIPTS.has(lifecycleEvent)) {
+    return true;
+  }
+
+  return WINDOWS_DEV_LIFECYCLE_PATTERN.test(lifecycleEvent);
+}
+
+function isWslAvailable() {
+  if (cachedWslAvailability !== undefined) {
+    return cachedWslAvailability;
+  }
+
+  try {
+    execSync('where wsl.exe', { stdio: 'ignore' });
+    cachedWslAvailability = true;
+  } catch {
+    cachedWslAvailability = false;
+  }
+
+  return cachedWslAvailability;
+}
+
+function windowsPathToWslPath(winPath) {
+  const resolved = path.resolve(winPath);
+  const match = resolved.match(/^([A-Za-z]):\\(.*)$/);
+
+  if (!match) {
+    throw new Error(`Unable to convert Windows path to WSL path: ${winPath}`);
+  }
+
+  const driveLetter = match[1].toLowerCase();
+  const restOfPath = match[2].replace(/\\/g, '/');
+
+  return `/mnt/${driveLetter}/${restOfPath}`;
+}
+
+function shouldUseWslExtraction() {
+  return process.platform === 'win32' && isDevLifecycle() && isWslAvailable();
+}
+
+
+function formatBytes(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return '0B';
+  }
+
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const index = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
+  const value = bytes / Math.pow(1024, index);
+  const precision = value >= 10 || index === 0 ? 0 : 1;
+  return value.toFixed(precision) + units[index];
+}
+
+function calculateDirectorySizeBytes(dir) {
+  let total = 0;
+
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const entryPath = path.join(dir, entry.name);
+
+    try {
+      const stats = fs.statSync(entryPath);
+      if (stats.isDirectory()) {
+        total += calculateDirectorySizeBytes(entryPath);
+      } else {
+        total += stats.size;
+      }
+    } catch (error) {
+      // Ignore files we cannot access
+    }
+  }
+
+  return total;
+}
+
+function getDirectorySizeHuman(dir) {
+  try {
+    if (process.platform === 'win32') {
+      if (isWslAvailable()) {
+        try {
+          const wslPath = windowsPathToWslPath(dir);
+          const output = execSync('wsl du -sh "' + wslPath + '"', { encoding: 'utf8' }).trim();
+          if (output) {
+            return output.split(/\s+/)[0];
+          }
+        } catch (error) {
+          // Fall through to Node calculation
+        }
+      }
+
+      const bytes = calculateDirectorySizeBytes(dir);
+      return formatBytes(bytes);
+    }
+
+    const output = execSync('du -sh "' + dir + '" 2>/dev/null | cut -f1', { encoding: 'utf8' }).trim();
+    if (output) {
+      return output;
+    }
+  } catch (error) {
+    // Fallback to Node calculation below
+  }
+
+  try {
+    return formatBytes(calculateDirectorySizeBytes(dir));
+  } catch (error) {
+    return 'Unknown';
+  }
+}
 
 /**
  * Parse requested platforms from CLI args or environment
@@ -128,30 +263,41 @@ function downloadFile(url, filepath) {
  * Extract tar.gz file
  */
 function extractTarGz(filepath, extractDir) {
-  console.log(`📂 Extracting: ${path.basename(filepath)}`);
+  console.log(`?? Extracting: ${path.basename(filepath)}`);
   
   try {
     // Create extract directory
     fs.mkdirSync(extractDir, { recursive: true });
     
-    // Extract using system tar command (cross-platform)
     if (process.platform === 'win32') {
-      // On Windows, use 7-zip or built-in tar if available
-      try {
-        execSync(`tar -xzf "${filepath}" -C "${extractDir}"`, { stdio: 'inherit' });
-      } catch (error) {
-        throw new Error('Failed to extract on Windows. Please ensure tar is available or use WSL.');
+      if (shouldUseWslExtraction()) {
+        const wslFilePath = windowsPathToWslPath(filepath);
+        const wslExtractDir = windowsPathToWslPath(extractDir);
+        console.log('   ?? Using WSL tar for extraction (Windows dev mode detected)');
+        execSync(`wsl tar -xzf "${wslFilePath}" -C "${wslExtractDir}"`, { stdio: 'inherit' });
+      } else {
+        try {
+          execSync(`tar -xzf "${filepath}" -C "${extractDir}"`, { stdio: 'inherit' });
+        } catch (error) {
+          if (isWslAvailable()) {
+            const wslFilePath = windowsPathToWslPath(filepath);
+            const wslExtractDir = windowsPathToWslPath(extractDir);
+            console.log('   ?? tar unavailable, falling back to WSL tar');
+            execSync(`wsl tar -xzf "${wslFilePath}" -C "${wslExtractDir}"`, { stdio: 'inherit' });
+          } else {
+            throw new Error('Failed to extract on Windows. Please ensure tar is available or install WSL.');
+          }
+        }
       }
     } else {
-      // Unix-like systems
       execSync(`tar -xzf "${filepath}" -C "${extractDir}"`, { stdio: 'inherit' });
     }
     
-    console.log(`   ✅ Extracted to: ${extractDir}`);
+    console.log(`   ? Extracted to: ${extractDir}`);
     
     // Clean up tar file
     fs.unlinkSync(filepath);
-    console.log(`   🗑️  Cleaned up: ${path.basename(filepath)}`);
+    console.log(`   ???  Cleaned up: ${path.basename(filepath)}`);
     
   } catch (error) {
     throw new Error(`Extraction failed: ${error.message}`);
@@ -426,14 +572,14 @@ async function main() {
     
     console.log('\n🎉 Python distributions download complete!');
     console.log(`📁 Distributions location: ${PYTHON_DIST_DIR}`);
-    console.log(`📏 Total size: ${execSync(`du -sh "${PYTHON_DIST_DIR}" 2>/dev/null | cut -f1 || echo "Unknown"`, { encoding: 'utf8' }).trim()}`);
+    console.log("Total size: " + getDirectorySizeHuman(PYTHON_DIST_DIR));
     
     console.log('\n📊 Distribution summary:');
     platforms.forEach(platform => {
       const platformDir = path.join(PYTHON_DIST_DIR, platform);
       if (fs.existsSync(platformDir)) {
         try {
-          const size = execSync(`du -sh "${platformDir}" 2>/dev/null | cut -f1 || echo "Unknown"`, { encoding: 'utf8' }).trim();
+          const size = getDirectorySizeHuman(platformDir);
           console.log(`   ${platform}: ${size}`);
         } catch {
           console.log(`   ${platform}: Available`);

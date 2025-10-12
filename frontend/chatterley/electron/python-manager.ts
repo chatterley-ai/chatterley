@@ -260,6 +260,69 @@ export class PythonServerManager {
     }
   }
 
+  public async applyHuggingFaceCredentials(
+    credentials: { username?: string | null; token?: string | null },
+    restart: boolean = true
+  ): Promise<void> {
+    const username = credentials.username?.trim() || undefined;
+    const token = credentials.token?.trim() || undefined;
+
+    if (username) {
+      process.env.HUGGINGFACE_HUB_USERNAME = username;
+      process.env.HF_USERNAME = username;
+    } else {
+      delete process.env.HUGGINGFACE_HUB_USERNAME;
+      delete process.env.HF_USERNAME;
+    }
+
+    if (token) {
+      process.env.HUGGINGFACEHUB_API_TOKEN = token;
+      process.env.HUGGING_FACE_HUB_TOKEN = token;
+      process.env.HF_TOKEN = token;
+    } else {
+      delete process.env.HUGGINGFACEHUB_API_TOKEN;
+      delete process.env.HUGGING_FACE_HUB_TOKEN;
+      delete process.env.HF_TOKEN;
+    }
+
+    try {
+      const hfDir = path.join(app.getPath('userData'), 'huggingface');
+      fs.mkdirSync(hfDir, { recursive: true });
+      const tokenPath = path.join(hfDir, 'token');
+      if (token) {
+        fs.writeFileSync(tokenPath, token, { encoding: 'utf8', mode: 0o600 });
+      } else if (fs.existsSync(tokenPath)) {
+        fs.unlinkSync(tokenPath);
+      }
+    } catch (error) {
+      log.warn('[PythonServerManager] Failed to persist HuggingFace token file:', error);
+    }
+
+    log.info(
+      '[PythonServerManager] Applied HuggingFace credentials (username=%s, token=%s)',
+      username ? 'set' : 'cleared',
+      token ? 'set' : 'cleared'
+    );
+
+    if (!restart) {
+      log.info('[PythonServerManager] HuggingFace credential update applied; restart not requested.');
+      return;
+    }
+
+    if (!this.isServerRunning()) {
+      log.info('[PythonServerManager] HuggingFace credential update applied; server not running so no restart needed.');
+      return;
+    }
+
+    try {
+      log.info('[PythonServerManager] Restarting backend to apply HuggingFace credential update');
+      await this.restart();
+    } catch (error) {
+      log.error('[PythonServerManager] Failed to restart after HuggingFace credential update:', error);
+      throw error;
+    }
+  }
+
   /**
    * Get server port
    */

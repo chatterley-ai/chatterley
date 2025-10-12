@@ -498,6 +498,24 @@ class ElectronApiClient {
     return window.electronAPI.storage.resetWelcomeSettings();
   }
 
+  public async updateHuggingFaceCredentials(credentials: { username?: string | null; token?: string | null; restart?: boolean } = {}): Promise<ApiResponse> {
+    if (!this.isElectron) {
+      return { success: true };
+    }
+    return window.electronAPI.settings.updateHuggingFace({
+      username: credentials?.username ?? undefined,
+      token: credentials?.token ?? undefined,
+      restart: credentials?.restart,
+    });
+  }
+
+  public async getHuggingFaceCredentials(): Promise<ApiResponse<{ username?: string; token?: string }>> {
+    if (!this.isElectron) {
+      return { success: true, data: {} };
+    }
+    return window.electronAPI.settings.getHuggingFace();
+  }
+
 
   // Python environment setup methods
   public async isEnvironmentSetupNeeded(): Promise<boolean> {

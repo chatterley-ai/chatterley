@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Welcome screen for Chatterley - Model configuration selection
  */
 
@@ -104,6 +104,12 @@ export default function WelcomeScreen({ onConfigSelected, systemCapabilities }: 
     downloadStateRef.current = downloadState;
   }, [downloadState]);
 
+  const platformInfo = React.useMemo(() => apiClient.getPlatform(), []);
+  const isWindowsDesktop = React.useMemo(() => {
+    const osName = (platformInfo?.os || '').toLowerCase();
+    return apiClient.isElectronApp() && osName.includes('win');
+  }, [platformInfo]);
+
   // Helper: wait until all downloads finish (or error)
   const waitForDownloadsToFinish = React.useCallback(async () => {
     // Quick exit if nothing is downloading
@@ -148,20 +154,32 @@ export default function WelcomeScreen({ onConfigSelected, systemCapabilities }: 
       try {
         if (apiClient.isElectronApp()) {
           const installed = await apiClient.getInstalledBackends();
-          if (mounted) setInstalledBackends(installed);
+          if (mounted) {
+            setInstalledBackends(
+              isWindowsDesktop
+                ? { ...installed, vllm: false }
+                : installed
+            );
+          }
         }
       } catch {
         if (mounted) setInstalledBackends(null);
       }
     })();
     return () => { mounted = false; };
-  }, []);
+  }, [isWindowsDesktop]);
 
   // Python environment setup state
   // Remove unused envSetupNeeded
   const setEnvSetupNeeded = React.useState(false)[1];
   const [showEnvSetup, setShowEnvSetup] = React.useState(false);
   
+  React.useEffect(() => {
+    if (isWindowsDesktop && selectedEngine === 'vllm') {
+      setSelectedEngine('all');
+    }
+  }, [isWindowsDesktop, selectedEngine]);
+
   // System capabilities are now passed as a prop from LaunchManager
 
   // System prompt presets
@@ -379,11 +397,18 @@ export default function WelcomeScreen({ onConfigSelected, systemCapabilities }: 
   };
 
   const filterConfigs = () => {
-    let filtered = [...configs];
+    let filtered = isWindowsDesktop
+      ? configs.filter(config => (config.engine || "").toLowerCase() !== "vllm")
+      : [...configs];
+
+    if (isWindowsDesktop && selectedEngine === "vllm") {
+      setFilteredConfigs([]);
+      return;
+    }
 
     // Search filter
     if (searchTerm) {
-      const lower = (v: unknown) => (typeof v === 'string' ? v.toLowerCase() : '');
+      const lower = (v: unknown) => (typeof v === "string" ? v.toLowerCase() : "");
       const term = lower(searchTerm);
       filtered = filtered.filter(config => 
         lower(config.display_name).includes(term) ||
@@ -393,39 +418,30 @@ export default function WelcomeScreen({ onConfigSelected, systemCapabilities }: 
     }
 
     // Engine filter
-    if (selectedEngine !== 'all') {
-      const lower = (v: unknown) => (typeof v === 'string' ? v.toLowerCase() : '');
+    if (selectedEngine !== "all") {
+      const lower = (v: unknown) => (typeof v === "string" ? v.toLowerCase() : "");
       filtered = filtered.filter(config => lower(config.engine) === lower(selectedEngine));
     }
 
     // Size filter
-    if (selectedSize !== 'all') {
+    if (selectedSize !== "all") {
       filtered = filtered.filter(config => ConfigMatcher.getModelSizeCategory(config) === selectedSize);
     }
 
     // Sort by smart recommendations first, then by recommended flag, then by model family and size
     filtered.sort((a, b) => {
-      // Sort by recommendation score (highest first) if both have recommendations
       if (a.recommendation && b.recommendation) {
         const scoreDiff = b.recommendation.score - a.recommendation.score;
         if (scoreDiff !== 0) return scoreDiff;
       }
-      
-      // Sort by "good match" status
       if (a.recommendation?.goodMatch && !b.recommendation?.goodMatch) return -1;
       if (!a.recommendation?.goodMatch && b.recommendation?.goodMatch) return 1;
-      
-      // Sort by recommendation score if available
       const aScore = a.recommendation?.score || 0;
       const bScore = b.recommendation?.score || 0;
       if (aScore !== bScore) return bScore - aScore;
-      
-      // Sort by model family
       if (a.model_family !== b.model_family) {
         return a.model_family.localeCompare(b.model_family);
       }
-      
-      // Finally sort by display name
       return a.display_name.localeCompare(b.display_name);
     });
 
@@ -434,7 +450,7 @@ export default function WelcomeScreen({ onConfigSelected, systemCapabilities }: 
 
   React.useEffect(() => {
     filterConfigs();
-  }, [configs, searchTerm, selectedEngine, selectedSize]);
+  }, [configs, searchTerm, selectedEngine, selectedSize, isWindowsDesktop]);
 
   // Handle ESC key to close settings modal
   React.useEffect(() => {
@@ -880,10 +896,10 @@ export default function WelcomeScreen({ onConfigSelected, systemCapabilities }: 
                 <div className="mt-4 space-y-2">
                   <h4 className="font-medium text-foreground">Tips:</h4>
                   <ul className="text-sm text-muted-foreground space-y-1">
-                    <li>• Be specific about the AI&apos;s role and expertise</li>
-                    <li>• Include desired tone (formal, casual, friendly, etc.)</li>
-                    <li>• Mention any constraints or guidelines</li>
-                    <li>• Keep it clear and concise</li>
+                    <li>â€¢ Be specific about the AI&apos;s role and expertise</li>
+                    <li>â€¢ Include desired tone (formal, casual, friendly, etc.)</li>
+                    <li>â€¢ Mention any constraints or guidelines</li>
+                    <li>â€¢ Keep it clear and concise</li>
                   </ul>
                 </div>
               </div>
@@ -922,7 +938,7 @@ export default function WelcomeScreen({ onConfigSelected, systemCapabilities }: 
                 onClick={handleBackToModels}
                 className="px-6 py-3 bg-muted text-foreground rounded-lg hover:bg-accent transition-colors font-medium"
               >
-                ← Back to Models
+                â† Back to Models
               </button>
               <button 
                 onClick={handleStartChat}
@@ -1050,7 +1066,7 @@ export default function WelcomeScreen({ onConfigSelected, systemCapabilities }: 
                   >
                     <option value="all">All Engines</option>
                     <option value="native">Native (CPU/GPU)</option>
-                    <option value="vllm">vLLM (GPU)</option>
+                    {!isWindowsDesktop && <option value="vllm">vLLM (GPU)</option>}
                     <option value="sglang">SGLang (GPU)</option>
                     <option value="llamacpp">LlamaCPP (CPU)</option>
                   </select>
@@ -1062,8 +1078,8 @@ export default function WelcomeScreen({ onConfigSelected, systemCapabilities }: 
                     className="px-4 py-2 bg-input border border-border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary text-input-foreground"
                   >
                     <option value="all">All Sizes</option>
-                    <option value="small">Small (≤3B)</option>
-                    <option value="medium">Medium (≤30B)</option>
+                    <option value="small">Small (â‰¤3B)</option>
+                    <option value="medium">Medium (â‰¤30B)</option>
                     <option value="large">Large (&gt;30B)</option>
                   </select>
                 </div>
@@ -1203,7 +1219,7 @@ export default function WelcomeScreen({ onConfigSelected, systemCapabilities }: 
                 className="p-1 rounded hover:bg-muted transition-colors"
                 title="Close Settings"
               >
-                ✕
+                âœ•
               </button>
             </div>
             
@@ -1220,3 +1236,8 @@ export default function WelcomeScreen({ onConfigSelected, systemCapabilities }: 
     </div>
   );
 }
+
+
+
+
+

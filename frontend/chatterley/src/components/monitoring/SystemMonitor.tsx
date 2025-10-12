@@ -460,7 +460,20 @@ export default function SystemMonitor({
     }
   };
 
-  const shouldPoll = chatIsLoading || chatIsTyping;
+  const shouldPoll = chatIsLoading || chatIsTyping || isModelActionLoading;
+
+  // Prime stats once when component mounts so the panel doesn't stay in a perpetual loading state.
+  React.useEffect(() => {
+    void (async () => {
+      try {
+        await fetchStats();
+        await checkModelStatus();
+      } catch (primeError) {
+        console.debug('[SystemMonitor] Initial stats fetch failed:', primeError);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Start polling only while the assistant is actively processing a request
   React.useEffect(() => {

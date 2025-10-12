@@ -141,6 +141,11 @@ export class SystemDetector {
             cudaVersion = versionMatch[1];
           }
         }
+
+        if (!cudaVersion && process.platform === 'win32') {
+          cudaVersion = '12.6';
+          log.info('[SystemDetector] nvcc not found; defaulting CUDA version to bundled 12.6 runtime on Windows');
+        }
         
         log.info(`[SystemDetector] CUDA detected: ${cudaDevices.length} device(s), version: ${cudaVersion || 'unknown'}`);
         
