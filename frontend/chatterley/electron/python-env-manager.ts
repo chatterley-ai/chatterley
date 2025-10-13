@@ -15,12 +15,13 @@ import log from 'electron-log';
 import { SystemDetector, SystemInfo } from './system-detector';
 
 type WindowsWheelProfile = 'cpu' | 'cuda12.6';
-type LlamaWheelProfile = WindowsWheelProfile | 'mac';
+type LlamaWheelProfile = WindowsWheelProfile | 'mac' | 'linux';
 
 const LLAMA_WHEEL_RESOURCES: Record<LlamaWheelProfile, { relativePath: string }> = {
   mac: { relativePath: path.join('python-wheels', 'mac', 'llama_cpp_python-0.3.16-cp312-cp312-macosx_15_0_arm64.whl') },
   cpu: { relativePath: path.join('python-wheels', 'cpu', 'llama_cpp_python-0.3.16-cp312-cp312-win_amd64_cpu.whl') },
   'cuda12.6': { relativePath: path.join('python-wheels', 'cuda12.6', 'llama_cpp_python-0.3.16-cp312-cp312-win_amd64_cu126.whl') },
+  linux: { relativePath: path.join('python-wheels', 'cpu', 'llama_cpp_python-0.3.16-cp312-cp312-linux_x86_64.whl') },
 };
 
 export interface SetupProgress {
@@ -796,6 +797,23 @@ export class PythonEnvironmentManager {
       } else {
         log.info('[PythonEnvManager] Skipping llama.cpp install on macOS; extras do not require it');
       }
+    } else if (process.platform === 'linux') {
+      if (extras.includes('ci_cpu') || extras.includes('llama_cpp')) {
+        log.info('[PythonEnvManager] Attempting bundled llama-cpp install for Linux (pythonTag=%s)', pythonTag || 'unknown');
+        const llamaWheel = this.resolveLlamaWheel('linux', pythonTag || undefined);
+        if (llamaWheel && fs.existsSync(llamaWheel)) {
+          wheelEntries.push({
+            label: 'llama.cpp',
+            path: llamaWheel,
+            progressStep: 'build_tools',
+            progressValue: 69,
+          });
+        } else {
+          log.info('[PythonEnvManager] No prebuilt llama-cpp wheel available for Linux, continuing without it');
+        }
+      } else {
+        log.info('[PythonEnvManager] Skipping bundled llama-cpp install on Linux; extras do not require it');
+      }
     } else {
       log.info('[PythonEnvManager] No bundled GPU wheels available for platform %s', process.platform);
     }
@@ -1314,6 +1332,10 @@ export class PythonEnvironmentManager {
           log.info(`[PythonEnvManager] CUDA detected: ${systemInfo.cudaDevices.length} device(s) - including GPU extras`);
 
           if (systemInfo.platform === 'linux') {
+            if (!extras.includes('llama_cpp')) {
+              extras.push('llama_cpp');
+              log.info('[PythonEnvManager] Including llama_cpp extras alongside GPU for Linux builds');
+            }
             if (!extras.includes('ci_cpu')) {
               extras.push('ci_cpu');
               log.info('[PythonEnvManager] Including ci_cpu extras alongside GPU for Linux builds');
@@ -1322,7 +1344,10 @@ export class PythonEnvironmentManager {
         }
       } else {
         if (systemInfo.platform === 'linux') {
-          log.info('[PythonEnvManager] No CUDA detected on Linux - skipping llama_cpp extras and using ci_cpu only');
+          log.info('[PythonEnvManager] No CUDA detected on Linux - including llama_cpp and ci_cpu for CPU-only installation');
+          if (!extras.includes('llama_cpp')) {
+            extras.push('llama_cpp');
+          }
           if (!extras.includes('ci_cpu')) {
             extras.push('ci_cpu');
           }
@@ -1338,7 +1363,7 @@ export class PythonEnvironmentManager {
       // If system detection fails, use conservative approach
 
       // Add llama_cpp for CPU inference as fallback
-      if (process.platform !== 'linux' && !extras.includes('llama_cpp')) {
+      if (!extras.includes('llama_cpp')) {
         extras.push('llama_cpp');
       }
 

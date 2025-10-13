@@ -293,6 +293,13 @@
             "!**/*.pyc",
             "!**/*.pyo"
           ]
+        },
+        {
+          "from": "python-wheels/",
+          "to": "python-wheels",
+          "filter": [
+            "cpu/llama_cpp_python-0.3.16-cp312-cp312-linux_x86_64.whl"
+          ]
         }
       ],
       "target": [
