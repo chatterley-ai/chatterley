@@ -254,7 +254,7 @@ jobs:
       PYTHONUTF8: '1'
       LLAMA_CPP_VERSION: '0.3.16'
       PYTHON_VERSION: '3.12'
-      CUDA_VERSION: '12.6.0'
+      CUDA_VERSION: '12.6.3'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
