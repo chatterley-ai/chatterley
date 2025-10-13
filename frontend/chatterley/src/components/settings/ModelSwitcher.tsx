@@ -98,6 +98,11 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
     return apiClient.isElectronApp() && osName.includes('win');
   }, [platformInfo]);
 
+  const isLinuxDesktop = React.useMemo(() => {
+    const osName = (platformInfo?.os || '').toLowerCase();
+    return apiClient.isElectronApp() && osName.includes('linux');
+  }, [platformInfo]);
+
   // Load available configs on mount
   React.useEffect(() => {
     const loadConfigs = async () => {
@@ -235,7 +240,12 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
     }
     if (e === 'sglang') return !!installedBackends.sglang;
     if (e === 'vllm') return !!installedBackends.vllm;
-    if (e === 'llamacpp') return !!installedBackends.llamacpp;
+    if (e === 'llamacpp') {
+      if (isLinuxDesktop) {
+        return true;
+      }
+      return installedBackends.llamacpp;
+    }
     return true;
   };
 
@@ -647,4 +657,3 @@ export default function ModelSwitcher({ className = '' }: ModelSwitcherProps) {
     </div>
   );
 }
-

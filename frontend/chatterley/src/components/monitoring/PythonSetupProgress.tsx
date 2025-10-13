@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Bot, Download, Settings, CheckCircle, AlertCircle, X, FolderOpen } from 'lucide-react';
+import { Bot, Download, Settings, CheckCircle, AlertCircle, FolderOpen } from 'lucide-react';
+import CloseIcon from '@/components/ui/CloseIcon';
 
 interface SetupProgress {
   step: string;
@@ -136,7 +137,7 @@ export default function PythonSetupProgress({
             className="absolute top-4 right-4 text-muted-foreground hover:text-foreground transition-colors"
             aria-label="Close"
           >
-            <X className="w-5 h-5" />
+            <CloseIcon size={20} className="w-5 h-5" />
           </button>
         )}
 

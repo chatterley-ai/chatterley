@@ -403,7 +403,10 @@ function setupChatHandlers(pythonManager: PythonServerManager): void {
   const getBaseUrl = () => pythonManager.getServerUrl();
 
   // Simple retry helper for transient connection failures
-  async function fetchWithRetry(url: string, options: RequestInit, attempts = 3, baseDelayMs = 150): Promise<Response> {
+  const DEFAULT_RETRY_ATTEMPTS = process.platform === 'linux' ? 8 : 4;
+  const DEFAULT_BASE_DELAY_MS = process.platform === 'linux' ? 400 : 150;
+
+  async function fetchWithRetry(url: string, options: RequestInit, attempts = DEFAULT_RETRY_ATTEMPTS, baseDelayMs = DEFAULT_BASE_DELAY_MS): Promise<Response> {
     let lastError: any = null;
     for (let i = 0; i < attempts; i++) {
       try {
@@ -430,7 +433,7 @@ function setupChatHandlers(pythonManager: PythonServerManager): void {
         const msg = err?.message || '';
         const isNetwork = msg.includes('fetch failed') || msg.includes('ECONN') || msg.includes('ENOTFOUND') || msg.includes('EAI_AGAIN');
         if (!isNetwork) break;
-        const delay = baseDelayMs * Math.pow(2, i) + Math.floor(Math.random() * 50);
+        const delay = baseDelayMs * Math.pow(2, i) + Math.floor(Math.random() * 100);
         await new Promise(r => setTimeout(r, delay));
       }
     }
@@ -447,7 +450,7 @@ function setupChatHandlers(pythonManager: PythonServerManager): void {
       const method = (options.method || 'GET').toUpperCase();
       const shouldRetry = method === 'GET' || method === 'HEAD';
       const response = shouldRetry
-        ? await fetchWithRetry(url, options, 3, 200)
+        ? await fetchWithRetry(url, options)
         : await fetchWithRetry(
             url,
             {
@@ -457,8 +460,8 @@ function setupChatHandlers(pythonManager: PythonServerManager): void {
               },
               ...options,
             },
-            1,
-            200
+            2,
+            DEFAULT_BASE_DELAY_MS
           );
       
       // Handle 404 Not Found errors specially

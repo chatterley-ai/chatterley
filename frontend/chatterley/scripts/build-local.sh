@@ -135,7 +135,12 @@ build_win() {
 
 build_linux() {
   echo "dY?5 Building for Linux..."
-  npm run dist:linux
+  npm run prepare-python
+  node scripts/clear-pycache.js
+  npm run build:electron
+  npm run electron:compile
+  echo "dY\"5 Packaging Debian installers for amd64 and arm64 (AppImage disabled for local build)..."
+  npx electron-builder --linux deb --x64 --arm64
 }
 
 build_all() {

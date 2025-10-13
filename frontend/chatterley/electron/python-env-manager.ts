@@ -844,6 +844,56 @@ export class PythonEnvironmentManager {
   }
 
   /**
+   * Ensure the bundled Oumi sources are available in a writable location.
+   * During Linux packaged installs the resources directory is read-only,
+   * so we copy the sources into the user's application data directory.
+   */
+  private ensureWritableOumiSource(sourcePath: string): string {
+    if (!app.isPackaged || process.platform !== 'linux') {
+      return sourcePath;
+    }
+
+    try {
+      const userDataDir = this.getUserDataDir();
+      const copyRoot = path.join(userDataDir, 'python-src');
+      const versionTag = `${app.getVersion() || 'dev'}-${process.arch}`;
+      const targetPath = path.join(copyRoot, versionTag);
+      const sentinel = path.join(targetPath, '.source-version');
+
+      if (fs.existsSync(targetPath) && fs.existsSync(sentinel)) {
+        const recordedVersion = fs.readFileSync(sentinel, 'utf8').trim();
+        if (recordedVersion === versionTag) {
+          log.info('[PythonEnvManager] Using cached writable Oumi source at %s', targetPath);
+          return targetPath;
+        }
+
+        log.info(
+          '[PythonEnvManager] Writable Oumi source version mismatch (%s != %s); refreshing copy.',
+          recordedVersion,
+          versionTag
+        );
+      }
+
+      if (fs.existsSync(targetPath)) {
+        fs.rmSync(targetPath, { recursive: true, force: true });
+      }
+
+      fs.mkdirSync(copyRoot, { recursive: true });
+      log.info('[PythonEnvManager] Copying Oumi sources to writable directory: %s', targetPath);
+      fs.cpSync(sourcePath, targetPath, { recursive: true });
+      fs.writeFileSync(sentinel, versionTag);
+
+      return targetPath;
+    } catch (error) {
+      log.warn(
+        '[PythonEnvManager] Failed to prepare writable Oumi source (%s); falling back to bundled path.',
+        error
+      );
+      return sourcePath;
+    }
+  }
+
+  /**
    * Get the path to the bundled Python distribution
    */
   private getBundledPythonPath(): string {
@@ -1262,28 +1312,36 @@ export class PythonEnvironmentManager {
           // Non-Windows platforms: use full GPU stack + quantization
           extras.push('gpu', 'quantization');
           log.info(`[PythonEnvManager] CUDA detected: ${systemInfo.cudaDevices.length} device(s) - including GPU extras`);
+
+          if (systemInfo.platform === 'linux') {
+            if (!extras.includes('ci_cpu')) {
+              extras.push('ci_cpu');
+              log.info('[PythonEnvManager] Including ci_cpu extras alongside GPU for Linux builds');
+            }
+          }
         }
       } else {
-        // No CUDA available - include llama_cpp for CPU inference
-        extras.push('llama_cpp');
-        log.info('[PythonEnvManager] No CUDA detected - including llama_cpp for CPU-only installation');
-
-        // For Linux without CUDA, include ci_cpu (avoid on Windows due to vLLM)
         if (systemInfo.platform === 'linux') {
-          extras.push('ci_cpu');
-          log.info('[PythonEnvManager] Including ci_cpu extras for Linux CPU-only installation');
+          log.info('[PythonEnvManager] No CUDA detected on Linux - skipping llama_cpp extras and using ci_cpu only');
+          if (!extras.includes('ci_cpu')) {
+            extras.push('ci_cpu');
+          }
+        } else {
+          // Non-Linux platforms fall back to llama_cpp for CPU inference
+          extras.push('llama_cpp');
+          log.info('[PythonEnvManager] No CUDA detected - including llama_cpp for CPU-only installation');
         }
       }
 
     } catch (error) {
       log.warn('[PythonEnvManager] System detection failed, using safe defaults:', error);
       // If system detection fails, use conservative approach
-      
+
       // Add llama_cpp for CPU inference as fallback
-      if (!extras.includes('llama_cpp')) {
+      if (process.platform !== 'linux' && !extras.includes('llama_cpp')) {
         extras.push('llama_cpp');
       }
-      
+
       // Add ci_cpu only for Linux as a safe fallback (avoid Windows due to vLLM)
       if (process.platform === 'linux') {
         extras.push('ci_cpu');
@@ -1324,7 +1382,7 @@ export class PythonEnvironmentManager {
     }
     
     log.info(`[PythonEnvManager] Resource path: ${resourcesPath}`);
-    log.info(`[PythonEnvManager] Oumi source path: ${oumiSourcePath}`);
+    log.info(`[PythonEnvManager] Bundled Oumi source path: ${oumiSourcePath}`);
     
     // Verify the path exists
     if (!fs.existsSync(oumiSourcePath)) {
@@ -1333,15 +1391,28 @@ export class PythonEnvironmentManager {
       throw new Error(errorMsg);
     }
     
-    // Verify pyproject.toml exists
-    const pyprojectPath = path.join(oumiSourcePath, 'pyproject.toml');
-    if (!fs.existsSync(pyprojectPath)) {
-      const errorMsg = `pyproject.toml not found at: ${pyprojectPath}`;
+    // Verify pyproject.toml exists at bundled location
+    const bundledPyprojectPath = path.join(oumiSourcePath, 'pyproject.toml');
+    if (!fs.existsSync(bundledPyprojectPath)) {
+      const errorMsg = `pyproject.toml not found at: ${bundledPyprojectPath}`;
       log.error(`[PythonEnvManager] ${errorMsg}`);
       throw new Error(errorMsg);
     }
     
-    log.info(`[PythonEnvManager] Found pyproject.toml at: ${pyprojectPath}`);
+    let installSourcePath = oumiSourcePath;
+    if (app.isPackaged && process.platform === 'linux') {
+      installSourcePath = this.ensureWritableOumiSource(oumiSourcePath);
+    }
+
+    const installPyprojectPath = path.join(installSourcePath, 'pyproject.toml');
+    if (!fs.existsSync(installPyprojectPath)) {
+      const errorMsg = `pyproject.toml not found at: ${installPyprojectPath}`;
+      log.error(`[PythonEnvManager] ${errorMsg}`);
+      throw new Error(errorMsg);
+    }
+
+    log.info(`[PythonEnvManager] Using Oumi source path for installation: ${installSourcePath}`);
+    log.info(`[PythonEnvManager] Found pyproject.toml at: ${installPyprojectPath}`);
     
     // Determine appropriate extras based on system capabilities
     const extras = await this.getRequiredExtras();
@@ -1367,11 +1438,11 @@ export class PythonEnvironmentManager {
     await this.installWindowsTorchRuntime(envPath, uvPath, pythonPath);
     await this.installPrebuiltGpuWheels(envPath, uvPath, extras, pythonPath);
 
-    return new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       // Use uv to install oumi in development mode with appropriate extras
       const packageSpec = installExtras.length > 0 
-        ? `${oumiSourcePath}[${installExtras.join(',')}]`  // Install with filtered extras
-        : oumiSourcePath;                            // Install without extras
+        ? `${installSourcePath}[${installExtras.join(',')}]`  // Install with filtered extras
+        : installSourcePath;                                  // Install without extras
     
       log.info(`[PythonEnvManager] Installing: ${packageSpec}`);
         
@@ -1441,6 +1512,41 @@ export class PythonEnvironmentManager {
         reject(error);
       });
     });
+
+    await this.disableLigerKernelForLinux(envPath, uvPath, extras);
+  }
+
+  /**
+   * Remove the Liger kernel dependency on Linux since upstream wheels are unstable.
+   */
+  private async disableLigerKernelForLinux(envPath: string, uvPath: string, extras: string[]): Promise<void> {
+    if (process.platform !== 'linux') {
+      return;
+    }
+
+    const normalized = extras.map((extra) => extra.toLowerCase());
+    const requiresRemoval =
+      normalized.includes('gpu') ||
+      normalized.includes('liger_kernel') ||
+      normalized.includes('liger-kernel');
+
+    if (!requiresRemoval) {
+      log.info('[PythonEnvManager] Liger kernel not requested by extras; nothing to remove.');
+      return;
+    }
+
+    try {
+      await this.reportProgress('oumi', 82, 'Removing unsupported Liger kernel dependency for Linux...');
+      await this.runUvCommand(
+        uvPath,
+        envPath,
+        ['pip', 'uninstall', '-y', 'liger-kernel'],
+        'Removing liger-kernel package for Linux compatibility'
+      );
+      log.info('[PythonEnvManager] Liger kernel successfully removed for Linux build.');
+    } catch (error) {
+      log.warn('[PythonEnvManager] Failed to remove liger-kernel (continuing without it):', error);
+    }
   }
 
   /**

@@ -1343,15 +1343,15 @@ export class PythonServerManager {
         });
       }
 
-      // Set timeout for test inference (5 minutes should be enough)
+      const testTimeoutMs = process.platform === 'linux' ? 600000 : 300000;
       const timeout = setTimeout(() => {
         if (hasCompleted) return;
         hasCompleted = true;
 
-        log.warn('Test inference timeout reached');
+        log.warn(`Test inference timeout reached after ${Math.round(testTimeoutMs / 1000)} seconds`);
         cleanup(true);
-        resolve({ success: false, message: 'Model test timed out' });
-      }, 300000); // 5 minutes
+        resolve({ success: false, message: `Model test timed out after ${Math.round(testTimeoutMs / 1000)} seconds` });
+      }, testTimeoutMs);
 
       // Clean up timeout when process completes
       testProcess.on('exit', () => {

@@ -279,7 +279,7 @@
       "signAndEditExecutable": false
     },
     "linux": {
-      "icon": "assets/icon.png",
+      "icon": "assets/icon-linux.png",
       "maintainer": "Benjamin Feuer <penfever@gmail.com>",
       "extraResources": [
         {
