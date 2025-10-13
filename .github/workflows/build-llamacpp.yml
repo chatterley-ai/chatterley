@@ -265,7 +265,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install CUDA ${{ env.CUDA_VERSION }}
-        uses: Jimver/cuda-toolkit@v0.2.15
+        uses: Jimver/cuda-toolkit@v0.2.28
         with:
           cuda: ${{ env.CUDA_VERSION }}
           method: network
