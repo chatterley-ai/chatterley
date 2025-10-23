@@ -7,7 +7,6 @@ model:
 inference_engine: GOOGLE_GEMINI
 
 generation:
-  max_new_tokens: 8192
   temperature: 0.0
 
 tasks:

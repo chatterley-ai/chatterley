@@ -1,5 +1,5 @@
 model:
-  model_name: "claude-3-7-sonnet-latest"
+  model_name: "claude-sonnet-4-20250514"
   model_max_length: 200000
 
 engine: ANTHROPIC

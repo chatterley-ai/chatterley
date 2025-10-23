@@ -14,10 +14,15 @@
 
 """Chat completion endpoints handler for Oumi WebChat server."""
 
+import base64
 import copy
+import mimetypes
 import time
+import uuid
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import aiohttp
 from aiohttp import web
 
 from oumi.core.types.conversation import Conversation, ContentItem, Message, Role, Type
@@ -27,6 +32,8 @@ from oumi.webchat.chatgraph_migration.graph_store import GraphStore
 from oumi.webchat.protocol import extract_session_id, extract_branch_id
 from oumi.webchat.utils.id_utils import generate_message_id
 from oumi.webchat.utils.fallbacks import model_name_fallback
+from oumi.inference.anthropic_inference_engine import AnthropicInferenceEngine
+from oumi.inference.openai_inference_engine import OpenAIInferenceEngine
 
 
 class ChatHandler:
@@ -138,6 +145,386 @@ class ChatHandler:
             else:
                 segments.append(f"<{item.type.value}>")
         return " ".join(segment for segment in segments if segment)
+
+    async def _prepare_anthropic_context(
+        self,
+        messages: List[dict[str, Any]],
+        engine: AnthropicInferenceEngine,
+        settings: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        message_metadata: Dict[int, dict[str, Any]] = {}
+        conversation_metadata: Dict[str, Any] = {}
+
+        if not messages:
+            return {
+                "message_metadata": message_metadata,
+                "conversation_metadata": conversation_metadata,
+            }
+
+        enable_files = bool(settings.get("enableFiles", True))
+        enable_skills = bool(settings.get("enableSkills", True))
+        enable_thinking = bool(settings.get("enableThinking", False))
+        thinking_budget = int(settings.get("thinkingBudgetTokens", 6000))
+        enable_web_search = bool(settings.get("enableWebSearch", False))
+        web_search_max = int(settings.get("webSearchMaxUses", 5))
+
+        skills_needed: set[str] = set()
+        betas: set[str] = set()
+        tools: list[dict[str, Any]] = []
+
+        upload_session: Optional[aiohttp.ClientSession] = None
+        try:
+            if enable_files:
+                timeout = aiohttp.ClientTimeout(
+                    total=getattr(engine._remote_params, "connection_timeout", 300.0) or 300.0
+                )
+                upload_session = aiohttp.ClientSession(timeout=timeout)
+
+            for idx, message in enumerate(messages):
+                attachments = message.get("attachments")
+                if not attachments or not isinstance(attachments, list):
+                    continue
+
+                file_refs: list[dict[str, Any]] = []
+                for attachment in attachments:
+                    if not isinstance(attachment, dict):
+                        continue
+
+                    file_id = attachment.get("fileId")
+                    if enable_files and not file_id and upload_session is not None:
+                        try:
+                            file_id = await self._upload_anthropic_file(
+                                upload_session, engine, attachment
+                            )
+                        except Exception as exc:  # pragma: no cover - network dependent
+                            logger.warning(
+                                "Failed to upload attachment '%s' to Anthropic Files API: %s",
+                                attachment.get("name"),
+                                exc,
+                            )
+                            file_id = None
+
+                        if file_id:
+                            attachment["fileId"] = file_id
+                            attachment.pop("base64", None)
+                            attachment.pop("dataUrl", None)
+                            attachment.pop("textContent", None)
+
+                    if file_id:
+                        file_refs.append(
+                            {
+                                "file_id": file_id,
+                                "block_type": "document",
+                                "mime_type": attachment.get("mimeType"),
+                                "name": attachment.get("name"),
+                            }
+                        )
+                        betas.add("files-api-2025-04-14")
+
+                        if enable_skills:
+                            skill_id = self._infer_anthropic_skill(attachment)
+                            if skill_id:
+                                skills_needed.add(skill_id)
+
+                if file_refs:
+                    message_metadata[idx] = {"anthropic_files": file_refs}
+
+            if skills_needed:
+                betas.update({"code-execution-2025-08-25", "skills-2025-10-02"})
+                conversation_metadata["container"] = {
+                    "skills": [
+                        {"type": "anthropic", "skill_id": skill_id, "version": "latest"}
+                        for skill_id in sorted(skills_needed)
+                    ]
+                }
+                tools.append({"type": "code_execution_20250825", "name": "code_execution"})
+
+            if enable_web_search:
+                tools.append(
+                    {
+                        "type": "web_search_20250305",
+                        "name": "web_search",
+                        "max_uses": max(1, min(10, web_search_max)),
+                    }
+                )
+
+            if tools:
+                conversation_metadata["tools"] = tools
+
+            if betas:
+                conversation_metadata["betas"] = sorted(betas)
+
+            if enable_thinking:
+                conversation_metadata["thinking"] = {
+                    "type": "enabled",
+                    "budget_tokens": max(1000, thinking_budget),
+                }
+
+        finally:
+            if upload_session is not None:
+                await upload_session.close()
+
+        return {
+            "message_metadata": message_metadata,
+            "conversation_metadata": conversation_metadata,
+        }
+
+    async def _prepare_openai_context(
+        self,
+        messages: List[dict[str, Any]],
+        engine: OpenAIInferenceEngine,
+        settings: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        message_metadata: Dict[int, Dict[str, Any]] = {}
+        conversation_metadata: Dict[str, Any] = {}
+
+        if not messages:
+            return {
+                "message_metadata": message_metadata,
+                "conversation_metadata": conversation_metadata,
+            }
+
+        enable_files = bool(settings.get("enableFiles", True))
+        enable_web_search = bool(settings.get("enableWebSearch", False))
+        enable_deep_research = bool(settings.get("enableDeepResearch", False))
+        deep_research_effort = settings.get("deepResearchEffort", "medium")
+        enable_pdf_uploads = bool(settings.get("enablePdfUploads", True))
+
+        tools: list[dict[str, Any]] = []
+
+        upload_session: Optional[aiohttp.ClientSession] = None
+        try:
+            should_upload_any = enable_files or enable_pdf_uploads
+            if should_upload_any:
+                timeout = aiohttp.ClientTimeout(
+                    total=getattr(engine._remote_params, "connection_timeout", 300.0)
+                    or 300.0
+                )
+                upload_session = aiohttp.ClientSession(timeout=timeout)
+
+            for idx, message in enumerate(messages):
+                attachments = message.get("attachments")
+                if not attachments or not isinstance(attachments, list):
+                    continue
+
+                file_refs: list[dict[str, Any]] = []
+                for attachment in attachments:
+                    if not isinstance(attachment, dict):
+                        continue
+
+                    file_id = attachment.get("fileId")
+                    mime_type = str(attachment.get("mimeType") or "").lower()
+                    should_upload = enable_files or (
+                        enable_pdf_uploads and "pdf" in mime_type
+                    )
+
+                    if should_upload and not file_id and upload_session is not None:
+                        try:
+                            file_id = await self._upload_openai_file(
+                                upload_session, engine, attachment
+                            )
+                        except Exception as exc:  # pragma: no cover - best effort
+                            logger.warning(
+                                "Failed to upload attachment '%s' to OpenAI Files API: %s",
+                                attachment.get("name"),
+                                exc,
+                            )
+                            file_id = None
+
+                        if file_id:
+                            attachment["fileId"] = file_id
+                            attachment.pop("base64", None)
+                            attachment.pop("dataUrl", None)
+                            attachment.pop("textContent", None)
+
+                    if file_id:
+                        file_refs.append(
+                            {
+                                "file_id": file_id,
+                                "mime_type": attachment.get("mimeType"),
+                                "name": attachment.get("name"),
+                            }
+                        )
+
+                if file_refs:
+                    message_metadata[idx] = {"openai_files": file_refs}
+
+        finally:
+            if upload_session is not None:
+                await upload_session.close()
+
+        openai_meta: Dict[str, Any] = {}
+        if enable_web_search:
+            tools.append({"type": "web_search"})
+        if tools:
+            openai_meta["tools"] = tools
+        if enable_deep_research:
+            openai_meta["reasoning"] = {
+                "effort": deep_research_effort if deep_research_effort else "medium"
+            }
+
+        if openai_meta:
+            conversation_metadata = openai_meta
+
+        return {
+            "message_metadata": message_metadata,
+            "conversation_metadata": conversation_metadata,
+        }
+
+    async def _upload_anthropic_file(
+        self,
+        session: aiohttp.ClientSession,
+        engine: AnthropicInferenceEngine,
+        attachment: Dict[str, Any],
+    ) -> Optional[str]:
+        api_key = engine._get_api_key(engine._remote_params)
+        if not api_key:
+            logger.warning("Anthropic API key not available; cannot upload attachment.")
+            return None
+
+        payload = self._extract_attachment_payload(attachment)
+        if payload is None:
+            return None
+        data_bytes, filename, mime_type = payload
+
+        form = aiohttp.FormData()
+        form.add_field("file", data_bytes, filename=filename, content_type=mime_type)
+
+        headers = {
+            "x-api-key": api_key,
+            "anthropic-version": engine.anthropic_version,
+            "anthropic-beta": "files-api-2025-04-14",
+        }
+
+        upload_url = "https://api.anthropic.com/v1/files"
+        async with session.post(upload_url, data=form, headers=headers) as response:
+            if response.status >= 400:
+                body = await response.text()
+                raise RuntimeError(
+                    f"Anthropic file upload failed with status {response.status}: {body}"
+                )
+            payload = await response.json()
+            return payload.get("id")
+
+    async def _upload_openai_file(
+        self,
+        session: aiohttp.ClientSession,
+        engine: OpenAIInferenceEngine,
+        attachment: Dict[str, Any],
+    ) -> Optional[str]:
+        api_key = engine._get_api_key(engine._remote_params)
+        if not api_key:
+            logger.warning("OpenAI API key not available; cannot upload attachment.")
+            return None
+
+        payload = self._extract_attachment_payload(attachment)
+        if payload is None:
+            return None
+        data_bytes, filename, mime_type = payload
+
+        form = aiohttp.FormData()
+        form.add_field("purpose", "responses")
+        form.add_field("file", data_bytes, filename=filename, content_type=mime_type)
+
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+        }
+
+        upload_url = "https://api.openai.com/v1/files"
+        async with session.post(upload_url, data=form, headers=headers) as response:
+            if response.status >= 400:
+                body = await response.text()
+                raise RuntimeError(
+                    f"OpenAI file upload failed with status {response.status}: {body}"
+                )
+            payload = await response.json()
+            return payload.get("id")
+
+    def _extract_attachment_payload(
+        self, attachment: Dict[str, Any]
+    ) -> Optional[tuple[bytes, str, str]]:
+        name = attachment.get("name")
+        if not isinstance(name, str) or not name:
+            name = f"attachment-{uuid.uuid4().hex[:8]}"
+
+        mime_type = attachment.get("mimeType")
+        if not isinstance(mime_type, str) or not mime_type:
+            mime_type = None
+
+        data_bytes: Optional[bytes] = None
+
+        data_url = attachment.get("dataUrl")
+        if isinstance(data_url, str) and data_url.startswith("data:"):
+            header, _, encoded = data_url.partition(",")
+            if encoded:
+                try:
+                    if ";base64" in header:
+                        data_bytes = base64.b64decode(encoded)
+                    else:
+                        data_bytes = encoded.encode("utf-8")
+                except Exception:  # pragma: no cover - defensive
+                    data_bytes = None
+            if mime_type is None and ":" in header:
+                try:
+                    mime_type = header.split(":", 1)[1].split(";", 1)[0]
+                except Exception:
+                    mime_type = None
+
+        if data_bytes is None:
+            base64_blob = attachment.get("base64")
+            if isinstance(base64_blob, str) and base64_blob:
+                try:
+                    data_bytes = base64.b64decode(base64_blob)
+                except Exception:
+                    data_bytes = None
+
+        if data_bytes is None:
+            text_content = attachment.get("textContent") or attachment.get("fetchContent")
+            if isinstance(text_content, str):
+                data_bytes = text_content.encode("utf-8")
+                if mime_type is None:
+                    mime_type = "text/plain"
+
+        if data_bytes is None:
+            return None
+
+        if mime_type is None:
+            mime_type = mimetypes.guess_type(name)[0] or "application/octet-stream"
+
+        return data_bytes, name, mime_type
+
+    @staticmethod
+    def _infer_anthropic_skill(attachment: Dict[str, Any]) -> Optional[str]:
+        mime_type = str(attachment.get("mimeType") or "").lower()
+        name = str(attachment.get("name") or "")
+        extension = Path(name).suffix.lower()
+
+        mapping = {
+            ".ppt": "pptx",
+            ".pptx": "pptx",
+            ".pps": "pptx",
+            ".ppsx": "pptx",
+            ".xls": "xlsx",
+            ".xlsx": "xlsx",
+            ".csv": "xlsx",
+            ".doc": "docx",
+            ".docx": "docx",
+            ".pdf": "pdf",
+        }
+
+        if extension in mapping:
+            return mapping[extension]
+
+        if "pdf" in mime_type:
+            return "pdf"
+        if "spreadsheet" in mime_type or "excel" in mime_type:
+            return "xlsx"
+        if "presentation" in mime_type:
+            return "pptx"
+        if "word" in mime_type or "document" in mime_type:
+            return "docx"
+
+        return None
 
     async def handle_chat_completions(self, request: web.Request) -> web.Response:
         """Handle chat completions requests in OpenAI format.
@@ -279,29 +666,6 @@ class ChatHandler:
                 # Update branch_id to the one actually used
                 branch_id = effective_branch_id 
                 
-                # CRITICAL: Prefer client-provided messages as the authoritative
-                # conversation context to avoid leaking history from previous
-                # UI conversations within the same backend session.
-                conversation_messages = []
-                if self.system_prompt:
-                    conversation_messages.append(Message(role=Role.SYSTEM, content=self.system_prompt))
-                # Convert request messages directly for inference context
-                for m in messages:
-                    role_mapping = {
-                        "system": Role.SYSTEM,
-                        "user": Role.USER,
-                        "assistant": Role.ASSISTANT,
-                    }
-                    r = role_mapping.get(m.get("role"), Role.USER)
-                    c = m.get("content", "")
-                    conversation_messages.append(Message(role=r, content=c))
-                logger.debug(f"🧠 Using client-provided conversation with {len(messages)} messages for context")
-                
-                # Create the conversation object
-                full_conversation = Conversation(messages=conversation_messages)
-                
-                logger.debug(f"🧠 Using full conversation with {len(conversation_messages)} total messages for context")
-                
                 # Get the current inference engine and config from the session
                 session_config = session.config
                 session_engine = session.inference_engine
@@ -326,16 +690,6 @@ class ChatHandler:
 
             else:
                 # Fallback: create a simple conversation with just the latest message
-                conversation_messages = []
-
-                # Add system prompt if provided
-                if self.system_prompt:
-                    conversation_messages.append(Message(role=Role.SYSTEM, content=self.system_prompt))
-                
-                conversation_messages.append(Message(role=Role.USER, content=latest_user_content))
-                full_conversation = Conversation(messages=conversation_messages)
-                logger.debug(f"🧠 No session context, using single message conversation")
-                
                 # Use the session manager's default config and create a temporary engine
                 from oumi.infer import get_engine
                 session_config = self.session_manager.default_config
@@ -344,6 +698,80 @@ class ChatHandler:
                     raise RuntimeError(
                         "Failed to initialize inference engine for ad-hoc chat request"
                     )
+                logger.debug(f"🧠 No session context, using single message conversation")
+
+            if session_id:
+                messages_for_context = messages
+            else:
+                messages_for_context = [messages[-1]] if messages else []
+
+            anthropic_context: Optional[dict[str, Any]] = None
+            if (
+                isinstance(session_engine, AnthropicInferenceEngine)
+                and messages_for_context
+            ):
+                anthropic_settings = data.get("anthropic_settings") or {}
+                anthropic_context = await self._prepare_anthropic_context(
+                    messages_for_context,
+                    session_engine,
+                    anthropic_settings,
+                )
+
+            openai_context: Optional[dict[str, Any]] = None
+            if (
+                isinstance(session_engine, OpenAIInferenceEngine)
+                and messages_for_context
+            ):
+                openai_settings = data.get("openai_settings") or {}
+                openai_context = await self._prepare_openai_context(
+                    messages_for_context,
+                    session_engine,
+                    openai_settings,
+                )
+
+            merged_message_metadata: dict[int, dict[str, Any]] = {}
+            if anthropic_context and anthropic_context.get("message_metadata"):
+                for idx, meta in anthropic_context["message_metadata"].items():
+                    merged_message_metadata.setdefault(idx, {}).update(meta)
+            if openai_context and openai_context.get("message_metadata"):
+                for idx, meta in openai_context["message_metadata"].items():
+                    merged_message_metadata.setdefault(idx, {}).update(meta)
+
+            conversation_metadata: dict[str, Any] = {}
+            if anthropic_context and anthropic_context.get("conversation_metadata"):
+                conversation_metadata["anthropic"] = anthropic_context["conversation_metadata"]
+            if openai_context and openai_context.get("conversation_metadata"):
+                conversation_metadata["openai"] = openai_context["conversation_metadata"]
+
+            conversation_messages: list[Message] = []
+            if self.system_prompt:
+                conversation_messages.append(
+                    Message(role=Role.SYSTEM, content=self.system_prompt)
+                )
+
+            for idx, raw_message in enumerate(messages_for_context):
+                role_mapping = {
+                    "system": Role.SYSTEM,
+                    "user": Role.USER,
+                    "assistant": Role.ASSISTANT,
+                }
+                role = role_mapping.get(raw_message.get("role"), Role.USER)
+                normalized_content = self._convert_client_content(
+                    raw_message.get("content", "")
+                )
+                message_metadata = merged_message_metadata.get(idx, {})
+                conversation_messages.append(
+                    Message(
+                        role=role,
+                        content=normalized_content,
+                        metadata=message_metadata,
+                    )
+                )
+
+            full_conversation = Conversation(
+                messages=conversation_messages,
+                metadata=conversation_metadata,
+            )
 
             # Determine the effective model name actually used for this request
             try:
@@ -472,6 +900,7 @@ class ChatHandler:
                                     "id": m.get("id") or generate_message_id(),
                                     "role": m.get("role", "user"),
                                     "content": m.get("content", ""),
+                                    "attachments": m.get("attachments"),
                                     "timestamp": time.time(),
                                 }
                             )
@@ -489,6 +918,7 @@ class ChatHandler:
                                     "id": last_user.get("id") or generate_message_id(),
                                     "role": "user",
                                     "content": last_user.get("content", ""),
+                                    "attachments": last_user.get("attachments"),
                                     "timestamp": time.time(),
                                 }
                             )

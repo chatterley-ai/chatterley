@@ -12,29 +12,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import copy
 from typing import Any, Optional
 
 from typing_extensions import override
 
 from oumi.core.configs import GenerationParams, ModelParams, RemoteParams
-from oumi.core.types.conversation import Conversation
+from oumi.core.types.conversation import Conversation, ContentItem, Message, Role
 from oumi.inference.remote_inference_engine import RemoteInferenceEngine
 
 
 class OpenAIInferenceEngine(RemoteInferenceEngine):
-    """Engine for running inference against the OpenAI API."""
+    """Engine for running inference against the OpenAI Responses API."""
 
     @property
     @override
     def base_url(self) -> Optional[str]:
-        """Return the default base URL for the OpenAI API."""
-        return "https://api.openai.com/v1/chat/completions"
+        """Return the default base URL for the OpenAI Responses API."""
+        return "https://api.openai.com/v1/responses"
 
     @property
     @override
     def api_key_env_varname(self) -> Optional[str]:
-        """Return the default environment variable name for the OpenAI API key."""
+        """Return the environment variable used for the OpenAI API key."""
         return "OPENAI_API_KEY"
 
     @override
@@ -44,32 +43,123 @@ class OpenAIInferenceEngine(RemoteInferenceEngine):
         generation_params: GenerationParams,
         model_params: ModelParams,
     ) -> dict[str, Any]:
-        """Converts a conversation to an OpenAI input.
+        """Converts a conversation into a payload for the Responses API."""
 
-        Documentation: https://platform.openai.com/docs/api-reference/chat/create
+        input_messages: list[dict[str, Any]] = []
 
-        Args:
-            conversation: The conversation to convert.
-            generation_params: Parameters for generation during inference.
-            model_params: Model parameters to use during inference.
+        for message in conversation.messages:
+            content_blocks: list[dict[str, Any]] = []
 
-        Returns:
-            Dict[str, Any]: A dictionary representing the OpenAI input.
-        """
-        if model_params.model_name == "o1-preview":
-            generation_params = copy.deepcopy(generation_params)
+            if isinstance(message.content, str):
+                if message.content:
+                    content_blocks.append(
+                        {"type": "input_text", "text": message.content}
+                    )
+            elif isinstance(message.content, list):
+                for item in message.content:
+                    if isinstance(item, ContentItem) and item.is_text():
+                        content_blocks.append(
+                            {"type": "input_text", "text": item.content or ""}
+                        )
+                    else:
+                        item_content = getattr(item, "content", None)
+                        if item_content:
+                            content_blocks.append(
+                                {"type": "input_text", "text": str(item_content)}
+                            )
 
-            # o1-preview does NOT support logit_bias.
-            generation_params.logit_bias = {}
+            for file_ref in (message.metadata or {}).get("openai_files", []):
+                file_id = file_ref.get("file_id")
+                if isinstance(file_id, str) and file_id:
+                    content_blocks.append({"type": "input_file", "file_id": file_id})
 
-            # o1-preview only supports temperature = 1.
-            generation_params.temperature = 1.0
+            if not content_blocks:
+                content_blocks.append({"type": "input_text", "text": ""})
 
-        return super()._convert_conversation_to_api_input(
-            conversation=conversation,
-            generation_params=generation_params,
-            model_params=model_params,
+            input_messages.append(
+                {
+                    "role": message.role.value,
+                    "content": content_blocks,
+                }
+            )
+
+        body: dict[str, Any] = {
+            "model": model_params.model_name,
+            "input": input_messages,
+        }
+
+        if generation_params.max_new_tokens is not None:
+            body["max_output_tokens"] = generation_params.max_new_tokens
+        if generation_params.temperature is not None:
+            body["temperature"] = generation_params.temperature
+        if generation_params.top_p is not None:
+            body["top_p"] = generation_params.top_p
+
+        openai_meta = conversation.metadata.get("openai") if conversation.metadata else None
+        if isinstance(openai_meta, dict):
+            tools = openai_meta.get("tools")
+            if isinstance(tools, list) and tools:
+                body["tools"] = tools
+
+            reasoning = openai_meta.get("reasoning")
+            if isinstance(reasoning, dict) and reasoning:
+                body["reasoning"] = reasoning
+
+        return body
+
+    @override
+    def _convert_api_output_to_conversation(
+        self, response: dict[str, Any], original_conversation: Conversation
+    ) -> Conversation:
+        """Converts a Responses API output into a conversation object."""
+
+        text_segments: list[str] = []
+
+        output = response.get("output")
+        if isinstance(output, list):
+            for item in output:
+                if not isinstance(item, dict):
+                    continue
+                content = item.get("content")
+                if isinstance(content, list):
+                    for block in content:
+                        if (
+                            isinstance(block, dict)
+                            and block.get("type") in {"output_text", "text"}
+                        ):
+                            text_segments.append(block.get("text", ""))
+                elif isinstance(item.get("text"), str):
+                    text_segments.append(item["text"])
+
+        if not text_segments and isinstance(response.get("content"), list):
+            for block in response["content"]:
+                if (
+                    isinstance(block, dict)
+                    and block.get("type") in {"output_text", "text"}
+                ):
+                    text_segments.append(block.get("text", ""))
+
+        if not text_segments and isinstance(response.get("choices"), list):
+            first_choice = response["choices"][0] if response["choices"] else {}
+            message = first_choice.get("message") or {}
+            text_segments.append(str(message.get("content", "")))
+
+        response_text = "".join(text_segments).strip()
+        if not response_text:
+            response_text = str(response)
+
+        assistant_message = Message(content=response_text, role=Role.ASSISTANT)
+        return Conversation(
+            messages=[*original_conversation.messages, assistant_message],
+            metadata=original_conversation.metadata,
+            conversation_id=original_conversation.conversation_id,
         )
+
+    @override
+    def _get_request_headers(self, remote_params: RemoteParams) -> dict[str, str]:
+        headers = super()._get_request_headers(remote_params)
+        headers["Content-Type"] = "application/json"
+        return headers
 
     @override
     def _default_remote_params(self) -> RemoteParams:

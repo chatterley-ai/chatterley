@@ -23,9 +23,25 @@ import {
 import { useChatStore } from '@/lib/store';
 import { getAllProviders } from '@/lib/api-providers';
 import { apiValidationService } from '@/lib/api-validation';
-import { ApiProvider, ApiKeyConfig, ApiValidationResult } from '@/lib/types';
+import { ApiProvider, ApiKeyConfig, ApiValidationResult, AnthropicApiSettings, OpenAIApiSettings } from '@/lib/types';
 import apiClient from '@/lib/unified-api';
 
+const DEFAULT_ANTHROPIC_SETTINGS: AnthropicApiSettings = {
+  enableFiles: true,
+  enableSkills: true,
+  enableThinking: false,
+  thinkingBudgetTokens: 6000,
+  enableWebSearch: false,
+  webSearchMaxUses: 5,
+};
+
+const DEFAULT_OPENAI_SETTINGS: OpenAIApiSettings = {
+  enableFiles: true,
+  enableWebSearch: false,
+  enableDeepResearch: false,
+  deepResearchEffort: 'medium',
+  enablePdfUploads: true,
+};
 interface ApiKeyInputProps {
   provider: ApiProvider;
   existingKey?: ApiKeyConfig;
@@ -362,6 +378,26 @@ export default function ApiSettings({ onClose }: ApiSettingsProps) {
   const hasAnyKeys = Object.keys(settings.apiKeys).length > 0;
   const activeKeys = Object.values(settings.apiKeys).filter(key => key.isActive).length;
 
+  const anthropicSettings = settings.anthropic ?? DEFAULT_ANTHROPIC_SETTINGS;
+  const updateAnthropicSettings = (updates: Partial<AnthropicApiSettings>) => {
+    updateSettings({
+      anthropic: {
+        ...anthropicSettings,
+        ...updates,
+      },
+    });
+  };
+
+  const openaiSettings = settings.openai ?? DEFAULT_OPENAI_SETTINGS;
+  const updateOpenAISettings = (updates: Partial<OpenAIApiSettings>) => {
+    updateSettings({
+      openai: {
+        ...openaiSettings,
+        ...updates,
+      },
+    });
+  };
+
   const handleSaveKey = (providerId: string, keyValue: string) => {
     const isElectron = apiClient.isElectron();
     if (settings.apiKeys[providerId]) {
@@ -689,6 +725,192 @@ export default function ApiSettings({ onClose }: ApiSettingsProps) {
           );
         })}
       </div>
+
+      {/* Anthropic API Settings */}
+      {providers.some((provider) => provider.id === 'anthropic') && (
+        <div className="bg-card border rounded-lg p-4 space-y-4">
+          <div className="flex items-center gap-2">
+            <h3 className="font-semibold">Anthropic API Settings</h3>
+            <div className="text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 px-2 py-0.5 rounded-full">
+              Beta
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Control advanced Claude capabilities such as the Files, Skills, Thinking, and Web Search APIs.
+          </p>
+          <div className="space-y-4">
+            <label className="flex items-center justify-between">
+              <div>
+                <div className="font-medium text-sm">Enable Files API</div>
+                <div className="text-xs text-muted-foreground">Upload attachments once and reference them by file ID.</div>
+              </div>
+              <input
+                type="checkbox"
+                checked={anthropicSettings.enableFiles}
+                onChange={(e) => updateAnthropicSettings({ enableFiles: e.target.checked })}
+                className="rounded"
+              />
+            </label>
+            <label className="flex items-center justify-between">
+              <div>
+                <div className="font-medium text-sm">Enable Skills API</div>
+                <div className="text-xs text-muted-foreground">Automatically load Anthropic skills for office document tasks.</div>
+              </div>
+              <input
+                type="checkbox"
+                checked={anthropicSettings.enableSkills}
+                onChange={(e) => updateAnthropicSettings({ enableSkills: e.target.checked })}
+                className="rounded"
+              />
+            </label>
+            <div className="space-y-2 border-t pt-4">
+              <label className="flex items-center justify-between">
+                <div>
+                  <div className="font-medium text-sm">Enable Thinking Mode</div>
+                  <div className="text-xs text-muted-foreground">Allow Claude to produce extended reasoning traces.</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={anthropicSettings.enableThinking}
+                  onChange={(e) => updateAnthropicSettings({ enableThinking: e.target.checked })}
+                  className="rounded"
+                />
+              </label>
+              {anthropicSettings.enableThinking && (
+                <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                  <span>Budget tokens</span>
+                  <input
+                    type="number"
+                    min={1000}
+                    step={500}
+                    value={anthropicSettings.thinkingBudgetTokens}
+                    onChange={(e) =>
+                      updateAnthropicSettings({ thinkingBudgetTokens: Math.max(1000, Number(e.target.value) || 1000) })
+                    }
+                    className="w-24 px-2 py-1 border rounded bg-background text-foreground"
+                  />
+                </div>
+              )}
+            </div>
+            <div className="space-y-2 border-t pt-4">
+              <label className="flex items-center justify-between">
+                <div>
+                  <div className="font-medium text-sm">Enable Web Search</div>
+                  <div className="text-xs text-muted-foreground">Allow Claude to query the web when needed.</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={anthropicSettings.enableWebSearch}
+                  onChange={(e) => updateAnthropicSettings({ enableWebSearch: e.target.checked })}
+                  className="rounded"
+                />
+              </label>
+              {anthropicSettings.enableWebSearch && (
+                <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                  <span>Max searches</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={anthropicSettings.webSearchMaxUses}
+                    onChange={(e) =>
+                      updateAnthropicSettings({
+                        webSearchMaxUses: Math.min(10, Math.max(1, Number(e.target.value) || 1)),
+                      })
+                    }
+                    className="w-20 px-2 py-1 border rounded bg-background text-foreground"
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* OpenAI API Settings */}
+      {providers.some((provider) => provider.id === 'openai') && (
+        <div className="bg-card border rounded-lg p-4 space-y-4">
+          <div className="flex items-center gap-2">
+            <h3 className="font-semibold">OpenAI API Settings</h3>
+            <div className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+              Beta
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Toggle advanced OpenAI Responses features such as Files, Web Search, PDF uploads, and Deep Research.
+          </p>
+          <div className="space-y-4">
+            <label className="flex items-center justify-between">
+              <div>
+                <div className="font-medium text-sm">Enable Files API</div>
+                <div className="text-xs text-muted-foreground">Upload attachments once and reference them in Responses.</div>
+              </div>
+              <input
+                type="checkbox"
+                checked={openaiSettings.enableFiles}
+                onChange={(e) => updateOpenAISettings({ enableFiles: e.target.checked })}
+                className="rounded"
+              />
+            </label>
+
+            <label className="flex items-center justify-between">
+              <div>
+                <div className="font-medium text-sm">Enable Web Search</div>
+                <div className="text-xs text-muted-foreground">Allow the model to query real-time information.</div>
+              </div>
+              <input
+                type="checkbox"
+                checked={openaiSettings.enableWebSearch}
+                onChange={(e) => updateOpenAISettings({ enableWebSearch: e.target.checked })}
+                className="rounded"
+              />
+            </label>
+
+            <label className="flex items-center justify-between">
+              <div>
+                <div className="font-medium text-sm">Enable Deep Research</div>
+                <div className="text-xs text-muted-foreground">Request extended multi-step reasoning.</div>
+              </div>
+              <input
+                type="checkbox"
+                checked={openaiSettings.enableDeepResearch}
+                onChange={(e) => updateOpenAISettings({ enableDeepResearch: e.target.checked })}
+                className="rounded"
+              />
+            </label>
+
+            {openaiSettings.enableDeepResearch && (
+              <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                <span>Effort</span>
+                <select
+                  value={openaiSettings.deepResearchEffort}
+                  onChange={(e) =>
+                    updateOpenAISettings({ deepResearchEffort: e.target.value as OpenAIApiSettings['deepResearchEffort'] })
+                  }
+                  className="px-2 py-1 border rounded bg-background text-foreground"
+                >
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                </select>
+              </div>
+            )}
+
+            <label className="flex items-center justify-between border-t pt-4">
+              <div>
+                <div className="font-medium text-sm">Enable PDF Uploads</div>
+                <div className="text-xs text-muted-foreground">Automatically upload PDFs to the Files API before use.</div>
+              </div>
+              <input
+                type="checkbox"
+                checked={openaiSettings.enablePdfUploads}
+                onChange={(e) => updateOpenAISettings({ enablePdfUploads: e.target.checked })}
+                className="rounded"
+              />
+            </label>
+          </div>
+        </div>
+      )}
 
       {/* HuggingFace Integration */}
       <div className="bg-card border rounded-lg p-4 space-y-4">

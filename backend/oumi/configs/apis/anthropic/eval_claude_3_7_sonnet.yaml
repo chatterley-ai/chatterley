@@ -5,7 +5,6 @@ model:
 inference_engine: ANTHROPIC
 
 generation:
-  max_new_tokens: 8192
   temperature: 0.0
 
 tasks:

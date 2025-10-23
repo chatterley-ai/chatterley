@@ -19,6 +19,7 @@ from types import MappingProxyType
 from typing import Any, Callable, Final, NamedTuple, Optional, Union
 
 import pydantic
+from pydantic import Field
 from jinja2 import Template
 
 import oumi.core.types.proto.generated.conversation_pb2 as pb2
@@ -363,6 +364,9 @@ class Message(pydantic.BaseModel):
 
     role: Role
     """The role of the entity sending the message (e.g., user, assistant, system)."""
+
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    """Optional metadata associated with the message."""
 
     def model_post_init(self, __context) -> None:
         """Post-initialization method for the Message model.

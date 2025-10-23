@@ -19,5 +19,4 @@ model:
 engine: OPENAI
 
 generation:
-  max_new_tokens: 65536
   temperature: 1.0

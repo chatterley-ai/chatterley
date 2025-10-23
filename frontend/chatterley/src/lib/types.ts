@@ -111,6 +111,28 @@ export interface GenerationParams {
   stream?: boolean;
 }
 
+export interface AttachmentPayload {
+  id: string;
+  name?: string;
+  type?: string;
+  mimeType?: string;
+  size?: number;
+  dataUrl?: string;
+  base64?: string;
+  textContent?: string;
+  fileId?: string;
+}
+
+export interface OpenAIApiSettings {
+  enableFiles: boolean;
+  enableWebSearch: boolean;
+  enableDeepResearch: boolean;
+  deepResearchEffort: 'low' | 'medium' | 'high';
+  enablePdfUploads: boolean;
+}
+
+export interface OpenAIRequestSettings extends OpenAIApiSettings {}
+
 export interface ApiResponse<T = unknown> {
   success: boolean;
   data?: T;
@@ -191,6 +213,7 @@ export interface ChatCompletionRequest {
   messages: Array<{
     role: 'user' | 'assistant' | 'system';
     content: string | Record<string, unknown>[]; // supports multimodal parts for omni models
+    attachments?: AttachmentPayload[];
   }>;
   session_id?: string;
   branch_id?: string;
@@ -198,6 +221,8 @@ export interface ChatCompletionRequest {
   max_tokens?: number;
   top_p?: number;
   stream?: boolean;
+  anthropic_settings?: AnthropicRequestSettings;
+  openai_settings?: OpenAIRequestSettings;
 }
 
 export interface ChatCompletionResponse {
@@ -336,6 +361,17 @@ export interface AppearanceSettings {
   cornerRadius: number;
 }
 
+export interface AnthropicApiSettings {
+  enableFiles: boolean;
+  enableSkills: boolean;
+  enableThinking: boolean;
+  thinkingBudgetTokens: number;
+  enableWebSearch: boolean;
+  webSearchMaxUses: number;
+}
+
+export interface AnthropicRequestSettings extends AnthropicApiSettings {}
+
 export interface AppSettings {
   apiKeys: Record<string, ApiKeyConfig>;
   selectedProvider: string;
@@ -369,4 +405,6 @@ export interface AppSettings {
     highUsage?: boolean;
     keyExpiry?: boolean;
   };
+  anthropic?: AnthropicApiSettings;
+  openai?: OpenAIApiSettings;
 }

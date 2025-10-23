@@ -18,6 +18,7 @@ from typing_extensions import override
 
 from oumi.core.configs import GenerationParams, ModelParams, RemoteParams
 from oumi.core.types.conversation import Conversation, Message, Role
+from oumi.utils.conversation_utils import convert_message_to_json_content_list
 from oumi.inference.remote_inference_engine import RemoteInferenceEngine
 from oumi.utils.logging import logger
 
@@ -77,39 +78,54 @@ class AnthropicInferenceEngine(RemoteInferenceEngine):
             Dict[str, Any]: A dictionary containing the formatted input for the
             Anthropic API, including the model, messages, and generation parameters.
         """
-        # Anthropic API expects a top level `system` message,
-        # Extract and exclude system message from the list of messages
-        # in the conversation
-        system_messages = [
-            message for message in conversation.messages if message.role == Role.SYSTEM
-        ]
+        system_message: Optional[str] = None
+        formatted_messages: list[dict[str, Any]] = []
 
-        if len(system_messages) > 0:
-            system_message = system_messages[0].content
+        message_index = 0
+        for message in conversation.messages:
+            if message.role == Role.SYSTEM:
+                if system_message is None:
+                    blocks = convert_message_to_json_content_list(message)
+                    text_parts = [
+                        block.get("text", "")
+                        for block in blocks
+                        if isinstance(block, dict) and block.get("type") == "text"
+                    ]
+                    system_message = "\n".join(part for part in text_parts if part)
+                else:
+                    logger.warning(
+                        "Multiple system messages found; ignoring additional system block."
+                    )
+                continue
 
-            if len(system_messages) > 1:
-                logger.warning(
-                    "Multiple system messages found in conversation. "
-                    "Only using the first one."
+            content_blocks = convert_message_to_json_content_list(message)
+            metadata = message.metadata or {}
+            additional_blocks = []
+            for file_ref in metadata.get("anthropic_files", []):
+                file_id = file_ref.get("file_id")
+                if not file_id:
+                    continue
+                block_type = file_ref.get("block_type", "document")
+                additional_blocks.append(
+                    {
+                        "type": block_type,
+                        "source": {
+                            "type": "file",
+                            "file_id": file_id,
+                        },
+                    }
                 )
-        else:
-            system_message = None
 
-        conversation_messages = [
-            message for message in conversation.messages if message.role != Role.SYSTEM
-        ]
-        raw_messages = self._get_list_of_message_json_dicts(
-            conversation_messages, group_adjacent_same_role_turns=True
-        )
-        formatted_messages = [
-            {
-                _ROLE_KEY: raw_message.get(_ROLE_KEY, "user"),
-                _CONTENT_KEY: self._normalize_content_for_anthropic(
-                    raw_message.get(_CONTENT_KEY)
-                ),
-            }
-            for raw_message in raw_messages
-        ]
+            if additional_blocks:
+                content_blocks.extend(additional_blocks)
+
+            formatted_messages.append(
+                {
+                    _ROLE_KEY: message.role.value,
+                    _CONTENT_KEY: self._normalize_content_for_anthropic(content_blocks),
+                }
+            )
+            message_index += 1
 
         # Build request body
         # See https://docs.anthropic.com/claude/reference/messages_post
@@ -126,6 +142,16 @@ class AnthropicInferenceEngine(RemoteInferenceEngine):
 
         if generation_params.stop_strings is not None:
             body["stop_sequences"] = generation_params.stop_strings
+
+        anthropic_meta = conversation.metadata.get("anthropic") or {}
+        if anthropic_meta.get("tools"):
+            body["tools"] = anthropic_meta["tools"]
+        if anthropic_meta.get("container"):
+            body["container"] = anthropic_meta["container"]
+        if anthropic_meta.get("thinking"):
+            body["thinking"] = anthropic_meta["thinking"]
+        if anthropic_meta.get("betas"):
+            body["betas"] = anthropic_meta["betas"]
 
         return body
 
@@ -150,6 +176,7 @@ class AnthropicInferenceEngine(RemoteInferenceEngine):
             "Content-Type": "application/json",
             "anthropic-version": self.anthropic_version,
             "X-API-Key": self._get_api_key(remote_params) or "",
+            "anthropic-beta": "files-api-2025-04-14,code-execution-2025-08-25,skills-2025-10-02",
         }
 
     @override
@@ -198,6 +225,20 @@ class AnthropicInferenceEngine(RemoteInferenceEngine):
                 normalized.append(
                     self._build_media_block("video", part.get("video_url") or {})
                 )
+            elif part_type == "document":
+                source = part.get("source")
+                if isinstance(source, dict) and source.get("type") == "file" and source.get("file_id"):
+                    normalized.append(
+                        {
+                            "type": "document",
+                            "source": {
+                                "type": "file",
+                                "file_id": source["file_id"],
+                            },
+                        }
+                    )
+                else:
+                    normalized.append({"type": "text", "text": str(part)})
             else:
                 normalized.append({"type": "text", "text": str(part)})
 

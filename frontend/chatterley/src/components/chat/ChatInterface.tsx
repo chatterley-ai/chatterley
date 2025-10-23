@@ -10,12 +10,29 @@ import ErrorDialog from '@/components/ui/ErrorDialog';
 import { generateDisplayName } from '@/lib/nameGen';
 import { useChatStore } from '@/lib/store';
 import { useAutoSave } from '@/hooks/useAutoSave';
-import { Message, ChatCompletionRequest } from '@/lib/types';
+import { Message, ChatCompletionRequest, AttachmentPayload, AnthropicApiSettings, OpenAIApiSettings } from '@/lib/types';
 import apiClient from '@/lib/unified-api';
 import { transformBackendMessages } from '@/lib/messageMeta';
 import { isValidCommand, parseCommand } from '@/lib/constants';
 import ChatHistory from './ChatHistory';
 import MessageInput, { PreparedAttachment } from './MessageInput';
+
+const FALLBACK_ANTHROPIC_SETTINGS: AnthropicApiSettings = {
+  enableFiles: true,
+  enableSkills: true,
+  enableThinking: false,
+  thinkingBudgetTokens: 6000,
+  enableWebSearch: false,
+  webSearchMaxUses: 5,
+};
+
+const FALLBACK_OPENAI_SETTINGS: OpenAIApiSettings = {
+  enableFiles: true,
+  enableWebSearch: false,
+  enableDeepResearch: false,
+  deepResearchEffort: 'medium',
+  enablePdfUploads: true,
+};
 
 const deriveCapabilities = (
   metadata: {
@@ -96,6 +113,19 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
   
   // Get messages using the getCurrentMessages selector
   const messages = getCurrentMessages();
+
+  const anthropicSettings = React.useMemo(
+    () => settings.anthropic ?? FALLBACK_ANTHROPIC_SETTINGS,
+    [settings.anthropic]
+  );
+  const openaiSettings = React.useMemo(
+    () => settings.openai ?? FALLBACK_OPENAI_SETTINGS,
+    [settings.openai]
+  );
+  const providerId = settings.selectedProvider?.toLowerCase?.() ?? '';
+  const preferFileReferences =
+    (providerId === 'anthropic' && anthropicSettings.enableFiles) ||
+    (providerId === 'openai' && (openaiSettings.enableFiles || openaiSettings.enablePdfUploads));
   
   // Initialize auto-save functionality
   useAutoSave();
@@ -511,62 +541,193 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
     }
   }, [addMessage, setIsOmniCapable, setIsVisionCapable]);
 
-  const buildContentParts = (text: string, attachments?: PreparedAttachment[]) => {
+  const buildContentParts = (
+    text: string,
+    attachments: PreparedAttachment[] | undefined,
+    options: { vision: boolean; omni: boolean; preferFileReferences: boolean }
+  ) => {
     if (!attachments || attachments.length === 0) {
-      return text; // plain string
+      return text;
     }
+
+    const { vision, omni, preferFileReferences } = options;
 
     const allowedAttachments = attachments.filter((att) => {
       if (att.type === 'image') {
-        return isVisionCapable || isOmniCapable;
+        return vision || omni;
       }
       if (att.type === 'audio' || att.type === 'video') {
-        return isOmniCapable;
+        return omni;
       }
       return true;
     });
 
-    const allowedIds = new Set(allowedAttachments.map((att) => att.id));
-    const filteredOut = attachments.filter((att) => !allowedIds.has(att.id));
-    if (filteredOut.length > 0) {
+    const droppedAttachments = attachments.filter(
+      (att) => !allowedAttachments.some((candidate) => candidate.id === att.id)
+    );
+    if (droppedAttachments.length > 0) {
       console.warn('[ChatInterface] Dropping attachments due to capability limits', {
-        dropped: filteredOut.map((att) => att.type),
+        dropped: droppedAttachments.map((att) => ({ id: att.id, type: att.type })),
       });
     }
 
-    const map = new Map(allowedAttachments.map(a => [a.id, a] as const));
-    const parts: Array<{
-      type: string;
-      content: string;
-    }> = [];
-    const re = /(\[attachment:[^\]]+\])/g;
-    const tokens = text.split(re).filter(Boolean);
-    for (const token of tokens) {
-      const m = token.match(/^\[attachment:([^\]]+)\]$/);
-      if (m) {
-        if (!allowedIds.has(m[1])) {
-          continue;
-        }
-        const att = map.get(m[1]);
-        if (!att) continue;
-        if (att.type === 'image') {
-          parts.push({ type: 'image_url', content: att.dataUrl ?? att.base64 ?? '' });
-        } else if (att.type === 'audio') {
-          parts.push({ type: 'audio_url', content: att.dataUrl ?? att.base64 ?? '' });
-        } else if (att.type === 'video') {
-          parts.push({ type: 'video_url', content: att.dataUrl ?? att.base64 ?? '' });
-        } else if (att.type === 'document' && att.dataUrl) {
-          parts.push({ type: 'text', content: att.dataUrl });
-        }
-      } else if (token.trim().length > 0) {
-        parts.push({ type: 'text', content: token });
-      }
-    }
-    if (parts.length === 0) {
+    const attachmentMap = new Map<string, PreparedAttachment>(
+      allowedAttachments.map((att) => [att.id, att])
+    );
+
+    if (attachmentMap.size === 0) {
       const cleaned = text.replace(/\[attachment:[^\]]+\]/g, '').trim();
       return cleaned.length > 0 ? cleaned : '';
     }
-    return parts;
+
+    const referencedIds = new Set<string>();
+    const structuredParts: Array<{ type: string; content: string }> = [];
+    const fallbackSegments: string[] = [];
+
+    const appendTextPart = (segment: string) => {
+      if (!segment) {
+        return;
+      }
+      structuredParts.push({ type: 'text', content: segment });
+      fallbackSegments.push(segment);
+    };
+
+    const toDataUrl = (att: PreparedAttachment, fallbackMime: string) => {
+      if (att.dataUrl) {
+        return att.dataUrl;
+      }
+      if (att.base64) {
+        const mime = att.mimeType || fallbackMime;
+        return `data:${mime};base64,${att.base64}`;
+      }
+      return undefined;
+    };
+
+    const appendDocumentPart = (att: PreparedAttachment, viaPlaceholder: boolean) => {
+      const name = att.name || 'Attachment';
+      if (preferFileReferences) {
+        const block = `\n[Attachment: ${name}]${viaPlaceholder ? '' : ' (auto-attached)'}\nAttachment will be provided via the Files API.\n`;
+        appendTextPart(block);
+        return;
+      }
+      const payload =
+        att.textContent ??
+        att.fetchContent ??
+        (att.dataUrl && att.dataUrl.startsWith('data:') ? att.dataUrl : undefined) ??
+        att.base64 ??
+        '';
+      const modeLabel = viaPlaceholder ? '' : ' (auto-attached)';
+      const content =
+        payload && payload.length > 0
+          ? payload
+          : 'Attachment included, but no readable text content was detected.';
+      const block = `\n[Attachment: ${name}]${modeLabel}\n${content}\n`;
+      appendTextPart(block);
+    };
+
+    const appendBinaryNote = (att: PreparedAttachment, reason?: string) => {
+      const note = `\n[Attachment: ${att.name || att.id}${reason ? ` – ${reason}` : ''}]\n`;
+      fallbackSegments.push(note);
+    };
+
+    const re = /(\[attachment:[^\]]+\])/g;
+    const tokens = text.split(re).filter(Boolean);
+
+    for (const token of tokens) {
+      const match = token.match(/^\[attachment:([^\]]+)\]$/);
+      if (match) {
+        const att = attachmentMap.get(match[1]);
+        if (!att) {
+          continue;
+        }
+        referencedIds.add(att.id);
+        if (att.type === 'image') {
+          const imageSource = toDataUrl(att, 'image/png');
+          if (imageSource) {
+            structuredParts.push({ type: 'image_url', content: imageSource });
+            appendBinaryNote(att);
+          } else {
+            appendBinaryNote(att, 'missing image payload');
+          }
+        } else if (att.type === 'audio') {
+          const audioSource = toDataUrl(att, 'audio/mpeg');
+          if (audioSource && omni) {
+            structuredParts.push({ type: 'audio_url', content: audioSource });
+            appendBinaryNote(att);
+          } else {
+            appendBinaryNote(
+              att,
+              omni ? 'missing audio payload' : 'requires an omni-capable model'
+            );
+          }
+        } else if (att.type === 'video') {
+          const videoSource = toDataUrl(att, 'video/mp4');
+          if (videoSource && omni) {
+            structuredParts.push({ type: 'video_url', content: videoSource });
+            appendBinaryNote(att);
+          } else {
+            appendBinaryNote(
+              att,
+              omni ? 'missing video payload' : 'requires an omni-capable model'
+            );
+          }
+        } else if (att.type === 'document' || att.type === 'fetch') {
+          appendDocumentPart(att, true);
+        }
+        continue;
+      }
+
+      appendTextPart(token);
+    }
+
+    for (const att of allowedAttachments) {
+      if (referencedIds.has(att.id)) {
+        continue;
+      }
+
+      if (att.type === 'document' || att.type === 'fetch') {
+        appendDocumentPart(att, false);
+      } else if (att.type === 'image') {
+        const imageSource = toDataUrl(att, 'image/png');
+        if (imageSource) {
+          structuredParts.push({ type: 'image_url', content: imageSource });
+        }
+        appendBinaryNote(att, 'auto-attached');
+      } else if (att.type === 'audio') {
+        const audioSource = toDataUrl(att, 'audio/mpeg');
+        if (audioSource && omni) {
+          structuredParts.push({ type: 'audio_url', content: audioSource });
+        }
+        appendBinaryNote(att, omni ? 'auto-attached' : 'requires an omni-capable model');
+      } else if (att.type === 'video') {
+        const videoSource = toDataUrl(att, 'video/mp4');
+        if (videoSource && omni) {
+          structuredParts.push({ type: 'video_url', content: videoSource });
+        }
+        appendBinaryNote(att, omni ? 'auto-attached' : 'requires an omni-capable model');
+      }
+    }
+
+    if (droppedAttachments.length > 0) {
+      const note = droppedAttachments
+        .map((att) => `• ${att.name || att.id} (${att.type}) requires a compatible model.`)
+        .join('\n');
+      fallbackSegments.push(`\n[Attachment notice]\n${note}\n`);
+    }
+
+    if (fallbackSegments.length === 0) {
+      const cleaned = text.replace(/\[attachment:[^\]]+\]/g, '').trim();
+      return cleaned.length > 0 ? cleaned : '';
+    }
+
+    const fallbackText = fallbackSegments.join('');
+    const containsNonText = structuredParts.some((part) => part.type !== 'text');
+
+    if (!containsNonText) {
+      return fallbackText.trim() || fallbackText;
+    }
+
+    return structuredParts;
   };
 
   // Error dialog state for actionable errors
@@ -630,11 +791,34 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
         ? storeSnapshot.getBranchMessages(activeConversationId, activeBranchId)
         : [];
 
+      const normalizeAttachments = (items?: Array<Record<string, unknown>>): AttachmentPayload[] | undefined => {
+        if (!items || items.length === 0) {
+          return undefined;
+        }
+        return items.map((raw, index) => {
+          const record = (raw ?? {}) as Record<string, unknown>;
+          const idCandidate = typeof record.id === 'string' ? record.id : undefined;
+          const fallbackId = `attachment-${Date.now()}-${index}`;
+          return {
+            id: idCandidate || fallbackId,
+            name: typeof record.name === 'string' ? record.name : undefined,
+            type: typeof record.type === 'string' ? record.type : undefined,
+            mimeType: typeof record.mimeType === 'string' ? record.mimeType : undefined,
+            size: typeof record.size === 'number' ? (record.size as number) : undefined,
+            dataUrl: typeof record.dataUrl === 'string' ? record.dataUrl : undefined,
+            base64: typeof record.base64 === 'string' ? record.base64 : undefined,
+            textContent: typeof record.textContent === 'string' ? record.textContent : undefined,
+            fileId: typeof record.fileId === 'string' ? record.fileId : undefined,
+          } as AttachmentPayload;
+        });
+      };
+
       const apiMessages: ChatCompletionRequest['messages'] = history
         .filter(msg => msg.role !== 'system') // Exclude system messages from API
         .map(msg => ({
           role: (msg.role as 'user' | 'assistant' | 'system'),
           content: msg.content,
+          attachments: normalizeAttachments(msg.attachments as Record<string, unknown>[] | undefined),
         }));
 
       if (process.env.NODE_ENV !== 'production') {
@@ -645,18 +829,29 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
       }
 
       // Add the current user message (possibly multimodal)
-      const allowMultimodal = isOmniCapable || isVisionCapable;
-      const contentOrParts = allowMultimodal ? buildContentParts(content, attachments) : content;
+      const hasAttachments = !!attachments && attachments.length > 0;
+      const contentOrParts = hasAttachments
+        ? buildContentParts(content, attachments, {
+            vision: isVisionCapable,
+            omni: isOmniCapable,
+            preferFileReferences,
+          })
+        : content;
+      const currentAttachmentPayload = hasAttachments
+        ? normalizeAttachments(attachments as unknown as Array<Record<string, unknown>>)
+        : undefined;
       const lastHistoryEntry = history[history.length - 1];
       if (lastHistoryEntry?.role === 'user' && apiMessages.length > 0) {
         apiMessages[apiMessages.length - 1] = {
           role: 'user',
           content: contentOrParts as string | Array<{ type: string; content: string }>,
+          attachments: currentAttachmentPayload,
         };
       } else {
         apiMessages.push({
           role: 'user',
           content: contentOrParts as string | Array<{ type: string; content: string }>,
+          attachments: currentAttachmentPayload,
         });
       }
 
@@ -664,7 +859,7 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
       await ensureModelLoaded();
 
       // Check if streaming is enabled
-      const useStreaming = generationParams.stream ?? false;
+      const useStreaming = providerId === 'openai' ? false : (generationParams.stream ?? false);
       
       if (useStreaming) {
         console.log('🔄 Using streaming mode');
@@ -701,6 +896,18 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
           max_tokens: generationParams.maxTokens,
           top_p: generationParams.topP,
           stream: true, // Explicitly enable streaming
+          anthropic_settings:
+            providerId === 'anthropic'
+              ? {
+                  ...anthropicSettings,
+                }
+              : undefined,
+          openai_settings:
+            providerId === 'openai'
+              ? {
+                  ...openaiSettings,
+                }
+              : undefined,
         }, (chunk: string) => {
           // Progressive update callback - update the message with each chunk
           if (currentStreamingMessageId.current && !shouldStop) {
@@ -744,6 +951,18 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
           max_tokens: generationParams.maxTokens,
           top_p: generationParams.topP,
           stream: false, // Explicitly disable streaming
+          anthropic_settings:
+            providerId === 'anthropic'
+              ? {
+                  ...anthropicSettings,
+                }
+              : undefined,
+          openai_settings:
+            providerId === 'openai'
+              ? {
+                  ...openaiSettings,
+                }
+              : undefined,
         });
 
         if (response.success && response.data) {
@@ -824,7 +1043,30 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
     } finally {
       setTyping(false);
     }
-  }, [setTyping, setShouldStop, messages, isVisionCapable, isOmniCapable, buildContentParts, ensureModelLoaded, generationParams, getCurrentSessionId, currentBranchId, settings, addMessage, currentConversationId, updateMessage, showError, refreshBranches, clearError, reloadEngine]);
+  }, [
+    setTyping,
+    setShouldStop,
+    messages,
+    isVisionCapable,
+    isOmniCapable,
+    buildContentParts,
+    ensureModelLoaded,
+    generationParams,
+    getCurrentSessionId,
+    currentBranchId,
+    settings,
+    addMessage,
+    currentConversationId,
+    updateMessage,
+    showError,
+    refreshBranches,
+    clearError,
+    reloadEngine,
+    preferFileReferences,
+    anthropicSettings,
+    openaiSettings,
+    providerId,
+  ]);
 
   const handleAttachFiles = async (files: FileList) => {
     // PLACEHOLDER: File attachment not fully implemented

@@ -239,6 +239,21 @@ export const useChatStore = create<ChatStore>()(
           username: undefined,
           token: undefined,
         },
+        anthropic: {
+          enableFiles: true,
+          enableSkills: true,
+          enableThinking: false,
+          thinkingBudgetTokens: 6000,
+          enableWebSearch: false,
+          webSearchMaxUses: 5,
+        },
+        openai: {
+          enableFiles: true,
+          enableWebSearch: false,
+          enableDeepResearch: false,
+          deepResearchEffort: 'medium',
+          enablePdfUploads: true,
+        },
         user: {
           displayName: generateDisplayName(),
         },
@@ -2453,6 +2468,46 @@ if (process.env.NODE_ENV === 'development') {
             state.settings.huggingFace = {
               username: undefined,
               token: undefined,
+            };
+          }
+
+          if (!state.settings.anthropic) {
+            state.settings.anthropic = {
+              enableFiles: true,
+              enableSkills: true,
+              enableThinking: false,
+              thinkingBudgetTokens: 6000,
+              enableWebSearch: false,
+              webSearchMaxUses: 5,
+            };
+          } else {
+            state.settings.anthropic = {
+              enableFiles: state.settings.anthropic.enableFiles ?? true,
+              enableSkills: state.settings.anthropic.enableSkills ?? true,
+              enableThinking: state.settings.anthropic.enableThinking ?? false,
+              thinkingBudgetTokens:
+                state.settings.anthropic.thinkingBudgetTokens ?? 6000,
+              enableWebSearch: state.settings.anthropic.enableWebSearch ?? false,
+              webSearchMaxUses: state.settings.anthropic.webSearchMaxUses ?? 5,
+            };
+          }
+
+          if (!state.settings.openai) {
+            state.settings.openai = {
+              enableFiles: true,
+              enableWebSearch: false,
+              enableDeepResearch: false,
+              deepResearchEffort: 'medium',
+              enablePdfUploads: true,
+            };
+          } else {
+            state.settings.openai = {
+              enableFiles: state.settings.openai.enableFiles ?? true,
+              enableWebSearch: state.settings.openai.enableWebSearch ?? false,
+              enableDeepResearch: state.settings.openai.enableDeepResearch ?? false,
+              deepResearchEffort:
+                state.settings.openai.deepResearchEffort ?? 'medium',
+              enablePdfUploads: state.settings.openai.enablePdfUploads ?? true,
             };
           }
 

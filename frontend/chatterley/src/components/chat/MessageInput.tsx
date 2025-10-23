@@ -26,7 +26,9 @@ export interface PreparedAttachment {
   dataUrl?: string;
   fetchUrl?: string;
   fetchContent?: string;
+  textContent?: string;
   placeholder?: string;
+  fileId?: string;
 }
 
 type StagedAttachment = PreparedAttachment;
@@ -377,6 +379,106 @@ export default function MessageInput({
     }
   };
 
+  const TEXTUAL_DOCUMENT_MIME_TYPES = React.useMemo(
+    () =>
+      new Set([
+        'application/json',
+        'application/xml',
+        'application/x-yaml',
+        'application/yaml',
+        'application/x-javascript',
+        'application/javascript',
+        'application/xhtml+xml',
+        'text/markdown',
+        'text/plain',
+        'text/csv',
+        'text/html',
+        'text/xml',
+        'text/x-python',
+        'text/x-c',
+        'text/x-c++',
+        'text/x-java-source',
+        'text/x-go',
+        'text/x-ruby',
+        'text/x-rustsrc',
+        'text/x-shellscript',
+      ]),
+    []
+  );
+
+  const TEXTUAL_DOCUMENT_EXTENSIONS = React.useMemo(
+    () =>
+      new Set([
+        '.txt',
+        '.md',
+        '.rst',
+        '.log',
+        '.cfg',
+        '.ini',
+        '.conf',
+        '.py',
+        '.js',
+        '.ts',
+        '.tsx',
+        '.html',
+        '.css',
+        '.java',
+        '.cpp',
+        '.c',
+        '.h',
+        '.hpp',
+        '.go',
+        '.rs',
+        '.php',
+        '.rb',
+        '.swift',
+        '.kt',
+        '.kts',
+        '.scala',
+        '.sh',
+        '.yaml',
+        '.yml',
+        '.csv',
+        '.json',
+      ]),
+    []
+  );
+
+  const shouldProcessDocumentAsText = React.useCallback(
+    (file: File) => {
+      const mime = (file.type || '').toLowerCase();
+      if (mime.startsWith('text/')) {
+        return true;
+      }
+      if (TEXTUAL_DOCUMENT_MIME_TYPES.has(mime)) {
+        return true;
+      }
+      const extension = `.${file.name.split('.').pop()?.toLowerCase() ?? ''}`;
+      return TEXTUAL_DOCUMENT_EXTENSIONS.has(extension);
+    },
+    [TEXTUAL_DOCUMENT_EXTENSIONS, TEXTUAL_DOCUMENT_MIME_TYPES]
+  );
+
+  const processDocumentFile = React.useCallback(
+    async (file: File) => {
+      if (shouldProcessDocumentAsText(file)) {
+        const text = await file.text();
+        if (!text || text.trim().length === 0) {
+          throw new Error('File appears to be empty after parsing.');
+        }
+        return { textContent: text };
+      }
+
+      const dataUrl = await readFileAsDataUrl(file);
+      const base64 = dataUrl.split(',')[1] || '';
+      if (!base64) {
+        throw new Error('Unable to extract file contents.');
+      }
+      return { dataUrl, base64 };
+    },
+    [readFileAsDataUrl, shouldProcessDocumentAsText]
+  );
+
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
 
@@ -408,18 +510,56 @@ export default function MessageInput({
       }
     }
 
-    // Stage the documents instead of immediately attaching
     const files = validation.files || [];
-    const newAttachments: StagedAttachment[] = files.map(file => ({
-      id: `document-${Date.now()}-${Math.random()}`,
-      type: 'document',
-      name: file.name,
-      size: file.size,
-      mimeType: file.type || undefined,
-    }));
+    if (files.length === 0) {
+      e.target.value = '';
+      return;
+    }
 
-    setStagedAttachments(prev => [...prev, ...newAttachments]);
-    e.target.value = '';
+    setIsProcessingAttachments(true);
+    try {
+      const newAttachments: StagedAttachment[] = [];
+      const errorMessages: string[] = [];
+
+      for (const file of files) {
+        try {
+          const { dataUrl, base64, textContent } = await processDocumentFile(file);
+          const id = `document-${Date.now()}-${Math.random()}`;
+          const placeholder = `[attachment:${id}]`;
+          insertPlaceholderAtCursor(placeholder);
+
+          newAttachments.push({
+            id,
+            type: 'document',
+            name: file.name,
+            size: file.size,
+            mimeType: file.type || undefined,
+            dataUrl,
+            base64,
+            textContent,
+            placeholder,
+          });
+        } catch (error) {
+          console.error('Failed to process document attachment', error);
+          const message =
+            error instanceof Error && error.message
+              ? error.message
+              : 'Unknown processing error.';
+          errorMessages.push(`• ${file.name}: ${message}`);
+        }
+      }
+
+      if (newAttachments.length > 0) {
+        setStagedAttachments(prev => [...prev, ...newAttachments]);
+      }
+
+      if (errorMessages.length > 0) {
+        alert(`❌ Document Attachment Error:\n\n${errorMessages.join('\n')}`);
+      }
+    } finally {
+      setIsProcessingAttachments(false);
+      e.target.value = '';
+    }
   };
 
   const handleAudioSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
