@@ -24,6 +24,12 @@ from oumi.inference.remote_inference_engine import RemoteInferenceEngine
 class OpenAIInferenceEngine(RemoteInferenceEngine):
     """Engine for running inference against the OpenAI Responses API."""
 
+    @staticmethod
+    def _build_text_block(role: Role, text: str) -> dict[str, str]:
+        block_type = "output_text" if role == Role.ASSISTANT else "input_text"
+        return {"type": block_type, "text": text}
+
+
     @property
     @override
     def base_url(self) -> Optional[str]:
@@ -50,23 +56,26 @@ class OpenAIInferenceEngine(RemoteInferenceEngine):
         for message in conversation.messages:
             content_blocks: list[dict[str, Any]] = []
 
-            if isinstance(message.content, str):
-                if message.content:
-                    content_blocks.append(
-                        {"type": "input_text", "text": message.content}
-                    )
-            elif isinstance(message.content, list):
+            if isinstance(message.content, list):
                 for item in message.content:
                     if isinstance(item, ContentItem) and item.is_text():
                         content_blocks.append(
-                            {"type": "input_text", "text": item.content or ""}
+                            self._build_text_block(message.role, item.content or "")
                         )
                     else:
                         item_content = getattr(item, "content", None)
                         if item_content:
                             content_blocks.append(
-                                {"type": "input_text", "text": str(item_content)}
+                                self._build_text_block(message.role, str(item_content))
                             )
+            elif isinstance(message.content, str):
+                content_blocks.append(
+                    self._build_text_block(message.role, message.content)
+                )
+            elif message.content is not None:
+                content_blocks.append(
+                    self._build_text_block(message.role, str(message.content))
+                )
 
             for file_ref in (message.metadata or {}).get("openai_files", []):
                 file_id = file_ref.get("file_id")
@@ -74,7 +83,7 @@ class OpenAIInferenceEngine(RemoteInferenceEngine):
                     content_blocks.append({"type": "input_file", "file_id": file_id})
 
             if not content_blocks:
-                content_blocks.append({"type": "input_text", "text": ""})
+                content_blocks.append(self._build_text_block(message.role, ""))
 
             input_messages.append(
                 {

@@ -138,6 +138,7 @@ export interface ApiResponse<T = unknown> {
   data?: T;
   message?: string;
   error?: string;
+  errorDetails?: unknown;
 }
 
 export interface DiffusionGenerationRequest {
@@ -310,6 +311,7 @@ export interface ApiUsageStats {
 export interface ApiValidationResult {
   isValid: boolean;
   error?: string;
+  errorDetails?: unknown;
   details?: {
     model?: string;
     organization?: string;

@@ -73,16 +73,18 @@ export default function MessageInput({
   const imageProcessingSettings = React.useMemo(() => mediaSettings ?? DEFAULT_MEDIA_SETTINGS, [mediaSettings]);
 
   React.useEffect(() => {
-    console.log(
-      '[MessageInput] omni capability changed %o',
-      {
-        isOmniCapable,
-        isVisionCapable,
-        disabled,
-        isLoading,
-        timestamp: new Date().toISOString(),
-      }
-    );
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(
+        '[MessageInput] omni capability changed %o',
+        {
+          isOmniCapable,
+          isVisionCapable,
+          disabled,
+          isLoading,
+          timestamp: new Date().toISOString(),
+        }
+      );
+    }
   }, [isOmniCapable, isVisionCapable, disabled, isLoading]);
 
   // Supported file types based on Oumi backend analysis

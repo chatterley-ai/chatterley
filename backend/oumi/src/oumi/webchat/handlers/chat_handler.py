@@ -16,6 +16,8 @@
 
 import base64
 import copy
+import io
+import math
 import mimetypes
 import time
 import uuid
@@ -25,6 +27,9 @@ from typing import Any, Dict, List, Optional
 import aiohttp
 from aiohttp import web
 
+from pypdf import PdfReader
+
+from oumi.core.attachments.context_manager import ContextWindowManager
 from oumi.core.types.conversation import Conversation, ContentItem, Message, Role, Type
 from oumi.utils.logging import logger
 from oumi.webchat.core.session_manager import SessionManager
@@ -34,6 +39,17 @@ from oumi.webchat.utils.id_utils import generate_message_id
 from oumi.webchat.utils.fallbacks import model_name_fallback
 from oumi.inference.anthropic_inference_engine import AnthropicInferenceEngine
 from oumi.inference.openai_inference_engine import OpenAIInferenceEngine
+
+
+PDF_TEXT_CHAR_LIMIT = 60000
+
+
+class AttachmentBudgetError(RuntimeError):
+    """Raised when attachments exceed the model's available context budget."""
+
+    def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
+        super().__init__(message)
+        self.details: Dict[str, Any] = details or {}
 
 
 class ChatHandler:
@@ -162,82 +178,222 @@ class ChatHandler:
             }
 
         enable_files = bool(settings.get("enableFiles", True))
-        enable_skills = bool(settings.get("enableSkills", True))
         enable_thinking = bool(settings.get("enableThinking", False))
         thinking_budget = int(settings.get("thinkingBudgetTokens", 6000))
         enable_web_search = bool(settings.get("enableWebSearch", False))
         web_search_max = int(settings.get("webSearchMaxUses", 5))
 
-        skills_needed: set[str] = set()
-        betas: set[str] = set()
         tools: list[dict[str, Any]] = []
 
-        upload_session: Optional[aiohttp.ClientSession] = None
-        try:
-            if enable_files:
-                timeout = aiohttp.ClientTimeout(
-                    total=getattr(engine._remote_params, "connection_timeout", 300.0) or 300.0
-                )
-                upload_session = aiohttp.ClientSession(timeout=timeout)
+        context_manager: Optional[ContextWindowManager] = None
+        available_attachment_tokens: Optional[int] = None
+        total_attachment_tokens = 0
+        attachment_breakdown: list[dict[str, Any]] = []
+        conversation_token_estimate = 0
 
-            for idx, message in enumerate(messages):
-                attachments = message.get("attachments")
-                if not attachments or not isinstance(attachments, list):
+        max_context_length: Optional[int] = None
+        model_name: Optional[str] = None
+        if hasattr(engine, "_model_params") and engine._model_params is not None:
+            max_context_length = getattr(engine._model_params, "model_max_length", None)
+            model_name = getattr(engine._model_params, "model_name", None)
+
+        if max_context_length:
+            context_manager = ContextWindowManager(max_context_length, model_name or "anthropic")
+            try:
+                conversation_token_estimate = sum(
+                    self._estimate_message_token_usage(msg, context_manager)
+                    for msg in messages
+                )
+            except Exception:  # pragma: no cover - defensive estimation
+                conversation_token_estimate = 0
+
+            try:
+                budget = context_manager.calculate_budget(conversation_token_estimate)
+                available_attachment_tokens = budget.available_for_content
+            except Exception:  # pragma: no cover - defensive budget calc
+                available_attachment_tokens = None
+
+        for idx, message in enumerate(messages):
+            attachments = message.get("attachments")
+            if not attachments or not isinstance(attachments, list):
+                continue
+
+            if not enable_files:
+                logger.debug(
+                    "Skipping %d attachment(s) for message %d because files support is disabled",
+                    len(attachments),
+                    idx,
+                )
+                continue
+
+            document_blocks: list[dict[str, Any]] = []
+            for attachment in attachments:
+                if not isinstance(attachment, dict):
                     continue
 
-                file_refs: list[dict[str, Any]] = []
-                for attachment in attachments:
-                    if not isinstance(attachment, dict):
-                        continue
+                name = str(attachment.get("name") or "")
+                mime_type = str(attachment.get("mimeType") or "").lower()
+                is_pdf = "pdf" in mime_type or name.lower().endswith(".pdf")
 
-                    file_id = attachment.get("fileId")
-                    if enable_files and not file_id and upload_session is not None:
-                        try:
-                            file_id = await self._upload_anthropic_file(
-                                upload_session, engine, attachment
-                            )
-                        except Exception as exc:  # pragma: no cover - network dependent
-                            logger.warning(
-                                "Failed to upload attachment '%s' to Anthropic Files API: %s",
-                                attachment.get("name"),
-                                exc,
-                            )
-                            file_id = None
+                base64_data: Optional[str] = None
+                text_content: Optional[str] = None
+                url_source: Optional[str] = None
 
-                        if file_id:
-                            attachment["fileId"] = file_id
-                            attachment.pop("base64", None)
-                            attachment.pop("dataUrl", None)
-                            attachment.pop("textContent", None)
+                base64_blob = attachment.get("base64")
+                if isinstance(base64_blob, str) and base64_blob:
+                    base64_data = base64_blob
 
-                    if file_id:
-                        file_refs.append(
-                            {
-                                "file_id": file_id,
-                                "block_type": "document",
-                                "mime_type": attachment.get("mimeType"),
-                                "name": attachment.get("name"),
-                            }
+                if base64_data is None:
+                    data_url = attachment.get("dataUrl")
+                    if isinstance(data_url, str) and data_url.startswith("data:"):
+                        header, _, encoded = data_url.partition(",")
+                        if encoded:
+                            base64_data = encoded
+                            if not mime_type:
+                                try:
+                                    mime_type = header.split(":", 1)[1].split(";", 1)[0].lower()
+                                except Exception:
+                                    mime_type = ""
+
+                if base64_data is not None and is_pdf:
+                    try:
+                        pdf_bytes = base64.b64decode(base64_data, validate=False)
+                        reader = PdfReader(io.BytesIO(pdf_bytes))
+                        extracted_pages: list[str] = []
+                        for page_index, page in enumerate(reader.pages):
+                            try:
+                                page_text = page.extract_text() or ""
+                            except Exception as page_error:  # pragma: no cover - defensive
+                                logger.debug(
+                                    "Failed to extract text from PDF page %d (%s): %s",
+                                    page_index,
+                                    name,
+                                    page_error,
+                                )
+                                page_text = ""
+                            if page_text:
+                                extracted_pages.append(page_text)
+                        extracted_text = "\n\n".join(extracted_pages).strip()
+                        if extracted_text:
+                            if len(extracted_text) > PDF_TEXT_CHAR_LIMIT:
+                                logger.warning(
+                                    "Truncating extracted PDF text for %s from %d to %d characters",
+                                    name or "attachment",
+                                    len(extracted_text),
+                                    PDF_TEXT_CHAR_LIMIT,
+                                )
+                                extracted_text = extracted_text[:PDF_TEXT_CHAR_LIMIT]
+                            text_content = extracted_text
+                            base64_data = None
+                    except Exception as extraction_error:  # pragma: no cover - defensive
+                        logger.warning(
+                            "Failed to extract text from PDF %s: %s",
+                            name or "attachment",
+                            extraction_error,
                         )
-                        betas.add("files-api-2025-04-14")
 
-                        if enable_skills:
-                            skill_id = self._infer_anthropic_skill(attachment)
-                            if skill_id:
-                                skills_needed.add(skill_id)
+                if base64_data is None:
+                    raw_text = attachment.get("textContent")
+                    if isinstance(raw_text, str) and raw_text.strip():
+                        text_content = raw_text
 
-                if file_refs:
-                    message_metadata[idx] = {"anthropic_files": file_refs}
+                if base64_data is None and text_content is None:
+                    potential_url = attachment.get("url") or attachment.get("sourceUrl")
+                    if isinstance(potential_url, str) and potential_url:
+                        url_source = potential_url
 
-            if skills_needed:
-                betas.update({"code-execution-2025-08-25", "skills-2025-10-02"})
-                conversation_metadata["container"] = {
-                    "skills": [
-                        {"type": "anthropic", "skill_id": skill_id, "version": "latest"}
-                        for skill_id in sorted(skills_needed)
-                    ]
-                }
-                tools.append({"type": "code_execution_20250825", "name": "code_execution"})
+                document_block: Optional[dict[str, Any]] = None
+                if text_content is not None:
+                    document_block = {
+                        "type": "document",
+                        "source": {
+                            "type": "text",
+                            "text": text_content,
+                        },
+                    }
+                elif base64_data is not None:
+                    media_type = mime_type or "application/octet-stream"
+                    document_block = {
+                        "type": "document",
+                        "source": {
+                            "type": "base64",
+                            "media_type": media_type,
+                            "data": base64_data,
+                        },
+                    }
+                elif url_source is not None:
+                    document_block = {
+                        "type": "document",
+                        "source": {
+                            "type": "url",
+                            "url": url_source,
+                        },
+                    }
+                else:
+                    logger.warning(
+                        "Unsupported attachment for Anthropic upload (name=%s, mime=%s); skipping",
+                        name,
+                        mime_type or "unknown",
+                    )
+                    continue
+
+                if name:
+                    document_block["title"] = name
+
+                if context_manager is not None:
+                    source = document_block.get("source", {})
+                    source_type = source.get("type")
+                    approx_tokens: Optional[int] = None
+                    approx_size: Optional[int] = None
+                    if source_type == "text":
+                        text_payload = source.get("text", "")
+                        approx_tokens = context_manager.estimate_tokens(text_payload)
+                        approx_size = len(text_payload)
+                    elif source_type == "base64":
+                        data_payload = source.get("data", "")
+                        approx_size = int(len(data_payload) * 0.75)
+                        approx_tokens = max(1, approx_size // 4)
+                    elif source_type == "url":
+                        approx_tokens = 0
+
+                    if approx_tokens is not None and approx_tokens > 0:
+                        projected_total = total_attachment_tokens + approx_tokens
+                        attachment_entry = {
+                            "name": name or "attachment",
+                            "tokens": approx_tokens,
+                            "size_bytes": approx_size,
+                        }
+                        attachment_breakdown.append(attachment_entry)
+                        if (
+                            available_attachment_tokens is not None
+                            and projected_total > available_attachment_tokens
+                        ):
+                            raise AttachmentBudgetError(
+                                (
+                                    "Attachment '{name}' is estimated to add ~{attachment_tokens:,} tokens; "
+                                    "combined attachments would require ~{projected_total:,} tokens but the "
+                                    "model {model} reserves ~{available:,} tokens for attachments."
+                                ).format(
+                                    name=attachment_entry["name"],
+                                    attachment_tokens=approx_tokens,
+                                    projected_total=projected_total,
+                                    available=available_attachment_tokens,
+                                    model=model_name or "Anthropic",
+                                ),
+                                {
+                                    "model": model_name or "anthropic",
+                                    "conversation_tokens_estimate": conversation_token_estimate,
+                                    "attachment_tokens_estimate": projected_total,
+                                    "attachment_budget_tokens": available_attachment_tokens,
+                                    "attachments": attachment_breakdown,
+                                },
+                            )
+                        total_attachment_tokens = projected_total
+
+                document_blocks.append(document_block)
+
+            if document_blocks:
+                message_metadata.setdefault(idx, {})["anthropic_documents"] = document_blocks
 
             if enable_web_search:
                 tools.append(
@@ -251,18 +407,16 @@ class ChatHandler:
             if tools:
                 conversation_metadata["tools"] = tools
 
-            if betas:
-                conversation_metadata["betas"] = sorted(betas)
+            # Anthropic betas are communicated via request headers; including them in the
+            # payload triggers validation errors like "Extra inputs are not permitted".
+            # We therefore avoid attaching the betas list to the request body and rely on
+            # the headers configured by the inference engine instead.
 
             if enable_thinking:
                 conversation_metadata["thinking"] = {
                     "type": "enabled",
                     "budget_tokens": max(1000, thinking_budget),
                 }
-
-        finally:
-            if upload_session is not None:
-                await upload_session.close()
 
         return {
             "message_metadata": message_metadata,
@@ -277,6 +431,34 @@ class ChatHandler:
     ) -> Dict[str, Any]:
         message_metadata: Dict[int, Dict[str, Any]] = {}
         conversation_metadata: Dict[str, Any] = {}
+
+        context_manager: Optional[ContextWindowManager] = None
+        available_attachment_tokens: Optional[int] = None
+        total_attachment_tokens = 0
+        attachment_breakdown: list[Dict[str, Any]] = []
+        conversation_token_estimate = 0
+        max_context_length: Optional[int] = None
+        model_name: Optional[str] = None
+
+        if hasattr(engine, "_model_params") and engine._model_params is not None:
+            max_context_length = getattr(engine._model_params, "model_max_length", None)
+            model_name = getattr(engine._model_params, "model_name", None)
+
+        if max_context_length:
+            context_manager = ContextWindowManager(max_context_length, model_name or "openai")
+            try:
+                conversation_token_estimate = sum(
+                    self._estimate_message_token_usage(message, context_manager)
+                    for message in messages
+                )
+            except Exception:  # pragma: no cover - defensive token estimation
+                conversation_token_estimate = 0
+
+            try:
+                budget = context_manager.calculate_budget(conversation_token_estimate)
+                available_attachment_tokens = budget.available_for_content
+            except Exception:  # pragma: no cover - defensive budget calc
+                available_attachment_tokens = None
 
         if not messages:
             return {
@@ -294,7 +476,29 @@ class ChatHandler:
 
         upload_session: Optional[aiohttp.ClientSession] = None
         try:
-            should_upload_any = enable_files or enable_pdf_uploads
+            attachment_upload_types: dict[tuple[int, int], bool] = {}
+            should_upload_any = False
+
+            for msg_idx, message in enumerate(messages):
+                attachments = message.get("attachments")
+                if not attachments or not isinstance(attachments, list):
+                    continue
+
+                for att_idx, attachment in enumerate(attachments):
+                    if not isinstance(attachment, dict):
+                        continue
+
+                    mime_type = str(attachment.get("mimeType") or "").lower()
+                    name = str(attachment.get("name") or "")
+                    extension = Path(name).suffix.lower()
+
+                    is_pdf = "pdf" in mime_type or extension == ".pdf"
+                    should_upload = bool(enable_pdf_uploads and is_pdf)
+
+                    attachment_upload_types[(msg_idx, att_idx)] = should_upload
+                    if should_upload:
+                        should_upload_any = True
+
             if should_upload_any:
                 timeout = aiohttp.ClientTimeout(
                     total=getattr(engine._remote_params, "connection_timeout", 300.0)
@@ -302,21 +506,86 @@ class ChatHandler:
                 )
                 upload_session = aiohttp.ClientSession(timeout=timeout)
 
+            file_reference_token_cost = 0
+
             for idx, message in enumerate(messages):
                 attachments = message.get("attachments")
                 if not attachments or not isinstance(attachments, list):
                     continue
 
                 file_refs: list[dict[str, Any]] = []
-                for attachment in attachments:
+                for att_idx, attachment in enumerate(attachments):
                     if not isinstance(attachment, dict):
                         continue
 
                     file_id = attachment.get("fileId")
                     mime_type = str(attachment.get("mimeType") or "").lower()
-                    should_upload = enable_files or (
-                        enable_pdf_uploads and "pdf" in mime_type
-                    )
+                    should_upload = attachment_upload_types.get((idx, att_idx), False)
+
+                    include_in_budget = (file_id is not None) or should_upload
+
+                    approx_tokens: Optional[int] = None
+                    approx_size: Optional[int] = None
+                    if include_in_budget and context_manager is not None:
+                        if file_id or should_upload:
+                            approx_tokens = file_reference_token_cost
+                            approx_size = None
+
+                            size_field = attachment.get("size")
+                            if isinstance(size_field, (int, float)) and size_field > 0:
+                                approx_size = int(size_field)
+                            else:
+                                prior_size = attachment.get("approxSizeBytes")
+                                if isinstance(prior_size, (int, float)):
+                                    approx_size = int(prior_size)
+
+                            attachment["approxTokenEstimate"] = approx_tokens
+                            if approx_size is not None:
+                                attachment["approxSizeBytes"] = approx_size
+                        else:
+                            approx_tokens, approx_size = self._estimate_attachment_cost(
+                                attachment,
+                                context_manager,
+                            )
+
+                        if approx_tokens is None:
+                            approx_tokens = 0
+
+                        projected_total = total_attachment_tokens + approx_tokens
+                        attachment_entry = {
+                            "name": attachment.get("name")
+                            or attachment.get("fileId")
+                            or "attachment",
+                            "tokens": approx_tokens,
+                            "size_bytes": approx_size,
+                        }
+                        attachment_breakdown.append(attachment_entry)
+                        if (
+                            available_attachment_tokens is not None
+                            and projected_total > available_attachment_tokens
+                        ):
+                            raise AttachmentBudgetError(
+                                (
+                                    "Attachment '{name}' is estimated to add ~{attachment_tokens:,} tokens; "
+                                    "combined attachments would require ~{projected_total:,} tokens but the "
+                                    "model {model} reserves ~{available:,} tokens for file context."
+                                ).format(
+                                    name=attachment_entry["name"],
+                                    attachment_tokens=approx_tokens,
+                                    projected_total=projected_total,
+                                    available=available_attachment_tokens,
+                                    model=model_name or "OpenAI",
+                                ),
+                                {
+                                    "model": model_name or "openai",
+                                    "max_context_tokens": max_context_length,
+                                    "conversation_tokens_estimate": conversation_token_estimate,
+                                    "attachment_tokens_estimate": projected_total,
+                                    "attachment_budget_tokens": available_attachment_tokens,
+                                    "attachments": attachment_breakdown,
+                                },
+                            )
+                        total_attachment_tokens = projected_total
 
                     if should_upload and not file_id and upload_session is not None:
                         try:
@@ -354,6 +623,23 @@ class ChatHandler:
                 await upload_session.close()
 
         openai_meta: Dict[str, Any] = {}
+        if context_manager is not None and attachment_breakdown:
+            logger.debug(
+                "📏 OpenAI attachment budget check: estimated attachment tokens=%s, available=%s, conversation tokens=%s",
+                total_attachment_tokens,
+                available_attachment_tokens,
+                conversation_token_estimate,
+            )
+            openai_meta.setdefault(
+                "attachment_context_usage",
+                {
+                    "total_attachment_tokens": total_attachment_tokens,
+                    "available_attachment_tokens": available_attachment_tokens,
+                    "conversation_tokens_estimate": conversation_token_estimate,
+                    "max_context_tokens": max_context_length,
+                    "attachments": attachment_breakdown,
+                },
+            )
         if enable_web_search:
             tools.append({"type": "web_search"})
         if tools:
@@ -422,8 +708,13 @@ class ChatHandler:
             return None
         data_bytes, filename, mime_type = payload
 
+        attachment["approxSizeBytes"] = len(data_bytes)
+        attachment.setdefault(
+            "approxTokenEstimate", max(1, math.ceil(len(data_bytes) / 4))
+        )
+
         form = aiohttp.FormData()
-        form.add_field("purpose", "responses")
+        form.add_field("purpose", "assistants")
         form.add_field("file", data_bytes, filename=filename, content_type=mime_type)
 
         headers = {
@@ -525,6 +816,108 @@ class ChatHandler:
             return "docx"
 
         return None
+
+    def _estimate_attachment_cost(
+        self,
+        attachment: Dict[str, Any],
+        context_manager: Optional[ContextWindowManager],
+    ) -> tuple[Optional[int], Optional[int]]:
+        """Estimate token and byte cost for an attachment.
+
+        Args:
+            attachment: Attachment metadata dictionary.
+            context_manager: Optional context manager with tokenizer support.
+
+        Returns:
+            Tuple of (estimated_tokens, estimated_size_bytes). Either value may be None
+            if it cannot be approximated.
+        """
+
+        text_source = None
+        for key in ("textContent", "fetchContent"):
+            value = attachment.get(key)
+            if isinstance(value, str) and value:
+                text_source = value
+                break
+
+        if text_source is not None:
+            estimated_tokens = (
+                context_manager.estimate_tokens(text_source)
+                if context_manager is not None
+                else max(1, math.ceil(len(text_source) / 4))
+            )
+            size_bytes = len(text_source.encode("utf-8"))
+            attachment.setdefault("approxTokenEstimate", estimated_tokens)
+            attachment.setdefault("approxSizeBytes", size_bytes)
+            return estimated_tokens, size_bytes
+
+        size_field = attachment.get("size")
+        if isinstance(size_field, (int, float)) and size_field > 0:
+            size_bytes = int(size_field)
+            estimated_tokens = max(1, math.ceil(size_bytes / 4))
+            attachment.setdefault("approxTokenEstimate", estimated_tokens)
+            attachment.setdefault("approxSizeBytes", size_bytes)
+            return estimated_tokens, size_bytes
+
+        base64_blob = attachment.get("base64")
+        if isinstance(base64_blob, str) and base64_blob:
+            # Approximate decoded byte length from base64 payload
+            size_bytes = int(len(base64_blob) * 0.75)
+            estimated_tokens = max(1, math.ceil(size_bytes / 4))
+            attachment.setdefault("approxTokenEstimate", estimated_tokens)
+            attachment.setdefault("approxSizeBytes", size_bytes)
+            return estimated_tokens, size_bytes
+
+        data_url = attachment.get("dataUrl")
+        if isinstance(data_url, str) and "base64," in data_url:
+            _, _, encoded = data_url.partition("base64,")
+            if encoded:
+                size_bytes = int(len(encoded) * 0.75)
+                estimated_tokens = max(1, math.ceil(size_bytes / 4))
+                attachment.setdefault("approxTokenEstimate", estimated_tokens)
+                attachment.setdefault("approxSizeBytes", size_bytes)
+                return estimated_tokens, size_bytes
+
+        approx_tokens = attachment.get("approxTokenEstimate")
+        approx_size = attachment.get("approxSizeBytes")
+        if isinstance(approx_tokens, (int, float)):
+            estimated_tokens = int(math.ceil(approx_tokens))
+            size_bytes = (
+                int(math.ceil(approx_size))
+                if isinstance(approx_size, (int, float))
+                else None
+            )
+            return estimated_tokens, size_bytes
+
+        return None, None
+
+    def _estimate_message_token_usage(
+        self,
+        message: Dict[str, Any],
+        context_manager: ContextWindowManager,
+    ) -> int:
+        """Estimate token usage for a message's textual content."""
+
+        content = message.get("content")
+        if isinstance(content, str):
+            return context_manager.estimate_tokens(content)
+
+        if isinstance(content, list):
+            total = 0
+            for part in content:
+                if not isinstance(part, dict):
+                    continue
+                part_type = str(part.get("type", "")).lower()
+                if part_type in {"text", "input_text"}:
+                    value = part.get("content") or part.get("text") or part.get("value")
+                    if isinstance(value, str) and value:
+                        total += context_manager.estimate_tokens(value)
+            return total
+
+        if content is None:
+            return 0
+
+        return context_manager.estimate_tokens(str(content))
 
     async def handle_chat_completions(self, request: web.Request) -> web.Response:
         """Handle chat completions requests in OpenAI format.
@@ -723,11 +1116,25 @@ class ChatHandler:
                 and messages_for_context
             ):
                 openai_settings = data.get("openai_settings") or {}
-                openai_context = await self._prepare_openai_context(
-                    messages_for_context,
-                    session_engine,
-                    openai_settings,
-                )
+                try:
+                    openai_context = await self._prepare_openai_context(
+                        messages_for_context,
+                        session_engine,
+                        openai_settings,
+                    )
+                except AttachmentBudgetError as exc:
+                    logger.warning("Attachment exceeds context budget: %s", exc)
+                    details = getattr(exc, "details", {})
+                    return web.json_response(
+                        {
+                            "error": {
+                                "message": str(exc),
+                                "type": "context_window_limit",
+                                "details": details,
+                            }
+                        },
+                        status=413,
+                    )
 
             merged_message_metadata: dict[int, dict[str, Any]] = {}
             if anthropic_context and anthropic_context.get("message_metadata"):

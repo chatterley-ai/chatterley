@@ -249,7 +249,7 @@ export const useChatStore = create<ChatStore>()(
         },
         openai: {
           enableFiles: true,
-          enableWebSearch: false,
+          enableWebSearch: true,
           enableDeepResearch: false,
           deepResearchEffort: 'medium',
           enablePdfUploads: true,
@@ -2503,7 +2503,7 @@ if (process.env.NODE_ENV === 'development') {
           } else {
             state.settings.openai = {
               enableFiles: state.settings.openai.enableFiles ?? true,
-              enableWebSearch: state.settings.openai.enableWebSearch ?? false,
+              enableWebSearch: state.settings.openai.enableWebSearch ?? true,
               enableDeepResearch: state.settings.openai.enableDeepResearch ?? false,
               deepResearchEffort:
                 state.settings.openai.deepResearchEffort ?? 'medium',

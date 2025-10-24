@@ -21,7 +21,10 @@ from collections import defaultdict, deque
 
 from oumi.core.configs import InferenceConfig
 from oumi.webchat.core.session import WebChatSession
-from oumi.utils.logging import logger
+from oumi.utils.logging import get_logger
+
+
+logger = get_logger("oumi.webchat.session_manager")
 
 
 T = TypeVar('T')  # Generic type for session operation results

@@ -37,7 +37,7 @@ const DEFAULT_ANTHROPIC_SETTINGS: AnthropicApiSettings = {
 
 const DEFAULT_OPENAI_SETTINGS: OpenAIApiSettings = {
   enableFiles: true,
-  enableWebSearch: false,
+  enableWebSearch: true,
   enableDeepResearch: false,
   deepResearchEffort: 'medium',
   enablePdfUploads: true,

@@ -27,8 +27,10 @@ import ToastContainer from '@/components/ui/ToastContainer';
 import { useActiveModel } from '@/hooks/useActiveModel';
 
 export default function AppLayout() {
-  // Poll active model from backend (single source of truth)
-  useActiveModel({ pollInterval: 3000, enabled: true });
+  const [isModelSwitcherVisible, setIsModelSwitcherVisible] = React.useState(false);
+  // Poll active model only when the model switcher is visible
+  const { refresh } = useActiveModel({ pollInterval: 3000, enabled: isModelSwitcherVisible });
+  React.useEffect(() => { refresh(); }, [refresh]);
   const [isControlPanelExpanded, setIsControlPanelExpanded] = React.useState(true);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = React.useState(false);
   const [showChatHistory, setShowChatHistory] = React.useState(false);
@@ -856,6 +858,7 @@ React.useEffect(() => {
               className="h-full" 
               isCollapsed={!isControlPanelExpanded}
               onToggleCollapse={() => setIsControlPanelExpanded(!isControlPanelExpanded)}
+              onModelSwitcherVisibilityChange={setIsModelSwitcherVisible}
             />
           </div>
 

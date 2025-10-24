@@ -1,0 +1,14 @@
+# OpenAI inference config for omni-moderation-latest.
+# Usage:
+#   oumi infer -i -c configs/apis/openai/infer_omni_moderation_latest.yaml
+
+model:
+  model_name: "omni-moderation-latest"
+  model_max_length: 8192
+  is_vision_capable: false
+  is_omni_capable: false
+
+engine: OPENAI
+
+generation:
+  temperature: 0.0

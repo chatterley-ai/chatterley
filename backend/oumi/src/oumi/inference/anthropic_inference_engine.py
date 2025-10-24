@@ -14,12 +14,14 @@
 
 from typing import Any, Optional
 
+import aiohttp
 from typing_extensions import override
 
-from oumi.core.configs import GenerationParams, ModelParams, RemoteParams
+from oumi.core.configs import GenerationParams, InferenceConfig, ModelParams, RemoteParams
 from oumi.core.types.conversation import Conversation, Message, Role
 from oumi.utils.conversation_utils import convert_message_to_json_content_list
 from oumi.inference.remote_inference_engine import RemoteInferenceEngine
+from oumi.inference.adaptive_semaphore import PoliteAdaptiveSemaphore
 from oumi.utils.logging import logger
 
 _CONTENT_KEY: str = "content"
@@ -100,22 +102,7 @@ class AnthropicInferenceEngine(RemoteInferenceEngine):
 
             content_blocks = convert_message_to_json_content_list(message)
             metadata = message.metadata or {}
-            additional_blocks = []
-            for file_ref in metadata.get("anthropic_files", []):
-                file_id = file_ref.get("file_id")
-                if not file_id:
-                    continue
-                block_type = file_ref.get("block_type", "document")
-                additional_blocks.append(
-                    {
-                        "type": block_type,
-                        "source": {
-                            "type": "file",
-                            "file_id": file_id,
-                        },
-                    }
-                )
-
+            additional_blocks = metadata.get("anthropic_documents", [])
             if additional_blocks:
                 content_blocks.extend(additional_blocks)
 
@@ -133,9 +120,21 @@ class AnthropicInferenceEngine(RemoteInferenceEngine):
             "model": model_params.model_name,
             "messages": formatted_messages,
             "max_tokens": generation_params.max_new_tokens,
-            "temperature": generation_params.temperature,
-            "top_p": generation_params.top_p,
         }
+
+        temperature = generation_params.temperature
+        top_p = generation_params.top_p
+
+        if temperature is not None:
+            body["temperature"] = temperature
+            if top_p is not None:
+                logger.debug(
+                    "AnthropicInferenceEngine: ignoring top_p=%s because temperature=%s is set",
+                    top_p,
+                    temperature,
+                )
+        elif top_p is not None:
+            body["top_p"] = top_p
 
         if system_message:
             body["system"] = system_message
@@ -144,14 +143,61 @@ class AnthropicInferenceEngine(RemoteInferenceEngine):
             body["stop_sequences"] = generation_params.stop_strings
 
         anthropic_meta = conversation.metadata.get("anthropic") or {}
-        if anthropic_meta.get("tools"):
-            body["tools"] = anthropic_meta["tools"]
+
+        # Debug: log what we received in conversation metadata
+        if anthropic_meta:
+            logger.debug(
+                f"🔍 Anthropic metadata keys: {list(anthropic_meta.keys())}"
+            )
+
+        # Handle container (skills) - requires code_execution tool
         if anthropic_meta.get("container"):
             body["container"] = anthropic_meta["container"]
+
+            # Skills API requires code_execution tool to be included
+            # See: https://docs.anthropic.com/en/api/skills-guide
+            code_execution_tool = {
+                "type": "code_execution_20250825",
+                "name": "code_execution"
+            }
+
+            # Merge with existing tools if present
+            existing_tools = anthropic_meta.get("tools", [])
+            # Ensure existing_tools is a list
+            if not isinstance(existing_tools, list):
+                existing_tools = []
+
+            # Check if code_execution tool is already present
+            has_code_execution = any(
+                isinstance(tool, dict) and tool.get("type") == "code_execution_20250825"
+                for tool in existing_tools
+            )
+
+            if has_code_execution:
+                body["tools"] = existing_tools
+            else:
+                body["tools"] = [code_execution_tool] + existing_tools
+
+            logger.debug(
+                f"🔧 Anthropic Skills API: container present, tools configured: {body.get('tools')}"
+            )
+        elif anthropic_meta.get("tools"):
+            # No container, just use tools as-is
+            body["tools"] = anthropic_meta["tools"]
+
         if anthropic_meta.get("thinking"):
             body["thinking"] = anthropic_meta["thinking"]
         if anthropic_meta.get("betas"):
             body["betas"] = anthropic_meta["betas"]
+
+        # Debug logging for skills API
+        if body.get("container") or body.get("tools"):
+            logger.debug(
+                f"🔍 Anthropic API request body keys: {list(body.keys())}, "
+                f"container present: {bool(body.get('container'))}, "
+                f"tools present: {bool(body.get('tools'))}, "
+                f"tools count: {len(body.get('tools', []))}"
+            )
 
         return body
 
@@ -172,12 +218,73 @@ class AnthropicInferenceEngine(RemoteInferenceEngine):
 
     @override
     def _get_request_headers(self, remote_params: RemoteParams) -> dict[str, str]:
-        return {
+        headers = {
             "Content-Type": "application/json",
             "anthropic-version": self.anthropic_version,
             "X-API-Key": self._get_api_key(remote_params) or "",
-            "anthropic-beta": "files-api-2025-04-14,code-execution-2025-08-25,skills-2025-10-02",
         }
+
+        # Note: anthropic-beta header should be set dynamically based on actual usage
+        # This is a default that will be overridden in _query_api if needed
+        return headers
+
+    @override
+    async def _query_api(
+        self,
+        conversation: Conversation,
+        semaphore: PoliteAdaptiveSemaphore,
+        session: aiohttp.ClientSession,
+        inference_config: Optional[InferenceConfig] = None,
+    ) -> Conversation:
+        """Override to add dynamic beta headers based on conversation metadata."""
+        # Get the API input to check what features are being used
+        if inference_config is None:
+            generation_params = self._generation_params
+            model_params = self._model_params
+        else:
+            generation_params = inference_config.generation or self._generation_params
+            model_params = inference_config.model or self._model_params
+
+        api_input = self._convert_conversation_to_api_input(
+            conversation, generation_params, model_params
+        )
+
+        # Build beta header dynamically based on what's in the request
+        betas = api_input.get("betas", [])
+        if not betas:
+            # Check conversation metadata for betas
+            anthropic_meta = conversation.metadata.get("anthropic", {})
+            betas = anthropic_meta.get("betas", [])
+
+        # Inject beta header into the session for this request
+        if inference_config is None:
+            remote_params = self._remote_params
+        else:
+            remote_params = inference_config.remote_params or self._remote_params
+
+        # Store original headers method
+        original_get_headers = self._get_request_headers
+
+        # Temporarily override to add beta header
+        def _get_headers_with_beta(rp: RemoteParams) -> dict[str, str]:
+            headers = original_get_headers(rp)
+            if betas:
+                headers["anthropic-beta"] = ",".join(betas)
+                logger.debug(f"🔧 Adding anthropic-beta header: {headers['anthropic-beta']}")
+            return headers
+
+        # Monkey-patch for this request only
+        self._get_request_headers = _get_headers_with_beta  # type: ignore
+
+        try:
+            # Call parent implementation
+            result = await super()._query_api(
+                conversation, semaphore, session, inference_config
+            )
+            return result
+        finally:
+            # Restore original method
+            self._get_request_headers = original_get_headers  # type: ignore
 
     @override
     def get_supported_params(self) -> set[str]:

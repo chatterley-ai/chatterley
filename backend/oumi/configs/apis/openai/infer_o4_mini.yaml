@@ -1,0 +1,14 @@
+# OpenAI inference config for o4-mini.
+# Usage:
+#   oumi infer -i -c configs/apis/openai/infer_o4_mini.yaml
+
+model:
+  model_name: "o4-mini"
+  model_max_length: 200000
+  is_vision_capable: false
+  is_omni_capable: false
+
+engine: OPENAI
+
+generation:
+  temperature: 1.0

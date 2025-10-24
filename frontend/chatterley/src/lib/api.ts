@@ -52,10 +52,37 @@ class ApiClient {
       const data = await response.json();
       
       if (!response.ok) {
+        const errorPayload =
+          data && typeof data === 'object' ? (data as { error?: unknown })?.error : undefined;
+
+        let errorMessage = response.statusText;
+        if (data && typeof data === 'object') {
+          const rawMessage = (data as { message?: unknown }).message;
+          if (typeof rawMessage === 'string' && rawMessage.trim().length > 0) {
+            errorMessage = rawMessage;
+          } else if (
+            errorPayload &&
+            typeof (errorPayload as { message?: unknown })?.message === 'string'
+          ) {
+            const payloadMessage = ((errorPayload as { message?: string }).message ?? '').trim();
+            if (payloadMessage.length > 0) {
+              errorMessage = payloadMessage;
+            }
+          }
+        }
+
+        let errorString: string = response.statusText;
+        if (typeof errorPayload === 'string' && errorPayload.trim().length > 0) {
+          errorString = errorPayload;
+        } else if (errorMessage.trim().length > 0) {
+          errorString = errorMessage;
+        }
+
         return {
           success: false,
-          message: data.message || response.statusText,
-          error: data.error || response.statusText,
+          message: errorMessage,
+          error: errorString,
+          errorDetails: errorPayload,
         };
       }
 
@@ -64,10 +91,12 @@ class ApiClient {
         data,
       };
     } catch (error) {
+      const fallbackMessage = error instanceof Error ? error.message : 'Network error';
       return {
         success: false,
-        message: error instanceof Error ? error.message : 'Network error',
-        error: error instanceof Error ? error.message : 'Unknown error',
+        message: fallbackMessage,
+        error: fallbackMessage,
+        errorDetails: error,
       };
     }
   }

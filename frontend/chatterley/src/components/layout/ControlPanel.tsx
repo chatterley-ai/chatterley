@@ -14,6 +14,7 @@ interface ControlPanelProps {
   className?: string;
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
+  onModelSwitcherVisibilityChange?: (isOpen: boolean) => void;
 }
 
 type SectionKey = 'systemStats' | 'modelSwitcher' | 'diffusionWorkbench';
@@ -29,7 +30,8 @@ type SectionConfig = {
 export default function ControlPanel({ 
   className = '', 
   isCollapsed = false,
-  onToggleCollapse
+  onToggleCollapse,
+  onModelSwitcherVisibilityChange,
 }: ControlPanelProps) {
   const sectionConfigs = React.useMemo<SectionConfig[]>(
     () => [
@@ -71,6 +73,12 @@ export default function ControlPanel({
       [key]: !prev[key]
     }));
   }, []);
+
+  const isModelSwitcherVisible = !isCollapsed && sectionOpen.modelSwitcher;
+
+  React.useEffect(() => {
+    onModelSwitcherVisibilityChange?.(isModelSwitcherVisible);
+  }, [isModelSwitcherVisible, onModelSwitcherVisibilityChange]);
 
   const renderSection = (config: SectionConfig) => {
     const isOpen = sectionOpen[config.key];

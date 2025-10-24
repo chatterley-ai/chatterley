@@ -28,7 +28,7 @@ const FALLBACK_ANTHROPIC_SETTINGS: AnthropicApiSettings = {
 
 const FALLBACK_OPENAI_SETTINGS: OpenAIApiSettings = {
   enableFiles: true,
-  enableWebSearch: false,
+  enableWebSearch: true,
   enableDeepResearch: false,
   deepResearchEffort: 'medium',
   enablePdfUploads: true,
@@ -271,7 +271,7 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
   const refreshBranches = React.useCallback(async () => {
     try {
       const response = await apiClient.getBranches(getCurrentSessionId());
-      if (response.success && response.data) {
+      if (response.success && response.data && process.env.NODE_ENV !== 'production') {
         // Branch metadata is derived via store; no transform needed here.
         // Note: setBranches is no longer needed since branches are derived on demand
         console.log('Branches updated successfully (will be available via getBranches)');
@@ -965,31 +965,72 @@ export default function ChatInterface({ className = '', onRef }: ChatInterfacePr
               : undefined,
         });
 
-        if (response.success && response.data) {
-          if (shouldStop) {
-            // User interrupted while waiting for non-streaming response; do not append
-            return;
-          }
-          // Add complete assistant response
-          const durationMs = Math.max(0, Math.round(performance.now() - start));
-          const assistantMessage: Message = {
-            id: `assistant-${Date.now()}`,
-            role: 'assistant',
-            content: response.data.choices?.[0]?.message?.content || 'No response generated',
-            timestamp: Date.now(),
-            meta: {
-              authorType: 'ai',
-              authorName: response.data.model || settings.selectedModel || 'AI',
-              modelName: response.data.model || settings.selectedModel || undefined,
-              engine: settings.selectedProvider || undefined,
-              createdAt: Date.now(),
-              durationMs,
+        if (!response.success) {
+          const richError = response.errorDetails;
+          if (
+            richError &&
+            typeof richError === 'object' &&
+            (richError as { type?: string }).type === 'context_window_limit'
+          ) {
+            const details = (richError as { details?: unknown }).details as Record<string, unknown> | undefined;
+            const attachmentsRaw = Array.isArray(details?.attachments)
+              ? (details?.attachments as Array<Record<string, unknown>>)
+              : [];
+            const attachmentLines = attachmentsRaw
+              .map((item) => {
+                const name = typeof item?.name === 'string' ? item.name : 'Attachment';
+                const tokens = typeof item?.tokens === 'number' ? item.tokens : undefined;
+                return tokens ? `• ${name}: ~${tokens.toLocaleString()} tokens` : `• ${name}`;
+              })
+              .filter(Boolean);
+
+            const budget = typeof details?.attachment_budget_tokens === 'number'
+              ? details.attachment_budget_tokens
+              : undefined;
+
+            const messageParts: string[] = [
+              response.message || "Attachments exceed the model's context window.",
+            ];
+
+            if (budget) {
+              messageParts.push(`Model attachment budget: ~${budget.toLocaleString()} tokens.`);
             }
-          };
-          addMessage(assistantMessage);
-        } else {
+
+            if (attachmentLines.length > 0) {
+              messageParts.push(['Estimated attachments:', ...attachmentLines].join('\n'));
+            }
+
+            throw new Error(messageParts.join('\n\n'));
+          }
+
           throw new Error(response.message || 'Failed to get response');
         }
+
+        if (!response.data) {
+          throw new Error('No data returned from chat completion');
+        }
+
+        if (shouldStop) {
+          // User interrupted while waiting for non-streaming response; do not append
+          return;
+        }
+        // Add complete assistant response
+        const durationMs = Math.max(0, Math.round(performance.now() - start));
+        const assistantMessage: Message = {
+          id: `assistant-${Date.now()}`,
+          role: 'assistant',
+          content: response.data.choices?.[0]?.message?.content || 'No response generated',
+          timestamp: Date.now(),
+          meta: {
+            authorType: 'ai',
+            authorName: response.data.model || settings.selectedModel || 'AI',
+            modelName: response.data.model || settings.selectedModel || undefined,
+            engine: settings.selectedProvider || undefined,
+            createdAt: Date.now(),
+            durationMs,
+          }
+        };
+        addMessage(assistantMessage);
       }
         
       // Refresh branch data after successful chat exchange
